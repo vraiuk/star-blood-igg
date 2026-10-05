@@ -41,14 +41,14 @@ export interface BotResult {
 }
 
 /** Plays one full level with a scripted heuristic player. */
-export function runBot(planName: keyof typeof PLANS, seed = 1, maxMinutes = 30, log?: (line: string) => void, opts: GameOptions = {}): BotResult {
+export function runBot(planName: keyof typeof PLANS, seed = 1, maxMinutes = 30, log?: (line: string) => void, opts: GameOptions = {}, maxNights = 10): BotResult {
   const plan = PLANS[planName];
   const g = new Game({ seed, ...opts });
   const s = g.state;
   let think = 0;
   const treeDmg: Record<string, number> = {};
   const maxSteps = maxMinutes * 60 * 60;
-  for (let i = 0; i < maxSteps && !g.over; i++) {
+  for (let i = 0; i < maxSteps && !g.over && s.night < maxNights; i++) {
     if (g.choice) g.choose(0);
     think -= 1;
     if (think <= 0) {
@@ -65,7 +65,7 @@ export function runBot(planName: keyof typeof PLANS, seed = 1, maxMinutes = 30, 
     s.events.length = 0;
   }
   return {
-    phase: s.phase, night: s.night, stage: s.tree.stage + 1,
+    phase: g.over ? 'lost' : 'alive', night: s.night, stage: s.tree.stage + 1,
     treeHpPct: Math.round((s.tree.hp / g.treeMaxHp()) * 100), stars: g.stars(),
     kills: s.stats.kills, amber: s.amber, star: s.star, time: Math.round(s.stats.time), treeDmg,
   };

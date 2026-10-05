@@ -32,8 +32,12 @@ const audio = new Audio();
 const renderer = new Renderer(ctx);
 const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null };
 let endShown = false;
+let lastRecord = false;
 
-const titleInfo = () => hud.renderTitle(`${PATHS[Math.min(save.path, save.pathUnlocked)].name} · Монеты Наблюдателя: ${save.coins}`, save.coins);
+const titleInfo = () => {
+  const p = Math.min(save.path, save.pathUnlocked);
+  hud.renderTitle(`${PATHS[p].name} · рекорд: ${save.bestNight[p] ?? 0} ноч. · Монеты Наблюдателя: ${save.coins}`, save.coins);
+};
 
 const hud: Hud = new Hud(uiRoot, () => game, {
   onStart() {
@@ -213,14 +217,16 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 function finishRun() {
   const s = game.state;
-  const won = s.phase === 'won';
   const stars = game.stars();
-  const coins = coinsForRun(won ? game.nights.length : s.night, stars, game.path + 1);
+  const coins = coinsForRun(s.night, stars, game.path + 1);
+  const prevBest = save.bestNight[game.path] ?? 0;
+  save.bestNight[game.path] = Math.max(prevBest, s.night);
+  lastRecord = s.night > prevBest;
   save.coins += coins;
   save.earned += coins;
   save.runs++;
   save.bestStars[game.path] = Math.max(save.bestStars[game.path] ?? 0, stars);
-  if (won && game.path === save.pathUnlocked && save.pathUnlocked < PATHS.length - 1) save.pathUnlocked++;
+  if (stars > 0 && game.path === save.pathUnlocked && save.pathUnlocked < PATHS.length - 1) save.pathUnlocked++;
   writeSave(save);
   titleInfo();
   return coins;
@@ -259,7 +265,7 @@ function frame(now: number) {
     endShown = true;
     hud.closeMenu();
     const coins = finishRun();
-    setTimeout(() => hud.showEnd(coins), 1400);
+    setTimeout(() => hud.showEnd(coins, save.bestNight[game.path] ?? 0, lastRecord), 1400);
   }
   renderer.render(game, view, time, frozen && started ? dt * 0.15 : dt);
   hud.update(dt);

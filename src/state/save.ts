@@ -18,10 +18,12 @@ export interface MetaSave {
   /** selected path */
   path: number;
   runs: number;
+  /** best nights survived per difficulty path */
+  bestNight: number[];
 }
 
 export function emptySave(): MetaSave {
-  return { coins: 0, earned: 0, nodes: [], bestStars: [0, 0, 0], pathUnlocked: 0, path: 0, runs: 0 };
+  return { coins: 0, earned: 0, nodes: [], bestStars: [0, 0, 0], pathUnlocked: 0, path: 0, runs: 0, bestNight: [0, 0, 0] };
 }
 
 export function loadSave(): MetaSave {

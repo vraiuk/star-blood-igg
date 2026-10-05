@@ -243,7 +243,7 @@ export class Hud {
         <div class="kicker">Земли Теней</div>
         <h1>Звёздная Кровь</h1>
         <h2>ДРЕВО ИГГ</h2>
-        <p>«Каждое Игг-Древо — это форпост людей в борьбе против Червей.»<br>Восходящий, посади Семя у границы Теней, вырасти его в Великое Игг-Древо и держи Круг десять ночей.</p>
+        <p>«Каждое Игг-Древо — это форпост людей в борьбе против Червей.»<br>Восходящий, посади Семя у границы Теней, вырасти его в Великое Игг-Древо и держи Круг — сколько сможешь.</p>
         <div class="keys">
           <span><b>A / D</b> — ходить, собирать Янтарь и Кровь</span><span><b>Клик</b> по руне у земли — призвать гнездо</span>
           <span><b>1 2 3</b> — Копьё, Молот, Звездопад</span><span><b>Клик</b> по Древу — стадии и рост</span>
@@ -265,20 +265,20 @@ export class Hud {
   setSpeed(x: number) { this.speedBtn.textContent = `×${x}`; }
   setSound(on: boolean) { this.soundBtn.textContent = on ? '♪' : '♪̸'; this.soundBtn.style.opacity = on ? '1' : '0.5'; }
 
-  showEnd(coins: number) {
+  showEnd(coins: number, best: number, record: boolean) {
     const g = this.game();
     const s = g.state;
-    const won = s.phase === 'won';
     const stars = g.stars();
+    const won = stars > 0;
     const st = Array.from({ length: 3 }, (_, i) => `<span class="${i < stars ? 'on' : 'off'}">★</span>`).join('');
     this.end.innerHTML = `
       <div class="box">
-        <h1>${won ? 'Рассвет' : 'Древо угасло'}</h1>
-        <h2>${won ? 'ТОТ-КТО-ПОСАДИЛ-НОВОЕ-ДРЕВО!' : `НОЧЬ ${s.night + 1} ИЗ ${g.nights.length}`}</h2>
-        ${won ? `<div class="stars">${st}</div>` : '<p>Тьма сомкнулась над Кругом.</p>'}
+        <h1>Древо угасло</h1>
+        <h2>${record ? 'НОВЫЙ РЕКОРД · ' : ''}ПЕРЕЖИТО НОЧЕЙ: ${s.night} · РЕКОРД: ${best}</h2>
+        ${won ? `<div class="stars">${st}</div><p class="stat">Звёзды за 10-ю ночь (Тот-Кто-Посадил-новое-Древо)</p>` : '<p>Тьма сомкнулась над Кругом до 10-й ночи.</p>'}
         <div class="tablet inline">Восходящий! Тот-Кто-Наблюдает награждает тебя: <b>+${coins} Монет</b>.</div>
         <div class="stat">Древо: <b>${TREE_STAGES[s.tree.stage].name}</b> · Тварей: <b>${s.stats.kills}</b> · Янтарь: <b>${s.stats.amberCollected}</b> · Звёздная Кровь: <b>${s.stats.starCollected}</b></div>
-        ${won ? `<p class="stat">★ устоять · ★★ Малое Игг-Древо · ★★★ Великое Игг-Древо и здоровье > 50%</p>` : '<p class="stat">Совет: растите Древо, когда оборона держит, Стрекозы высвечивают тварей, а Скрижаль [R] усиливает руны.</p>'}
+        <p class="stat">★ дожить до 10-й ночи · ★★ с Малым Игг-Древом · ★★★ с Великим Игг-Древом и здоровьем > 50%. Дальше — бесконечная ночь за рекордом.</p>
         <div class="row"><button class="btn gold" data-a="again">Ещё раз</button><button class="btn" data-a="meta"><img class="icon" src="${icon('tree')}"> Древо Игг</button></div>
       </div>`;
     this.end.querySelector('[data-a=again]')!.addEventListener('click', () => this.cb.onRestart());
@@ -295,10 +295,13 @@ export class Hud {
     for (const e of events) {
       switch (e.type) {
         case 'nightStart': {
-          const def = g.nights[e.night];
+          const def = g.night(e.night);
           this.showBanner(def.title, def.hint, true, 4.5);
           break;
         }
+        case 'milestone':
+          this.showBanner('Тот-Кто-Посадил-новое-Древо!', `Десять ночей позади. ${'★'.repeat(e.stars)} Дальше — Бесконечная ночь: держись за рекорд.`, false, 6);
+          break;
         case 'dawn':
           this.showBanner('Рассвет', `Тьма отступила. Рассветный дар: +${e.gift} Янтаря`, false, 2.6);
           break;
@@ -745,14 +748,14 @@ export class Hud {
       this.stageCount.textContent = `${s.tree.stage + 1}/${TREE_STAGES.length}`;
     }
 
-    const total = g.nights.length;
+    const total = g.campaignNights;
     if (s.phase === 'day') {
-      this.nightInfo.innerHTML = `День · до ночи <span class="t">${Math.ceil(s.dayLeft)}с</span> · ночь ${s.night + 1}/${total}`;
+      this.nightInfo.innerHTML = `День · до ночи <span class="t">${Math.ceil(s.dayLeft)}с</span> · ночь ${s.night + 1}${s.night < total ? `/${total}` : ' · ∞'}`;
       this.callBtn.classList.remove('hidden');
       this.callBtn.innerHTML = `Призвать ночь <span style="opacity:.75">[Пробел] +${Math.floor(s.dayLeft)}</span>`;
     } else {
       const left = s.enemies.length + s.pending.length;
-      this.nightInfo.innerHTML = s.phase === 'night' ? `${g.nights[s.night].title} · ${s.night + 1}/${total} · тварей: <span class="t">${left}</span>` : '';
+      this.nightInfo.innerHTML = s.phase === 'night' ? `${g.night(s.night).title}${s.night < total ? ` · ${s.night + 1}/${total}` : ' · ∞'} · тварей: <span class="t">${left}</span>` : '';
       this.callBtn.classList.add('hidden');
     }
 

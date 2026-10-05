@@ -199,6 +199,7 @@ export type GameEvent =
   | { type: 'dawn'; night: number; gift: number }
   | { type: 'brood'; x: number }
   | { type: 'won' }
+  | { type: 'milestone'; stars: number }
   | { type: 'lost' }
   | { type: 'denied'; reason: string };
 

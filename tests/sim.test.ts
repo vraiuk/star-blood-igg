@@ -149,13 +149,19 @@ describe('balance corridor (heuristic bots)', () => {
     const r = runBot('idle', 1);
     expect(r.phase).toBe('lost');
     expect(r.night).toBe(0);
+    expect(r.night).toBe(0);
   });
   it('a balanced player usually wins', () => {
-    const wins = seeds.map((s) => runBot('balanced', s)).filter((r) => r.phase === 'won').length;
+    const wins = seeds.map((s) => runBot('balanced', s)).filter((r) => r.night >= 10).length;
     expect(wins).toBeGreaterThanOrEqual(3);
   });
   it('defense without growing the tree falls early', () => {
     expect(seeds.map((s) => runBot('turtle', s)).every((r) => r.phase === 'lost' && r.night <= 4)).toBe(true);
+  });
+  it('endless mode eventually overwhelms even a strong player', () => {
+    const r = runBot('balanced', 1, 120, undefined, {}, 60);
+    expect(r.phase).toBe('lost');
+    expect(r.night).toBeGreaterThanOrEqual(10);
   });
   it('pure tree greed without defense loses', () => {
     expect(seeds.map((s) => runBot('greedy', s)).every((r) => r.phase === 'lost')).toBe(true);

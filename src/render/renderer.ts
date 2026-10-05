@@ -98,7 +98,8 @@ export class Renderer {
         case 'brood': p.acid(e.x, WORLD.groundY - 10); break;
         case 'keeperDown': p.goldBurst(game.state.keeper.x, WORLD.groundY - 10, 20); break;
         case 'keeperBack': p.goldBurst(WORLD.treeX, WORLD.groundY - 10, 20); break;
-        case 'won': p.goldBurst(WORLD.treeX, WORLD.groundY - 80, 160); break;
+        case 'won':
+        case 'milestone': p.goldBurst(WORLD.treeX, WORLD.groundY - 80, 160); break;
         default: break;
       }
     }

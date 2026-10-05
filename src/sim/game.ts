@@ -6,7 +6,7 @@ import {
 import { PATHS } from '../data/meta';
 import { type ModPatch, type Mods, combine } from '../data/mods';
 import { NESTS, SELL_REFUND, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
-import { NIGHTS, type NightDef } from '../data/nights';
+import { ENDLESS, nightDef, type NightDef } from '../data/nights';
 import {
   BASE_SLOTS, BOONS, MAX_SLOTS, PROPERTIES, boonById, maxRankForNight, propertyById,
   type KeeperRuneId, type PropertyDef,
@@ -15,18 +15,16 @@ import { TREE, TREE_BRANCHES, TREE_STAGES } from '../data/tree';
 import { mulberry32 } from './rng';
 import type { Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Structure } from './types';
 
-/** Group sizes grow by this share per night (later nights are crowded). */
-export const NIGHT_COUNT_GROWTH = 0.15;
 /** Seconds after the last spawn before dawn burns remaining creatures. */
 export const NIGHT_GRACE = 60;
-/** Enemy damage grows by this share per night. */
-export const NIGHT_DAMAGE_GROWTH = 0.18;
+
 
 /** Fixed simulation step in seconds. */
 export const STEP = 1 / 60;
 
 export interface GameOptions {
   seed?: number;
+  /** override night definitions (tests); defaults to campaign + endless generator */
   nights?: NightDef[];
   /** mod patches from bought meta-tree nodes */
   meta?: ModPatch[];
@@ -48,7 +46,9 @@ export type Target =
  */
 export class Game {
   readonly state: GameState;
-  readonly nights: NightDef[];
+  private customNights?: NightDef[];
+  /** stars earned at the night-10 milestone (0 if not reached) */
+  milestoneStars = 0;
   readonly path: number;
   mods: Mods;
   private rand: () => number;
@@ -58,7 +58,7 @@ export class Game {
 
   constructor(opts: GameOptions = {}) {
     this.rand = mulberry32(opts.seed ?? 1337);
-    this.nights = opts.nights ?? NIGHTS;
+    this.customNights = opts.nights;
     this.path = opts.path ?? 0;
     this.metaMods = opts.meta ?? [];
     this.mods = combine(this.metaMods);
@@ -209,13 +209,23 @@ export class Game {
     return def.growCost === 0 ? 0 : def.growCost - this.state.tree.growth;
   }
 
-  get over(): boolean { return this.state.phase === 'won' || this.state.phase === 'lost'; }
+  get over(): boolean { return this.state.phase === 'lost'; }
+
+  /** Night definition by index (campaign, then endless generator). */
+  night(n: number): NightDef {
+    if (this.customNights) return this.customNights[Math.min(n, this.customNights.length - 1)];
+    return nightDef(n);
+  }
+
+  /** Number of hand-made campaign nights (the milestone). */
+  get campaignNights() { return this.customNights?.length ?? ENDLESS.campaignNights; }
   get choice() { return this.state.choices[0] ?? null; }
 
-  /** Stars for the result screen (0 when lost). */
-  stars(): number {
+  /** Stars earned at the campaign milestone (night 10). */
+  stars(): number { return this.milestoneStars; }
+
+  private computeStars(): number {
     const s = this.state;
-    if (s.phase !== 'won') return 0;
     let n = 1;
     if (s.tree.stage >= 4) n++;
     if (s.tree.stage >= 5 && s.tree.hp > this.treeMaxHp() * 0.5) n++;
@@ -545,14 +555,16 @@ export class Game {
     s.phaseTime = 0;
     s.dayLeft = 0;
     s.tree.shieldUsed = false;
-    const def = this.nights[s.night];
+    const def = this.night(s.night);
+    const handMade = s.night < this.campaignNights;
     const pending: PendingSpawn[] = [];
     for (const g of def.groups) {
       const sides: Array<'L' | 'R'> = g.side === 'B' ? ['L', 'R'] : [g.side];
       for (const side of sides) {
         const boss = ENEMIES[g.kind].boss;
-        const count = boss ? g.count : Math.round(g.count * (1 + NIGHT_COUNT_GROWTH * s.night));
-        const every = boss ? g.every : g.every / (1 + NIGHT_COUNT_GROWTH * s.night * 0.5);
+        const grow = handMade ? ENDLESS.count(s.night) : 1;
+        const count = boss ? g.count : Math.round(g.count * grow);
+        const every = boss ? g.every : g.every / Math.sqrt(grow);
         for (let i = 0; i < count; i++) {
           const stagger = g.side === 'B' && side === 'R' ? every * 0.5 : 0;
           pending.push({ at: g.at + i * every + stagger, kind: g.kind, side });
@@ -569,10 +581,9 @@ export class Game {
     const s = this.state;
     const finished = s.night;
     s.night++;
-    if (s.night >= this.nights.length) {
-      s.phase = 'won';
-      this.emit({ type: 'won' });
-      return;
+    if (s.night === this.campaignNights) {
+      this.milestoneStars = this.computeStars();
+      this.emit({ type: 'milestone', stars: this.milestoneStars });
     }
     const gift = Math.round((ECONOMY.dawnBase + ECONOMY.dawnPerNight * (finished + 1)) * (1 + this.mods.dawnGift));
     s.amber += gift;
@@ -633,10 +644,10 @@ export class Game {
   spawnEnemy(kind: EnemyKind, x: number, dir: 1 | -1): Enemy {
     const s = this.state;
     const def = ENEMIES[kind];
-    const nightMul = this.nights[Math.min(s.night, this.nights.length - 1)]?.hpMul ?? 1;
+    const nightMul = this.night(s.night).hpMul;
     const pathMul = PATHS[this.path].hp;
-    // bosses are tuned at their absolute value (path still applies)
-    const hp = Math.round(def.hp * (kind === 'mother' ? 1 : nightMul) * pathMul);
+    // bosses are tuned at their absolute value on first appearance, then grow slowly
+    const hp = Math.round(def.hp * (def.boss ? ENDLESS.bossHp(s.night) : nightMul) * pathMul);
     const e: Enemy = {
       id: s.nextId++, kind, x, y: def.underground ? WORLD.wormLaneY : WORLD.groundY, dir,
       hp, maxHp: hp, speedMul: 0.92 + this.rand() * 0.16, attackCd: 0.3 + this.rand() * 0.4,
@@ -729,9 +740,10 @@ export class Game {
       k.charge = Math.min(ABILITIES.starfall.chargeMax, k.charge + def.charge * (1 + this.mods.chargeGain));
     }
     this.emit({ type: 'enemyDied', kind: e.kind, x: e.x, y: e.y });
-    const amber = Math.round(def.amber * (1 + this.mods.amberGain) * PATHS[this.path].amber);
+    const bounty = ENDLESS.bounty(s.night);
+    const amber = Math.round(def.amber * bounty * (1 + this.mods.amberGain) * PATHS[this.path].amber);
     let star = 0;
-    if (def.star >= 1) star = def.star + this.mods.wormStar;
+    if (def.star >= 1) star = Math.round(def.star * Math.sqrt(bounty)) + this.mods.wormStar;
     else if (def.star > 0 && this.rand() < def.star) star = 1;
     star = Math.round(star * (1 + this.mods.starGain));
     if (def.devRune > 0 && this.rand() < def.devRune) {
@@ -878,7 +890,7 @@ export class Game {
   }
 
   /** Enemy damage grows with the night (fatter and meaner). */
-  enemyDamageMul() { return 1 + NIGHT_DAMAGE_GROWTH * this.state.night; }
+  enemyDamageMul() { return ENDLESS.damage(this.state.night); }
 
   /** «Высвечивание»: the strongest dragonfly light covering this enemy. */
   private vulnAt(e: Enemy): number {

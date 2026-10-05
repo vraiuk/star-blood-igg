@@ -112,3 +112,107 @@ export const NIGHTS: NightDef[] = [
     ],
   },
 ];
+
+// ───────────────────────────── endless ─────────────────────────────
+
+/**
+ * Endless mode: after the 10 hand-made nights the Darkness keeps coming forever.
+ * Difficulty follows smooth curves (no cliffs); rewards grow too, so new things stay
+ * affordable, but the slot cap means the Circle eventually falls — the goal is a record.
+ * `n` is the 0-based night index.
+ */
+export const ENDLESS = {
+  /** hand-made nights before the procedural generator takes over */
+  campaignNights: NIGHTS.length,
+  /** enemy max-hp multiplier */
+  hp: (n: number) => (1 + 0.2 * n + 0.025 * n * n) * Math.pow(1.06, Math.max(0, n - 9)),
+  /** enemy damage multiplier */
+  damage: (n: number) => (1 + 0.12 * n) * Math.pow(1.03, Math.max(0, n - 9)),
+  /** group-size multiplier for the hand-made nights */
+  count: (n: number) => Math.min(2.2, 1 + 0.08 * n),
+  /** Amber/Star Blood bounty multiplier */
+  bounty: (n: number) => 1 + 0.04 * n,
+  /** boss hp multiplier (bosses are tuned absolute at their first appearance) */
+  bossHp: (n: number) => (1 + 0.12 * Math.max(0, n - 4)) * Math.pow(1.04, Math.max(0, n - 9)),
+  /** threat budget of a generated night */
+  budget: (n: number) => 90 + 11 * n,
+} as const;
+
+/** Threat cost of one creature (for the generator's budget). */
+const THREAT: Partial<Record<EnemyKind, number>> = {
+  hound: 1, forager: 1, spitter: 2.5, stalker: 5, worm: 3.5, guard: 7,
+};
+/** Night index from which a kind appears in generated nights, and its weight. */
+const POOL: Array<{ kind: EnemyKind; from: number; w: number; size: [number, number] }> = [
+  { kind: 'hound', from: 0, w: 5, size: [4, 9] },
+  { kind: 'forager', from: 0, w: 4, size: [5, 12] },
+  { kind: 'spitter', from: 0, w: 2.5, size: [2, 4] },
+  { kind: 'stalker', from: 0, w: 2, size: [1, 3] },
+  { kind: 'worm', from: 0, w: 2, size: [1, 3] },
+  { kind: 'guard', from: 0, w: 1.2, size: [1, 2] },
+];
+
+const LORE_HINTS = [
+  'Черви угрожают самому существованию Единства. Уничтожайте их везде, где найдёте!',
+  '«Даны тебе плечи — неси!»',
+  'Тьма за Кругом шевелится. Древо берёт тебя под свои ветви.',
+  'Имаго роют к корням: «Черви подкопали и убили все три Великих Древа».',
+  'Найтволки воют у границы Теней.',
+  'Свет Древа обжигает тёмных тварей. Держи Круг.',
+  'Тот-Кто-Наблюдает следит за твоим Подвигом.',
+];
+
+function rng(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Procedural night (deterministic per index). */
+export function generateNight(n: number): NightDef {
+  const r = rng(9001 + n * 7919);
+  const groups: SpawnGroup[] = [];
+  let budget = ENDLESS.budget(n);
+  const bossNight = (n + 1) % 5 === 0;
+  if (bossNight) {
+    const extra = Math.floor((n + 1) / 20);
+    const kinds: EnemyKind[] = (n + 1) % 10 === 0 ? ['executioner', 'mother'] : ['mother'];
+    for (const k of kinds) groups.push(g(8, k, r() > 0.5 ? 'L' : 'R', 1 + extra, 12));
+    budget *= 0.7;
+  }
+  let t = 2;
+  const pool = POOL.filter((p) => n >= p.from);
+  const total = pool.reduce((a, p) => a + p.w, 0);
+  // bigger packs as nights go on (fewer, meatier groups keep nights ~1–2 minutes)
+  const sizeMul = 1 + n * 0.04;
+  while (budget > 0) {
+    let pick = r() * total;
+    let p = pool[0];
+    for (const q of pool) { pick -= q.w; if (pick <= 0) { p = q; break; } }
+    const size = Math.max(1, Math.round((p.size[0] + r() * (p.size[1] - p.size[0])) * sizeMul));
+    const side: Side = r() < 0.4 ? 'B' : r() < 0.5 ? 'L' : 'R';
+    const flanks = side === 'B' ? 2 : 1;
+    groups.push(g(t, p.kind, side, size, Math.max(0.35, 1.4 - n * 0.02)));
+    budget -= (THREAT[p.kind] ?? 2) * size * flanks;
+    t += 2.5 + r() * 3;
+  }
+  return {
+    title: bossNight ? `Ночь ${n + 1}: ${(n + 1) % 10 === 0 ? 'Палач и Матерь' : 'Охота Матерей'}` : `Ночь ${n + 1}`,
+    hpMul: ENDLESS.hp(n),
+    hint: bossNight
+      ? ((n + 1) % 10 === 0 ? 'Имаго-Палач и Матерь идут вместе.' : 'Имаго-Матерь ведёт рой.')
+      : LORE_HINTS[n % LORE_HINTS.length],
+    groups,
+  };
+}
+
+/** Night definition for any index: hand-made campaign first, then generated. */
+export function nightDef(n: number): NightDef {
+  if (n < NIGHTS.length) return { ...NIGHTS[n], hpMul: ENDLESS.hp(n) };
+  return generateNight(n);
+}
