@@ -38,6 +38,7 @@ const titleInfo = () => hud.renderTitle(`${PATHS[Math.min(save.path, save.pathUn
 const hud: Hud = new Hud(uiRoot, () => game, {
   onStart() {
     game = newGame();
+    renderer.resetCamera(game.state.tree.radius);
     started = true;
     endShown = false;
     audio.start();
@@ -47,6 +48,7 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     hud.hideEnd();
     hud.closeMenu();
     game = newGame();
+    renderer.resetCamera(game.state.tree.radius);
     endShown = false;
   },
   onOpenMeta() {
@@ -69,10 +71,17 @@ titleInfo();
 
 // ───────────────────────────── layout ──────────────────────────────
 
+let cssW = 1280;
+let cssH = 720;
 function fit() {
-  const s = Math.min(window.innerWidth / WORLD.width, window.innerHeight / WORLD.height);
-  scale = s >= 2 ? Math.floor(s) : s >= 1 ? Math.max(1, Math.floor(s * 2) / 2) : s;
+  cssW = Math.floor(Math.min(window.innerWidth, (window.innerHeight * 16) / 9));
+  cssH = Math.floor((cssW * 9) / 16);
+  scale = cssW / 640;
   document.documentElement.style.setProperty('--s', String(scale));
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  ctx.imageSmoothingEnabled = false;
   hud.setScale(scale);
 }
 window.addEventListener('resize', fit);
@@ -110,7 +119,7 @@ const ABILITY_KEYS: Record<string, AbilityId> = Object.fromEntries(
   (Object.keys(ABILITIES) as AbilityId[]).map((id) => [ABILITIES[id].key, id]),
 );
 // Cyrillic layout aliases for letter hotkeys
-const ALIAS: Record<string, string> = { г: 'u', ы: 's', й: 'q', у: 'e', к: 'r', е: 't', а: 'f', ь: 'm', ф: 'a', в: 'd' };
+const ALIAS: Record<string, string> = { г: 'u', ы: 's', й: 'q', у: 'e', к: 'r', е: 't', а: 'f', ь: 'm', ф: 'a', в: 'd', и: 'b' };
 
 window.addEventListener('keydown', (e) => {
   if (metaOpen) return;
@@ -137,7 +146,7 @@ window.addEventListener('keydown', (e) => {
   if (k === ' ') { e.preventDefault(); game.callNight(); }
   if (k === 'f') { speed = speed === 1 ? 2 : 1; hud.setSpeed(speed); }
   if (k === 'm') hud.setSound(audio.toggle());
-  if (k === 'r') hud.togglePanel('keeper');
+  if (k === 'r' || k === 'b') hud.togglePanel('keeper');
   if (k === 't') hud.togglePanel('tree');
 });
 window.addEventListener('keyup', (e) => {
@@ -149,8 +158,9 @@ window.addEventListener('blur', () => { held.clear(); updateMove(); });
 
 function toWorld(ev: MouseEvent): [number, number] {
   const r = canvas.getBoundingClientRect();
-  return [((ev.clientX - r.left) / r.width) * WORLD.width, ((ev.clientY - r.top) / r.height) * WORLD.height];
+  return renderer.camera.toWorld(ev.clientX - r.left, ev.clientY - r.top, r.width, r.height);
 }
+hud.setProjector((x, y) => renderer.camera.toScreen(x, y, cssW, cssH));
 
 function pick(mx: number, my: number): MenuTarget | null {
   const s = game.state;

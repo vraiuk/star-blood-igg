@@ -1,0 +1,41 @@
+import { WORLD } from '../data/balance';
+
+/** Smallest view (start of a run) and the aspect ratio of the screen. */
+const MIN_W = 640;
+const ASPECT = 9 / 16;
+/** Ground line sits at this fraction of the view height. */
+const GROUND_AT = 0.66;
+
+/**
+ * Side-view camera. It frames the Igg-Tree's Circle of light: as the tree grows
+ * the view widens from 640×360 to the whole 960×540 world.
+ */
+export class Camera {
+  x = 0;
+  y = 0;
+  w = MIN_W;
+  h = MIN_W * ASPECT;
+
+  /** Target width for a given light radius. */
+  static widthFor(radius: number) {
+    return Math.max(MIN_W, Math.min(WORLD.width, radius * 2 + 300));
+  }
+
+  update(radius: number, dt: number, snap = false) {
+    const tw = Camera.widthFor(radius);
+    this.w = snap ? tw : this.w + (tw - this.w) * Math.min(1, dt * 1.6);
+    this.h = this.w * ASPECT;
+    this.x = Math.max(0, Math.min(WORLD.width - this.w, WORLD.treeX - this.w / 2));
+    this.y = Math.max(0, Math.min(WORLD.height - this.h, WORLD.groundY - this.h * GROUND_AT));
+  }
+
+  /** Screen (CSS px within the stage) → world. */
+  toWorld(sx: number, sy: number, screenW: number, screenH: number): [number, number] {
+    return [this.x + (sx / screenW) * this.w, this.y + (sy / screenH) * this.h];
+  }
+
+  /** World → screen (CSS px within the stage). */
+  toScreen(wx: number, wy: number, screenW: number, screenH: number): [number, number] {
+    return [((wx - this.x) / this.w) * screenW, ((wy - this.y) / this.h) * screenH];
+  }
+}

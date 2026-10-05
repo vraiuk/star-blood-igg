@@ -1,16 +1,26 @@
 import {
-  ABILITIES, ABILITY_STAGE_SCALING, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, MOTHER_SPAWN, RESTUN_FACTOR, SLOTS,
-  WORLD, WORM_LIGHT_MULT,
+  ABILITIES, ABILITY_STAGE_SCALING, ARMOR_FLOOR, BROOD, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
+  ROOT_SLOT_REACH, SLOT_MARGIN, SLOTS, WORLD, WORM_LIGHT_MULT,
   type AbilityId, type EnemyKind, type SlotDef,
 } from '../data/balance';
 import { PATHS } from '../data/meta';
 import { type ModPatch, type Mods, combine } from '../data/mods';
 import { NESTS, SELL_REFUND, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import { NIGHTS, type NightDef } from '../data/nights';
-import { RUNES, maxRankForNight, type RuneDef } from '../data/runes';
+import {
+  BASE_SLOTS, BOONS, MAX_SLOTS, PROPERTIES, boonById, maxRankForNight, propertyById,
+  type KeeperRuneId, type PropertyDef,
+} from '../data/runes';
 import { TREE, TREE_BRANCHES, TREE_STAGES } from '../data/tree';
 import { mulberry32 } from './rng';
 import type { Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Structure } from './types';
+
+/** Group sizes grow by this share per night (later nights are crowded). */
+export const NIGHT_COUNT_GROWTH = 0.15;
+/** Seconds after the last spawn before dawn burns remaining creatures. */
+export const NIGHT_GRACE = 60;
+/** Enemy damage grows by this share per night. */
+export const NIGHT_DAMAGE_GROWTH = 0.18;
 
 /** Fixed simulation step in seconds. */
 export const STEP = 1 / 60;
@@ -55,11 +65,13 @@ export class Game {
     const st0 = TREE_STAGES[0];
     this.state = {
       phase: 'day', night: 0, phaseTime: 0, dayLeft: DAY.firstLength,
-      amber: ECONOMY.startAmber + this.mods.startAmber, star: this.mods.startStar,
+      amber: ECONOMY.startAmber + this.mods.startAmber, star: this.mods.startStar, devRunes: 0,
       enemies: [], structures: [], projectiles: [], drops: [], tempLights: [], burns: [],
       keeper: {
         x: WORLD.treeX - 28, dir: 1, hp: KEEPER.hp, alive: true, respawn: 0, light: KEEPER.startLight, move: 0,
-        cooldowns: { spear: 0, roots: 0, hammer: 0, starfall: 0 }, charge: 0, rank: 0, runes: [],
+        cooldowns: { spear: 0, hammer: 0, starfall: 0 }, charge: 0, rank: 0,
+        props: { spear: [], hammer: [], starfall: [], light: [] },
+        slots: { spear: BASE_SLOTS, hammer: BASE_SLOTS, starfall: BASE_SLOTS, light: BASE_SLOTS }, boons: [],
         castAnim: 9, hitFlash: 0, walkT: 0, rhythm: 0, rhythmT: 0, freeCast: 0, lastLightCd: 0,
       },
       tree: {
@@ -83,8 +95,16 @@ export class Game {
   treeRadius() { return this.stageDef.radius * (1 + this.mods.lightRadius); }
   keeperMaxHp() { return KEEPER_RANKS[this.state.keeper.rank].hp + this.mods.keeperHp; }
   maxLight() { return KEEPER_RANKS[this.state.keeper.rank].maxLight + this.mods.lightMax; }
-  runeSlots() { return KEEPER_RANKS[this.state.keeper.rank].runeSlots; }
-  keeperRunes(): RuneDef[] { return this.state.keeper.runes.map((id) => RUNES.find((r) => r.id === id)!).filter(Boolean); }
+  /** Installed properties of a keeper rune. */
+  runeProps(rune: KeeperRuneId): PropertyDef[] {
+    return this.state.keeper.props[rune].map((id) => propertyById(id)!).filter(Boolean);
+  }
+  freeSlots(rune: KeeperRuneId) { return this.state.keeper.slots[rune] - this.state.keeper.props[rune].length; }
+  /** Can this property be installed (slot free, stack limit)? */
+  canInstall(p: PropertyDef): boolean {
+    const k = this.state.keeper;
+    return this.freeSlots(p.rune) > 0 && k.props[p.rune].filter((x) => x === p.id).length < p.stack;
+  }
 
   /** Rebuild aggregated mods from meta, tree branches and runes. */
   private recalc() {
@@ -93,7 +113,9 @@ export class Game {
     for (const id of s.tree.branches) {
       for (const pair of Object.values(TREE_BRANCHES)) for (const b of pair) if (b.id === id) patches.push(b.mods);
     }
-    for (const r of this.keeperRunes()) patches.push(r.mods);
+    const k = s.keeper;
+    for (const rune of Object.keys(k.props) as KeeperRuneId[]) for (const p of this.runeProps(rune)) patches.push(p.mods);
+    for (const id of k.boons) { const b = boonById(id); if (b) patches.push(b.mods); }
     this.mods = combine(patches);
   }
 
@@ -135,13 +157,23 @@ export class Game {
   canPay(p: Price) { return this.state.amber >= p.amber && this.state.star >= p.star; }
 
   abilityCost(id: AbilityId) {
-    return Math.round(ABILITIES[id].cost * Math.max(0.3, 1 + this.mods.abilityCost));
+    const own = id === 'spear' ? this.mods.spearCost : id === 'hammer' ? this.mods.hammerCost : 0;
+    return Math.round(ABILITIES[id].cost * Math.max(0.3, 1 + this.mods.abilityCost + own));
   }
 
   abilityUnlocked(id: AbilityId) { return this.state.tree.stage + 1 >= ABILITIES[id].unlockStage; }
 
-  abilityMult() {
-    return 1 + ABILITY_STAGE_SCALING * this.state.tree.stage + this.mods.abilityDamage;
+  /** Damage multiplier of an ability: tree stage, keeper rank, generic and rune-specific bonuses. */
+  abilityMult(id: AbilityId = 'spear') {
+    const own = id === 'spear' ? this.mods.spearDamage : id === 'hammer' ? this.mods.hammerDamage : this.mods.starfallDamage;
+    return (1 + ABILITY_STAGE_SCALING * this.state.tree.stage + this.mods.abilityDamage + own) * KEEPER_RANKS[this.state.keeper.rank].power;
+  }
+
+  /** Keeper Light regen factor by distance from the trunk: ×1.8 at the trunk → ×0.3 at the Circle edge. */
+  lightRegenFactor(x = this.state.keeper.x): number {
+    const d = Math.abs(x - WORLD.treeX) / Math.max(1, this.state.tree.radius);
+    const near = KEEPER.regenNear * (1 + this.mods.nearRegen * Math.max(0, 1 - d * 2));
+    return Math.max(KEEPER.regenFar, near - (near - KEEPER.regenFar) * Math.min(1, d));
   }
 
   /** Is a point lit? Surface uses the tree radius, dragonflies and temporary lights. */
@@ -165,7 +197,10 @@ export class Game {
     return false;
   }
 
-  slotUnlocked(slot: SlotDef): boolean { return this.state.tree.stage + 1 >= slot.unlockStage; }
+  slotUnlocked(slot: SlotDef): boolean {
+    const r = this.treeRadius();
+    return slot.underground ? slot.offset <= r * ROOT_SLOT_REACH : slot.offset <= r - SLOT_MARGIN;
+  }
   structureAt(slotId: string): Structure | undefined { return this.state.structures.find((s) => s.slotId === slotId); }
 
   /** Amber still needed for the next stage (0 at max stage). */
@@ -182,8 +217,8 @@ export class Game {
     const s = this.state;
     if (s.phase !== 'won') return 0;
     let n = 1;
-    if (s.tree.stage >= 3) n++;
-    if (s.tree.stage >= 4 && s.tree.hp > this.treeMaxHp() * 0.5) n++;
+    if (s.tree.stage >= 4) n++;
+    if (s.tree.stage >= 5 && s.tree.hp > this.treeMaxHp() * 0.5) n++;
     return n;
   }
 
@@ -302,20 +337,52 @@ export class Game {
       if (!b) return false;
       s.tree.branches.push(b.id);
     } else {
-      const r = RUNES.find((x) => x.id === c.offers[index]);
-      if (!r) return false;
-      const oneShot = r.kind === 'gift' && (r.amber || r.star);
-      if (oneShot) {
-        s.amber += r.amber ?? 0;
-        s.star += r.star ?? 0;
+      const id = c.offers[index];
+      if (!id) return false;
+      const prop = propertyById(id);
+      if (prop) {
+        if (this.canInstall(prop)) s.keeper.props[prop.rune].push(prop.id);
+        else s.star += prop.price; // no room: the Observer refunds its value
       } else {
-        s.keeper.runes.push(r.id);
+        const b = boonById(id);
+        if (!b) return false;
+        if (b.kind === 'gift' && (b.amber || b.star || b.devRune)) {
+          s.amber += b.amber ?? 0;
+          s.star += b.star ?? 0;
+          s.devRunes += b.devRune ?? 0;
+        } else {
+          s.keeper.boons.push(b.id);
+        }
       }
-      this.emit({ type: 'rune', id: r.id });
+      this.emit({ type: 'rune', id });
     }
     s.choices.shift();
     this.recalc();
     this.refreshNestHp();
+    return true;
+  }
+
+  /** The Observer's treasury: buy a Property for Star Blood and install it into a rune slot. */
+  buyProperty(id: string): boolean {
+    const p = propertyById(id);
+    if (!p || this.over) return false;
+    if (!this.canInstall(p)) return this.deny(this.freeSlots(p.rune) <= 0 ? 'Нет свободных слотов в руне' : 'Больше этого Свойства не вставить');
+    if (this.state.star < p.price) return this.deny('Нужна Звёздная Кровь — её роняют Черви');
+    this.state.star -= p.price;
+    this.state.keeper.props[p.rune].push(p.id);
+    this.recalc();
+    this.emit({ type: 'rune', id: p.id });
+    return true;
+  }
+
+  /** Apply a Lesser Rune of Development: opens the 4th slot of a keeper rune. */
+  developRune(rune: KeeperRuneId): boolean {
+    const k = this.state.keeper;
+    if (this.state.devRunes <= 0) return this.deny('Нет Малой Руны Развития');
+    if (k.slots[rune] >= MAX_SLOTS) return this.deny('Руна уже развита');
+    this.state.devRunes--;
+    k.slots[rune]++;
+    this.emit({ type: 'rankUp', rank: k.rank });
     return true;
   }
 
@@ -345,13 +412,13 @@ export class Game {
         k.light -= cost;
       }
     }
-    k.cooldowns[id] = def.cooldown;
+    k.cooldowns[id] = def.cooldown * (id === 'hammer' && this.mods.hammerCost < 0 ? 0.75 : 1);
     k.castAnim = 0;
     const mult = this.abilityMult();
-    if (id === 'spear') this.castSpear(tx, mult);
-    else if (id === 'roots') this.castRoots(tx, mult);
-    else if (id === 'hammer') this.castHammer(mult);
-    else this.castStarfall(tx, mult);
+    if (id === 'spear') this.castSpear(tx, this.abilityMult('spear'));
+    else if (id === 'hammer') this.castHammer(this.abilityMult('hammer'));
+    else this.castStarfall(tx, this.abilityMult('starfall'));
+    void mult;
     this.emit({ type: 'cast', ability: id, x: k.x, tx });
     return true;
   }
@@ -369,56 +436,26 @@ export class Game {
     });
   }
 
-  private castRoots(tx: number, mult: number) {
-    const s = this.state;
-    const def = ABILITIES.roots;
-    const x = Math.max(8, Math.min(WORLD.width - 8, tx));
-    let caught = 0;
-    for (const e of s.enemies) {
-      if (e.dead || Math.abs(e.x - x) > def.halfWidth + ENEMIES[e.kind].radius) continue;
-      this.rootEnemy(e, mult);
-      caught++;
-    }
-    if (this.mods.rootsSpread) {
-      const next = s.enemies
-        .filter((e) => !e.dead && e.rooted <= 0 && !ENEMIES[e.kind].underground && Math.abs(e.x - x) < 90)
-        .sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0];
-      if (next) { this.rootEnemy(next, mult); this.emit({ type: 'cast', ability: 'roots', x: s.keeper.x, tx: next.x }); }
-    }
-    if (this.mods.rootsSower && caught > 0) {
-      for (const st of s.structures) if (Math.abs(st.x - x) < 60) st.haste = 5;
-    }
-  }
-
-  private rootEnemy(e: Enemy, mult: number) {
-    const def = ABILITIES.roots;
-    const ed = ENEMIES[e.kind];
-    if (ed.underground) {
-      this.damageEnemy(e, def.wormDamage * mult, false);
-      return;
-    }
-    const brittle = this.mods.rootsBrittle && e.stun > 0 ? 2 : 1;
-    this.damageEnemy(e, def.damage * mult * brittle);
-    e.rooted = Math.max(e.rooted, def.root * ed.ccMult);
-  }
-
   private castHammer(mult: number) {
     const s = this.state;
     const k = s.keeper;
     const def = ABILITIES.hammer;
     let hits = 0;
     for (const e of s.enemies) {
-      if (e.dead || ENEMIES[e.kind].underground) continue;
+      const radius = def.radius * (1 + this.mods.hammerRadius);
+      const under = ENEMIES[e.kind].underground;
+      if (e.dead || (under && !this.mods.hammerQuake)) continue;
       const d = e.x - k.x;
-      if (Math.abs(d) > def.radius) continue;
+      if (Math.abs(d) > radius) continue;
       hits++;
+      if (under) { this.damageEnemy(e, def.damage * mult); this.stunEnemy(e, def.stun); continue; }
       this.damageEnemy(e, def.damage * mult);
       this.stunEnemy(e, def.stun);
       if (e.kind !== 'mother') e.kick = Math.sign(d || -e.dir) * def.knockback * 3;
     }
-    if (this.mods.hammerRefund) k.light = Math.min(this.maxLight(), k.light + Math.min(20, hits * 4));
+    if (this.mods.hammerRefund) k.light = Math.min(this.maxLight(), k.light + Math.min(30, hits * 5));
     s.tempLights.push({ x: k.x, radius: def.lightRadius, life: def.lightTime, maxLife: def.lightTime });
-    if (this.mods.hammerEclipse) s.tempLights.push({ x: k.x, radius: def.radius, life: 4, maxLife: 4, slow: 0.3 });
+    if (this.mods.hammerEclipse) s.tempLights.push({ x: k.x, radius: def.radius, life: 5, maxLife: 5, slow: 0.35 });
   }
 
   /** Stun with boss resistance and diminishing returns. */
@@ -434,8 +471,9 @@ export class Game {
     const s = this.state;
     const def = ABILITIES.starfall;
     s.keeper.charge = 0;
-    for (let i = 0; i < def.meteors; i++) {
-      const x = tx + (i - (def.meteors - 1) / 2) * ((def.spread * 2) / (def.meteors - 1)) + (this.rand() - 0.5) * 10;
+    const n = def.meteors + this.mods.starfallMeteors;
+    for (let i = 0; i < n; i++) {
+      const x = tx + (i - (n - 1) / 2) * ((def.spread * 2) / (n - 1)) + (this.rand() - 0.5) * 10;
       const delay = i * 0.12;
       const fall = 0.7 + delay;
       s.projectiles.push({
@@ -482,6 +520,12 @@ export class Game {
         return;
       }
     }
+    if (s.phase === 'night' && s.pending.length === 0 && s.enemies.length > 0 && s.phaseTime > this.nightDeadline) {
+      // dawn burns the stragglers away (no rewards)
+      for (const e of s.enemies) { e.dead = true; this.emit({ type: 'enemyDied', kind: e.kind, x: e.x, y: e.y }); }
+      s.enemies = [];
+      this.emit({ type: 'denied', reason: 'Рассвет выжег тварей во тьме' });
+    }
     if (s.phase === 'night' && s.pending.length === 0 && s.enemies.length === 0) this.endNight();
   }
 
@@ -490,7 +534,8 @@ export class Game {
   private updateDay(dt: number) {
     const s = this.state;
     if (s.choices.length === 0) s.dayLeft -= dt;
-    s.tree.hp = Math.min(this.treeMaxHp(), s.tree.hp + (TREE.dayRegen + this.mods.treeRegen) * dt);
+    const tear = s.tree.stage + 1 >= TREE.tearStage ? 2 : 1;
+    s.tree.hp = Math.min(this.treeMaxHp(), s.tree.hp + (TREE.dayRegen * tear + this.mods.treeRegen) * dt);
     if (s.dayLeft <= 0) this.startNight();
   }
 
@@ -505,14 +550,18 @@ export class Game {
     for (const g of def.groups) {
       const sides: Array<'L' | 'R'> = g.side === 'B' ? ['L', 'R'] : [g.side];
       for (const side of sides) {
-        for (let i = 0; i < g.count; i++) {
-          const stagger = g.side === 'B' && side === 'R' ? g.every * 0.5 : 0;
-          pending.push({ at: g.at + i * g.every + stagger, kind: g.kind, side });
+        const boss = ENEMIES[g.kind].boss;
+        const count = boss ? g.count : Math.round(g.count * (1 + NIGHT_COUNT_GROWTH * s.night));
+        const every = boss ? g.every : g.every / (1 + NIGHT_COUNT_GROWTH * s.night * 0.5);
+        for (let i = 0; i < count; i++) {
+          const stagger = g.side === 'B' && side === 'R' ? every * 0.5 : 0;
+          pending.push({ at: g.at + i * every + stagger, kind: g.kind, side });
         }
       }
     }
     pending.sort((a, b) => a.at - b.at);
     s.pending = pending;
+    this.nightDeadline = (pending[pending.length - 1]?.at ?? 0) + NIGHT_GRACE;
     this.emit({ type: 'nightStart', night: s.night });
   }
 
@@ -546,25 +595,28 @@ export class Game {
     this.offerDawn(false);
   }
 
-  /** The Observer offers 1 of 3 runes/gifts. */
+  /** The Observer's roulette: 1 of 3 — free Properties, creature runes or gifts. */
   private offerDawn(start: boolean) {
     const s = this.state;
     const maxRank = start ? 1 : maxRankForNight(s.night - 1);
-    const owned = new Set(s.keeper.runes);
-    const keeperFull = this.keeperRunes().filter((r) => r.kind === 'rune').length >= this.runeSlots();
-    const pool = RUNES.filter((r) => r.rank <= maxRank && !owned.has(r.id) && !(keeperFull && r.kind === 'rune'));
+    type Cand = { id: string; rank: number; gift: boolean };
+    const cands: Cand[] = [
+      ...PROPERTIES.filter((p) => p.rank <= maxRank && this.canInstall(p) && this.abilityUnlocked(p.rune === 'light' ? 'spear' : p.rune))
+        .map((p) => ({ id: p.id, rank: p.rank, gift: false })),
+      ...BOONS.filter((b) => b.rank <= maxRank && !(b.kind === 'creature' && s.keeper.boons.includes(b.id)))
+        .map((b) => ({ id: b.id, rank: b.rank, gift: b.kind === 'gift' })),
+    ];
     const offers: string[] = [];
-    const weight = (r: RuneDef) => [6, 4, 2.5, 1.5][r.rank] * (r.kind === 'gift' ? 0.7 : 1);
-    const isGift = (id: string) => RUNES.find((x) => x.id === id)!.kind === 'gift';
-    for (let n = 0; n < 3 && pool.length; n++) {
-      const cand = pool.filter((r) => !(r.kind === 'gift' && offers.some(isGift)));
-      if (!cand.length) break;
-      const total = cand.reduce((a, r) => a + weight(r), 0);
+    const weight = (c: Cand) => [6, 4.5, 3, 2, 1.2][c.rank] * (c.gift ? 0.7 : 1);
+    for (let n = 0; n < 3 && cands.length; n++) {
+      const pool = cands.filter((c) => !(c.gift && offers.some((o) => boonById(o)?.kind === 'gift')));
+      if (!pool.length) break;
+      const total = pool.reduce((a, c) => a + weight(c), 0);
       let pick = this.rand() * total;
-      let chosen = cand[0];
-      for (const r of cand) { pick -= weight(r); if (pick <= 0) { chosen = r; break; } }
+      let chosen = pool[0];
+      for (const c of pool) { pick -= weight(c); if (pick <= 0) { chosen = c; break; } }
       offers.push(chosen.id);
-      pool.splice(pool.indexOf(chosen), 1);
+      cands.splice(cands.indexOf(chosen), 1);
     }
     if (offers.length) s.choices.push({ kind: 'dawn', offers });
   }
@@ -588,9 +640,9 @@ export class Game {
     const e: Enemy = {
       id: s.nextId++, kind, x, y: def.underground ? WORLD.wormLaneY : WORLD.groundY, dir,
       hp, maxHp: hp, speedMul: 0.92 + this.rand() * 0.16, attackCd: 0.3 + this.rand() * 0.4,
-      stun: 0, sinceStun: 99, rooted: 0, slow: 0, poison: 0, poisonTime: 0, marked: 0, burn: 0,
+      stun: 0, sinceStun: 99, rooted: 0, slow: 0, poison: 0, poisonTime: 0, marked: 0, burn: 0, vuln: 0,
       attacking: false, lit: false, age: this.rand() * 3, hitFlash: 0,
-      broodCd: MOTHER_SPAWN.every * 0.6, kick: 0, dead: false,
+      broodCd: (BROOD[kind]?.every ?? 5) * 0.6, kick: 0, dead: false,
     };
     s.enemies.push(e);
     return e;
@@ -609,7 +661,7 @@ export class Game {
     k.lastLightCd = Math.max(0, k.lastLightCd - dt);
     for (const id of Object.keys(k.cooldowns) as AbilityId[]) k.cooldowns[id] = Math.max(0, k.cooldowns[id] - dt);
     const maxL = this.maxLight();
-    k.light = Math.min(maxL, k.light + this.stageDef.lightRegen * (1 + this.mods.lightRegen) * dt);
+    k.light = Math.min(maxL, k.light + this.stageDef.lightRegen * (1 + this.mods.lightRegen) * this.lightRegenFactor() * dt);
     if (this.mods.lastLight && k.light < 20 && k.lastLightCd <= 0 && s.phase === 'night') {
       k.freeCast = 3;
       k.lastLightCd = 45;
@@ -658,7 +710,8 @@ export class Game {
     const def = ENEMIES[e.kind];
     const worm = lightMult && def.worm && this.isLit(e.x, def.underground);
     const mark = fromNest && e.marked > 0 ? 1.25 : 1;
-    const dmg = amount * (worm ? WORM_LIGHT_MULT : 1) * mark;
+    const raw = amount * (worm ? WORM_LIGHT_MULT : 1) * mark * (1 + e.vuln);
+    const dmg = Math.max(raw * ARMOR_FLOOR, raw - def.armor);
     e.hp -= dmg;
     e.hitFlash = 0.12;
     this.emit({ type: 'hit', x: e.x, y: def.underground ? e.y : e.y - def.height * 0.6, amount: dmg, crit: worm });
@@ -680,8 +733,11 @@ export class Game {
     let star = 0;
     if (def.star >= 1) star = def.star + this.mods.wormStar;
     else if (def.star > 0 && this.rand() < def.star) star = 1;
-    if (this.mods.rootsHarvest && e.rooted > 0) star += 1;
     star = Math.round(star * (1 + this.mods.starGain));
+    if (def.devRune > 0 && this.rand() < def.devRune) {
+      s.devRunes++;
+      this.emit({ type: 'devRune', x: e.x });
+    }
     this.dropLoot('amber', amber, e);
     this.dropLoot('star', star, e);
   }
@@ -720,14 +776,16 @@ export class Game {
       e.lit = this.isLit(e.x, def.underground);
       e.attacking = false;
       e.slow = this.slowAt(e);
+      e.vuln = this.vulnAt(e);
       e.attackCd -= dt;
+      if (def.worm && e.lit) {
+        // Igg-light burns worms: «личинка сгорает за одну-две секунды»
+        e.hp -= this.stageDef.wormBurn * (1 + this.mods.wormBurn) * (def.boss ? 0.5 : 1) * dt;
+        if (e.hp <= 0) { this.killEnemy(e); continue; }
+      }
       if (e.poisonTime > 0) {
         e.poisonTime -= dt;
         this.damageQuiet(e, e.poison * dt);
-        if (e.dead) continue;
-      }
-      if (e.rooted > 0 && !def.underground) {
-        this.damageQuiet(e, ABILITIES.roots.rootDps * this.abilityMult() * dt);
         if (e.dead) continue;
       }
       for (const b of s.burns) {
@@ -742,12 +800,13 @@ export class Game {
       }
       if (e.stun > 0) { e.stun -= dt; e.sinceStun = 0; continue; }
 
-      if (e.kind === 'mother') {
+      const brood = BROOD[e.kind];
+      if (brood) {
         e.broodCd -= dt;
         if (e.broodCd <= 0) {
-          e.broodCd = MOTHER_SPAWN.every;
-          for (let i = 0; i < MOTHER_SPAWN.count; i++) {
-            const l = this.spawnEnemy('larva', e.x + (this.rand() - 0.5) * 30, e.dir);
+          e.broodCd = brood.every;
+          for (let i = 0; i < brood.count; i++) {
+            const l = this.spawnEnemy(brood.kind, e.x + (this.rand() - 0.5) * 30, e.dir);
             l.kick = e.dir * (20 + this.rand() * 60);
           }
           this.emit({ type: 'brood', x: e.x });
@@ -761,10 +820,11 @@ export class Game {
         e.attacking = true;
         if (e.attackCd <= 0) {
           e.attackCd = def.attackRate;
+          const dmg = def.damage * this.enemyDamageMul();
           if (def.range > 0) this.spitAcid(e, target);
-          else if (target.kind === 'structure') this.damageStructure(target.s, def.damage * def.structureMult, e);
-          else if (target.kind === 'keeper') this.damageKeeper(def.damage);
-          else this.damageTree(def.damage, e.kind, e);
+          else if (target.kind === 'structure') this.damageStructure(target.s, dmg * def.structureMult, e);
+          else if (target.kind === 'keeper') this.damageKeeper(dmg);
+          else this.damageTree(dmg, e.kind, e);
         }
         continue;
       }
@@ -775,11 +835,22 @@ export class Game {
 
   private updateWorm(e: Enemy, dt: number) {
     const def = ENEMIES[e.kind];
+    // worms gnaw through spider nests in their way
+    const nest = this.state.structures.find((st) => st.underground && (st.x - e.x) * e.dir >= -def.radius
+      && Math.abs(st.x - e.x) <= def.radius + 6);
+    if (nest) {
+      e.attacking = true;
+      if (e.attackCd <= 0) {
+        e.attackCd = def.attackRate;
+        this.damageStructure(nest, def.damage * def.structureMult * this.enemyDamageMul(), e);
+      }
+      return;
+    }
     if (Math.abs(e.x - WORLD.treeX) <= 22) {
       e.attacking = true;
       if (e.attackCd <= 0) {
         e.attackCd = def.attackRate;
-        this.damageTree(def.damage, e.kind, e);
+        this.damageTree(def.damage * this.enemyDamageMul(), e.kind, e);
       }
       return;
     }
@@ -804,6 +875,21 @@ export class Game {
       if (t.slow && !def.underground && Math.abs(e.x - t.x) <= t.radius) slow = Math.max(slow, t.slow);
     }
     return Math.min(0.7, slow * (e.kind === 'mother' ? 0.5 : 1));
+  }
+
+  /** Enemy damage grows with the night (fatter and meaner). */
+  enemyDamageMul() { return 1 + NIGHT_DAMAGE_GROWTH * this.state.night; }
+
+  /** «Высвечивание»: the strongest dragonfly light covering this enemy. */
+  private vulnAt(e: Enemy): number {
+    if (ENEMIES[e.kind].underground) return 0;
+    let v = 0;
+    for (const st of this.state.structures) {
+      if (st.family !== 'dragonfly') continue;
+      const ns = this.nestStats(st);
+      if (Math.abs(e.x - st.x) <= ns.light!) v = Math.max(v, (ns.vuln ?? 0) + this.mods.vuln);
+    }
+    return v;
   }
 
   private pickTarget(e: Enemy): Target | null {
@@ -847,7 +933,7 @@ export class Game {
     const flight = 0.9;
     s.projectiles.push({
       id: s.nextId++, kind: 'acid', x: sx, y: sy, vx: (tx - sx) / flight,
-      vy: (ty - sy) / flight - 0.5 * 260 * flight, damage: ENEMIES[e.kind].damage,
+      vy: (ty - sy) / flight - 0.5 * 260 * flight, damage: ENEMIES[e.kind].damage * this.enemyDamageMul(),
       targetId: target.kind === 'tree' ? -1 : target.kind === 'structure' ? target.s.id : -2,
       tx, ty, pierce: 0, hit: [], life: flight, age: 0,
     });
@@ -948,6 +1034,14 @@ export class Game {
 
   private tickBeetle(st: Structure, ns: NestStats, dt: number) {
     if (ns.regen && this.isLit(st.x, false)) st.hp = Math.min(st.maxHp, st.hp + ns.regen * dt);
+    if (ns.heal) {
+      // Светожук-Целитель: healing light dome over neighbouring nests
+      for (const o of this.state.structures) {
+        if (o === st || Math.abs(o.x - st.x) > ns.range || o.hp >= o.maxHp) continue;
+        o.hp = Math.min(o.maxHp, o.hp + ns.heal * dt);
+      }
+      st.cd -= 0;
+    }
     if (!ns.knock || st.cd > 0) return;
     const out = st.x < WORLD.treeX ? -1 : 1;
     const hit = this.state.enemies.filter((e) => !e.dead && !ENEMIES[e.kind].underground
@@ -1097,11 +1191,44 @@ export class Game {
         }
       }
     }
+    if (stageNo >= TREE.polariaStage) this.tickPolaria(dt);
     if (stageNo >= TREE.rootBurnStage) {
       for (const e of s.enemies) {
         if (e.dead || !ENEMIES[e.kind].underground) continue;
         if (Math.abs(e.x - WORLD.treeX) <= TREE.rootBurnRange) this.damageQuiet(e, TREE.rootBurnDps * (1 + this.mods.rootBurn) * dt);
       }
+    }
+  }
+
+  private polariaCd: number[] = [];
+  private nightDeadline = Infinity;
+
+  /** Polaria drone positions (golden jellyfish drifting around the crown). */
+  polariaPositions(): Array<[number, number]> {
+    const n = TREE.polariaCount + this.mods.polaria;
+    const t = this.state.time;
+    const out: Array<[number, number]> = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + t * 0.35;
+      out.push([WORLD.treeX + Math.cos(a) * (70 + (i % 2) * 40), WORLD.groundY - 120 + Math.sin(a * 1.3) * 26]);
+    }
+    return out;
+  }
+
+  private tickPolaria(dt: number) {
+    const s = this.state;
+    const pos = this.polariaPositions();
+    for (let i = 0; i < pos.length; i++) {
+      this.polariaCd[i] = (this.polariaCd[i] ?? this.rand()) - dt;
+      if (this.polariaCd[i] > 0) continue;
+      const [px, py] = pos[i];
+      const t = s.enemies
+        .filter((e) => !e.dead && !ENEMIES[e.kind].underground && e.lit && Math.abs(e.x - px) <= TREE.polariaRange)
+        .sort((a, b) => Math.abs(a.x - px) - Math.abs(b.x - px))[0];
+      if (!t) continue;
+      this.polariaCd[i] = TREE.polariaRate;
+      this.damageEnemy(t, TREE.polariaDamage * this.stageDef.power, true, true);
+      this.emit({ type: 'polaria', x: px, y: py, tx: t.x, ty: t.y - ENEMIES[t.kind].height * 0.5 });
     }
   }
 
@@ -1137,7 +1264,7 @@ export class Game {
             if (e.dead || ENEMIES[e.kind].underground || Math.abs(e.x - p.tx) > 22 + ENEMIES[e.kind].radius) continue;
             this.damageEnemy(e, p.damage);
           }
-          s.burns.push({ x: p.tx, halfWidth: 16, dps: def.burnDps * this.abilityMult(), life: def.burnTime });
+          s.burns.push({ x: p.tx, halfWidth: 16, dps: def.burnDps * this.abilityMult('starfall') * (1 + this.mods.starfallBurn), life: def.burnTime });
           this.emit({ type: 'meteor', x: p.tx });
         }
         continue;
@@ -1170,7 +1297,7 @@ export class Game {
           if (next) {
             const dir = Math.sign(next.x - p.x) || 1;
             spawned.push({
-              ...p, id: s.nextId++, vx: dir * def.speed, damage: p.damage * 0.5, pierce: 1, hit: [...p.hit],
+              ...p, id: s.nextId++, vx: dir * def.speed, damage: p.damage * 0.6, pierce: 1, hit: [...p.hit],
               life: 0.5, age: 0, bounced: true,
             });
           }

@@ -2,14 +2,17 @@ import { ENEMIES, SLOTS, WORLD } from '../data/balance';
 import type { Game } from '../sim/game';
 import type { GameEvent } from '../sim/types';
 import { type Backdrop, buildBackdrop } from './background';
+import { Camera } from './camera';
 import { Lighting } from './lighting';
 import { Particles } from './particles';
-import { type Ctx, PAL, rect } from './pixel';
+import { type Ctx, PAL, makeCanvas, rect } from './pixel';
 import {
   ROOT_SLOT_Y, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawProjectile, drawSlotMarker,
   drawStructure,
 } from './sprites';
 import { drawGrass, drawRoots, drawTree } from './tree';
+import { TREE } from '../data/tree';
+import { disc } from './pixel';
 
 export interface ViewState {
   /** slot id under the mouse (or selected) */
@@ -25,18 +28,28 @@ export interface ViewState {
   aiming: import('../data/balance').AbilityId | null;
 }
 
-/** Draws the world into the 640×360 canvas. */
+/**
+ * Draws the world into a world-sized offscreen canvas (1 px = 1 art pixel), then
+ * blits the camera view onto the screen canvas with nearest-neighbour scaling.
+ */
 export class Renderer {
   readonly particles = new Particles();
+  readonly camera = new Camera();
+  private worldCv: HTMLCanvasElement;
+  private c: Ctx;
   private bg: Backdrop;
   private lighting = new Lighting();
   private shake = 0;
   private treeHurt = 0;
   private growPulse = 0;
 
-  constructor(private c: Ctx) {
+  constructor(private screen: Ctx) {
     this.bg = buildBackdrop();
+    [this.worldCv, this.c] = makeCanvas(WORLD.width, WORLD.height);
   }
+
+  /** Snap the camera (e.g. on a new run). */
+  resetCamera(radius: number) { this.camera.update(radius, 0, true); }
 
   /** Feed sim events to visual effects. */
   onEvents(events: GameEvent[], game: Game) {
@@ -45,15 +58,17 @@ export class Renderer {
       switch (e.type) {
         case 'hit': p.hit(e.x, e.y, e.crit); break;
         case 'enemyDied': {
-          const big = e.kind === 'mother' || e.kind === 'stalker';
+          const big = !!ENEMIES[e.kind].boss || e.kind === 'stalker' || e.kind === 'guard';
           const y = ENEMIES[e.kind].underground ? e.y : e.y - ENEMIES[e.kind].height * 0.5;
-          p.death(e.x, y, e.kind === 'mother');
-          if (big) this.shake = Math.max(this.shake, e.kind === 'mother' ? 10 : 2);
+          p.death(e.x, y, !!ENEMIES[e.kind].boss);
+          if (big) this.shake = Math.max(this.shake, ENEMIES[e.kind].boss ? 12 : 2);
           break;
         }
         case 'acidSplash': p.acid(e.x, e.y); break;
         case 'structureLost': p.dust(e.x, e.underground ? ROOT_SLOT_Y : WORLD.groundY - 6); this.shake = Math.max(this.shake, 3); break;
         case 'beam': p.addFx('beam', e.x, e.y, 0.25, 0, e.tx, e.ty); break;
+        case 'polaria': p.chain([[e.x, e.y], [e.tx, e.ty]]); break;
+        case 'devRune': p.goldBurst(e.x, WORLD.groundY - 20, 40); p.addFx('ring', e.x, WORLD.groundY - 20, 0.8, 30); break;
         case 'chain': p.chain(e.points); break;
         case 'ram': p.addFx('ram', e.x, WORLD.groundY - 6, 0.35, 0, e.dir); p.dust(e.x + e.dir * 12, WORLD.groundY - 2); this.shake = Math.max(this.shake, 2); break;
         case 'meteor': p.goldBurst(e.x, WORLD.groundY - 4, 24); p.dust(e.x, WORLD.groundY - 2); p.addFx('ring', e.x, WORLD.groundY - 4, 0.35, 24); this.shake = Math.max(this.shake, 4); break;
@@ -72,12 +87,9 @@ export class Renderer {
           break;
         case 'cast':
           if (e.ability === 'hammer') {
-            p.addFx('ring', e.x, WORLD.groundY - 10, 0.45, 84);
+            p.addFx('ring', e.x, WORLD.groundY - 10, 0.45, 92 * (1 + game.mods.hammerRadius));
             p.goldBurst(e.x, WORLD.groundY - 10, 30);
             this.shake = Math.max(this.shake, 3);
-          } else if (e.ability === 'roots') {
-            p.addFx('rootBurst', e.tx, WORLD.groundY, 0.9);
-            p.dust(e.tx, WORLD.groundY - 2);
           } else if (e.ability === 'spear') {
             p.emit(6, e.x, WORLD.groundY - 12, { speed: 40, max: 0.3, glow: true });
           }
@@ -101,15 +113,12 @@ export class Renderer {
     this.particles.ambient(s.tree.radius, dt, s.phase === 'night');
     this.particles.update(dt);
     this.lighting.update(game, time, dt);
+    this.camera.update(s.tree.radius, dt);
 
     c.save();
     c.clearRect(0, 0, WORLD.width, WORLD.height);
     c.fillStyle = PAL.void;
     c.fillRect(0, 0, WORLD.width, WORLD.height);
-    const sx = this.shake > 0 ? Math.round((Math.random() - 0.5) * this.shake) : 0;
-    const sy = this.shake > 0 ? Math.round((Math.random() - 0.5) * this.shake) : 0;
-    c.translate(sx, sy);
-
     // ── backdrop with subtle parallax following the keeper
     const par = (s.keeper.x - WORLD.treeX) / WORLD.treeX;
     c.drawImage(this.bg.sky, 0, 0);
@@ -134,6 +143,12 @@ export class Renderer {
     for (const st of s.structures) if (st.underground) drawStructure(c, st, time);
     for (const e of s.enemies) if (ENEMIES[e.kind].underground) drawEnemy(c, e, time);
     drawTree(c, s.tree.stage, time, this.treeHurt, this.growPulse);
+    if (s.tree.stage + 1 >= TREE.polariaStage) this.drawPolaria(c, game, time);
+    for (const st of s.structures) {
+      if (st.family === 'beetle' && st.spec === 'A' && Math.random() < dt * 4) {
+        this.particles.emit(1, st.x + (Math.random() - 0.5) * 120, WORLD.groundY - 4, { speed: 10, max: 1.2, colors: ['#c8ffb0', PAL.gold4, PAL.gold2], glow: true, gravity: -20, angle: -Math.PI / 2, spread: 0.4 });
+      }
+    }
     if (view.hoverTree && !game.over) this.treeOutline(c, time);
     for (const st of s.structures) if (!st.underground) drawStructure(c, st, time);
     for (const e of s.enemies) if (!ENEMIES[e.kind].underground) drawEnemy(c, e, time);
@@ -158,7 +173,43 @@ export class Renderer {
       if (sl && st) this.drawRange(c, game, st, sl.x, sl.underground);
     }
     c.restore();
-    this.vignette(c, s.phase === 'night');
+    this.blit(s.phase === 'night');
+  }
+
+  /** Copy the camera view to the screen canvas, with shake and a vignette. */
+  private blit(night: boolean) {
+    const sc = this.screen;
+    const W = sc.canvas.width, H = sc.canvas.height;
+    const cam = this.camera;
+    const k = W / cam.w;
+    const sx = this.shake > 0 ? (Math.random() - 0.5) * this.shake * k : 0;
+    const sy = this.shake > 0 ? (Math.random() - 0.5) * this.shake * k : 0;
+    sc.imageSmoothingEnabled = false;
+    sc.fillStyle = PAL.void;
+    sc.fillRect(0, 0, W, H);
+    sc.drawImage(this.worldCv, cam.x, cam.y, cam.w, cam.h, sx, sy, W, H);
+    const a = night ? 0.55 : 0.32;
+    const g = sc.createLinearGradient(0, 0, W, 0);
+    g.addColorStop(0, `rgba(3,3,10,${a})`);
+    g.addColorStop(0.06, 'rgba(3,3,10,0)');
+    g.addColorStop(0.94, 'rgba(3,3,10,0)');
+    g.addColorStop(1, `rgba(3,3,10,${a})`);
+    sc.fillStyle = g;
+    sc.fillRect(0, 0, W, H);
+  }
+
+  /** «Полярии — золотистые медузы» drifting around the young tree. */
+  private drawPolaria(c: Ctx, game: Game, time: number) {
+    for (const [i, [x, y]] of game.polariaPositions().entries()) {
+      const bob = Math.sin(time * 2 + i) * 1.5;
+      disc(c, x, y + bob, 4, PAL.gold1);
+      disc(c, x, y + bob - 1, 3, PAL.gold3);
+      rect(c, x - 1, y + bob - 2, 2, 1, PAL.gold5);
+      for (let k = -2; k <= 2; k += 2) {
+        const sway = Math.round(Math.sin(time * 3 + k + i) * 1);
+        rect(c, x + k + sway, y + bob + 4, 1, 3 + (k === 0 ? 2 : 0), 'rgba(255,214,120,0.7)');
+      }
+    }
   }
 
   /** The void vortex around the eclipse: dark shards spiralling in. */
@@ -223,19 +274,6 @@ export class Renderer {
       for (let y = 20; y < WORLD.groundY; y += 8) rect(c, x - 30 + y * 0.12, y, 1, 3, 'rgba(255,200,120,0.35)');
     } else if (view.aiming === 'hammer') {
       for (let i = -84; i <= 84; i += 4) rect(c, k.x + i, WORLD.groundY + 1, 2, 1, 'rgba(255,230,150,0.7)');
-    } else if (view.aiming === 'roots') {
-      const x = view.mouseX;
-      for (let i = -30; i <= 30; i += 3) rect(c, x + i, WORLD.groundY + 1, 1, 1, 'rgba(255,220,130,0.8)');
-      for (let y = WORLD.groundY + 4; y < WORLD.wormLaneY + 10; y += 4) rect(c, x, y, 1, 2, 'rgba(255,200,90,0.6)');
-    }
-  }
-
-  private vignette(c: Ctx, night: boolean) {
-    const a = night ? 0.5 : 0.3;
-    for (let i = 0; i < 18; i++) {
-      c.fillStyle = `rgba(3,3,10,${(a * (1 - i / 18)) ** 1.5})`;
-      c.fillRect(i, 0, 1, WORLD.height);
-      c.fillRect(WORLD.width - 1 - i, 0, 1, WORLD.height);
     }
   }
 }

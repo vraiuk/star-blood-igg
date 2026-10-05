@@ -1,5 +1,6 @@
 import type { AbilityId, EnemyKind } from '../data/balance';
 import type { Family, SpecId } from '../data/nests';
+import type { KeeperRuneId } from '../data/runes';
 
 export interface Enemy {
   id: number;
@@ -25,6 +26,8 @@ export interface Enemy {
   marked: number;
   /** Starfall ground burn */
   burn: number;
+  /** «Высвечивание»: extra damage taken (from dragonfly light) */
+  vuln: number;
   attacking: boolean;
   lit: boolean;
   /** seconds since spawn — drives animation */
@@ -120,9 +123,14 @@ export interface Keeper {
   cooldowns: Record<AbilityId, number>;
   /** Starfall charge 0..100 */
   charge: number;
-  /** Ascension rank 0..3 */
+  /** Ascension rank 0..4 */
   rank: number;
-  runes: string[];
+  /** installed Observer properties per keeper rune */
+  props: Record<KeeperRuneId, string[]>;
+  /** slot capacity per keeper rune (3, or 4 with a Lesser Rune of Development) */
+  slots: Record<KeeperRuneId, number>;
+  /** creature runes and lasting gifts from the dawn roulette */
+  boons: string[];
   castAnim: number;
   hitFlash: number;
   walkT: number;
@@ -181,6 +189,9 @@ export type GameEvent =
   | { type: 'keeperBack' }
   | { type: 'rankUp'; rank: number }
   | { type: 'rune'; id: string }
+  | { type: 'devRune'; x: number }
+  | { type: 'heal'; x: number }
+  | { type: 'polaria'; x: number; y: number; tx: number; ty: number }
   | { type: 'cast'; ability: AbilityId; x: number; tx: number }
   | { type: 'meteor'; x: number }
   | { type: 'spikeStrike'; x: number; tx: number; web: boolean }
@@ -213,6 +224,8 @@ export interface GameState {
   dayLeft: number;
   amber: number;
   star: number;
+  /** unspent Lesser Runes of Development */
+  devRunes: number;
   enemies: Enemy[];
   structures: Structure[];
   projectiles: Projectile[];

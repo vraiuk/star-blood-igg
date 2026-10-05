@@ -5,7 +5,7 @@ import { BAYER4, makeCanvas } from './pixel';
 import { ROOT_SLOT_Y } from './sprites';
 
 /** Darkness/glow buffers are computed at half resolution, then upscaled pixel-perfect. */
-const CELL = 2;
+const CELL = 3;
 const LW = WORLD.width / CELL;
 const LH = WORLD.height / CELL;
 const GY = WORLD.groundY;

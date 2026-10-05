@@ -33,6 +33,10 @@ export interface NestStats {
   /** poison dps and duration (spider B) */
   poison?: number;
   poisonTime?: number;
+  /** dragonfly «Высвечивание»: enemies in its light take +X damage from all sources */
+  vuln?: number;
+  /** beetle healer: heals nests within `range` by `regen`-scaled amount per second */
+  heal?: number;
 }
 
 export interface Price { amber: number; star: number; }
@@ -62,114 +66,114 @@ const p = (amber: number, star = 0): Price => ({ amber, star });
 
 export const NESTS: Record<Family, FamilyDef> = {
   hive: {
-    name: 'Улей светляков', creature: 'Игг-светляки',
-    desc: 'Светляки жалят тварей в свету Круга', underground: false, blocks: false,
+    name: 'Улей светляков', creature: 'светляки',
+    desc: 'Жалят тварей в свету Круга', underground: false, blocks: false,
     levels: [
-      { hp: 140, damage: 12, rate: 0.9, range: 165 },
-      { hp: 200, damage: 19, rate: 0.8, range: 178 },
-      { hp: 270, damage: 27, rate: 0.72, range: 190 },
+      { hp: 160, damage: 14, rate: 0.9, range: 170 },
+      { hp: 230, damage: 22, rate: 0.8, range: 185 },
+      { hp: 320, damage: 32, rate: 0.72, range: 200 },
     ],
-    costs: [p(30), p(45), p(65)],
+    costs: [p(40), p(65), p(100)],
     specs: {
       A: {
-        name: 'Рой', desc: 'Жалит сразу трёх тварей', perk: '3 цели за залп',
+        name: 'Рой', desc: 'Жалит сразу несколько тварей', perk: '3 цели за залп, против стай',
         levels: [
-          { hp: 320, damage: 26, rate: 0.62, range: 190, volley: 3 },
-          { hp: 380, damage: 34, rate: 0.55, range: 200, volley: 4 },
+          { hp: 380, damage: 30, rate: 0.62, range: 205, volley: 3 },
+          { hp: 460, damage: 42, rate: 0.55, range: 215, volley: 4 },
         ],
-        costs: [p(80, 5), p(0, 10)],
+        costs: [p(160, 8), p(120, 14)],
       },
       B: {
-        name: 'Игг-Луч', desc: 'Сфокусированный луч прошивает строй', perk: 'дальний луч, пробивает 3',
+        name: 'Игг-Луч', desc: 'Сфокусированный луч прошивает строй и броню', perk: 'дальний луч, пробивает 3, против брони',
         levels: [
-          { hp: 300, damage: 90, rate: 1.6, range: 270, pierce: 3 },
-          { hp: 360, damage: 140, rate: 1.45, range: 300, pierce: 4 },
+          { hp: 360, damage: 120, rate: 1.7, range: 290, pierce: 3 },
+          { hp: 430, damage: 190, rate: 1.55, range: 320, pierce: 4 },
         ],
-        costs: [p(80, 5), p(0, 10)],
+        costs: [p(160, 8), p(120, 14)],
       },
     },
   },
   beetle: {
-    name: 'Жук-щитоносец', creature: 'щитоносец',
-    desc: 'Панцирь перекрывает путь тварям', underground: false, blocks: true,
+    name: 'Светожук-щитоносец', creature: 'светожук',
+    desc: 'Перекрывает путь: твари ближнего боя упираются в него и бьют его', underground: false, blocks: true,
     levels: [
-      { hp: 320, damage: 0, rate: 0, range: 0 },
-      { hp: 560, damage: 0, rate: 0, range: 0, thorns: 5 },
-      { hp: 820, damage: 0, rate: 0, range: 0, thorns: 8, regen: 6 },
+      { hp: 420, damage: 0, rate: 0, range: 0, thorns: 6 },
+      { hp: 750, damage: 0, rate: 0, range: 0, thorns: 10 },
+      { hp: 1150, damage: 0, rate: 0, range: 0, thorns: 15, regen: 8 },
     ],
-    costs: [p(20), p(35), p(55)],
+    costs: [p(30), p(55), p(85)],
     specs: {
       A: {
-        name: 'Панцирная стена', desc: 'Почти неразрушим в свету', perk: 'прочность ×1.6, лечение',
+        name: 'Светожук-Целитель', desc: 'Световой купол лечит соседние гнёзда и самого жука', perk: 'лечит гнёзда рядом',
         levels: [
-          { hp: 1300, damage: 0, rate: 0, range: 0, thorns: 14, regen: 14 },
-          { hp: 1800, damage: 0, rate: 0, range: 0, thorns: 22, regen: 22 },
+          { hp: 1700, damage: 0, rate: 0, range: 90, thorns: 18, regen: 18, heal: 10 },
+          { hp: 2300, damage: 0, rate: 0, range: 110, thorns: 24, regen: 28, heal: 18 },
         ],
-        costs: [p(70, 5), p(0, 10)],
+        costs: [p(140, 7), p(110, 12)],
       },
       B: {
-        name: 'Жук-таран', desc: 'Бьёт рогом: отбрасывает и оглушает', perk: 'таран каждые 4 с',
+        name: 'Жук-таран', desc: 'Бьёт рогом: отбрасывает и оглушает', perk: 'таран каждые 3.5 с',
         levels: [
-          { hp: 900, damage: 45, rate: 4, range: 26, thorns: 8, regen: 6, stun: 1.2, knock: 120 },
-          { hp: 1100, damage: 80, rate: 3.2, range: 30, thorns: 10, regen: 8, stun: 1.6, knock: 150 },
+          { hp: 1250, damage: 80, rate: 3.5, range: 28, thorns: 12, regen: 8, stun: 1.3, knock: 130 },
+          { hp: 1550, damage: 140, rate: 2.8, range: 32, thorns: 16, regen: 12, stun: 1.7, knock: 160 },
         ],
-        costs: [p(70, 5), p(0, 10)],
+        costs: [p(140, 7), p(110, 12)],
       },
     },
   },
   dragonfly: {
-    name: 'Стрекозы-светоносицы', creature: 'стрекозы',
-    desc: 'Несут свет за край Круга: замедляют и жгут', underground: false, blocks: false,
+    name: 'Золотые Стрекозы', creature: 'стрекозы',
+    desc: 'Высвечивают тварей: в их свету твари получают больше урона от всего', underground: false, blocks: false,
     levels: [
-      { hp: 120, damage: 0, rate: 0, range: 0, light: 62, slow: 0.3, burn: 4 },
-      { hp: 170, damage: 0, rate: 0, range: 0, light: 76, slow: 0.35, burn: 7 },
-      { hp: 230, damage: 0, rate: 0, range: 0, light: 90, slow: 0.4, burn: 10 },
+      { hp: 140, damage: 0, rate: 0, range: 0, light: 64, slow: 0.25, burn: 5, vuln: 0.3 },
+      { hp: 200, damage: 0, rate: 0, range: 0, light: 78, slow: 0.3, burn: 8, vuln: 0.4 },
+      { hp: 270, damage: 0, rate: 0, range: 0, light: 92, slow: 0.35, burn: 12, vuln: 0.5 },
     ],
-    costs: [p(40), p(55), p(80)],
+    costs: [p(45), p(70), p(105)],
     specs: {
       A: {
-        name: 'Солнечное гнездо', desc: 'Огромный ореол, тварей жжёт сильнее', perk: 'свет 120, ожог ×2',
+        name: 'Солнечное гнездо', desc: 'Огромный ореол: сильнее Высвечивание и ожог', perk: 'свет 125, +70% урона по тварям',
         levels: [
-          { hp: 300, damage: 0, rate: 0, range: 0, light: 115, slow: 0.45, burn: 20 },
-          { hp: 360, damage: 0, rate: 0, range: 0, light: 135, slow: 0.5, burn: 30 },
+          { hp: 360, damage: 0, rate: 0, range: 0, light: 125, slow: 0.45, burn: 22, vuln: 0.7 },
+          { hp: 430, damage: 0, rate: 0, range: 0, light: 145, slow: 0.5, burn: 32, vuln: 0.9 },
         ],
-        costs: [p(90, 6), p(0, 12)],
+        costs: [p(170, 8), p(130, 14)],
       },
       B: {
-        name: 'Стрекоза-гроза', desc: 'Молния скачет по тварям в свету', perk: 'цепная молния ×4',
+        name: 'Стрекоза-гроза', desc: 'Молния скачет по высвеченным тварям', perk: 'цепная молния ×5',
         levels: [
-          { hp: 280, damage: 34, rate: 1.6, range: 0, light: 95, slow: 0.4, burn: 10, chain: 4 },
-          { hp: 330, damage: 50, rate: 1.3, range: 0, light: 105, slow: 0.4, burn: 12, chain: 6 },
+          { hp: 330, damage: 48, rate: 1.5, range: 0, light: 100, slow: 0.35, burn: 12, vuln: 0.5, chain: 5 },
+          { hp: 400, damage: 72, rate: 1.2, range: 0, light: 112, slow: 0.4, burn: 14, vuln: 0.55, chain: 7 },
         ],
-        costs: [p(90, 6), p(0, 12)],
+        costs: [p(170, 8), p(130, 14)],
       },
     },
   },
   spider: {
     name: 'Паук-ткач', creature: 'паук-ткач',
-    desc: 'Под землёй: кусает Червей у корней', underground: true, blocks: false,
+    desc: 'Под землёй кусает Червей у корней. Черви прогрызают его гнездо', underground: true, blocks: false,
     levels: [
-      { hp: 1, damage: 14, rate: 0.8, range: 52, light: 40 },
-      { hp: 1, damage: 22, rate: 0.75, range: 58, light: 46 },
-      { hp: 1, damage: 32, rate: 0.7, range: 64, light: 52, slow: 0.3 },
+      { hp: 180, damage: 16, rate: 0.8, range: 50, light: 38 },
+      { hp: 280, damage: 26, rate: 0.75, range: 58, light: 44 },
+      { hp: 400, damage: 38, rate: 0.7, range: 66, light: 52, slow: 0.3 },
     ],
-    costs: [p(30), p(45), p(65)],
+    costs: [p(35), p(60), p(90)],
     specs: {
       A: {
         name: 'Ловчая сеть', desc: 'Сеть сковывает Червей', perk: 'сковывает на 2 с',
         levels: [
-          { hp: 1, damage: 40, rate: 0.7, range: 72, light: 60, slow: 0.5, stun: 2 },
-          { hp: 1, damage: 55, rate: 0.62, range: 80, light: 66, slow: 0.55, stun: 2.6 },
+          { hp: 600, damage: 48, rate: 0.7, range: 76, light: 62, slow: 0.5, stun: 2 },
+          { hp: 800, damage: 66, rate: 0.62, range: 86, light: 70, slow: 0.55, stun: 2.6 },
         ],
-        costs: [p(70, 4), p(0, 9)],
+        costs: [p(130, 6), p(100, 11)],
       },
       B: {
-        name: 'Ядовитая паучиха', desc: 'Яд разъедает всех Червей рядом', perk: 'яд по площади',
+        name: 'Ядовитая паучиха', desc: 'Яд разъедает всех Червей рядом, даже бронированных', perk: 'яд по площади сквозь броню',
         levels: [
-          { hp: 1, damage: 30, rate: 0.8, range: 78, light: 56, slow: 0.3, poison: 26, poisonTime: 4 },
-          { hp: 1, damage: 40, rate: 0.7, range: 88, light: 62, slow: 0.35, poison: 40, poisonTime: 5 },
+          { hp: 550, damage: 36, rate: 0.8, range: 82, light: 58, slow: 0.3, poison: 34, poisonTime: 4 },
+          { hp: 720, damage: 48, rate: 0.7, range: 92, light: 64, slow: 0.35, poison: 52, poisonTime: 5 },
         ],
-        costs: [p(70, 4), p(0, 9)],
+        costs: [p(130, 6), p(100, 11)],
       },
     },
   },

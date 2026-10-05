@@ -13,7 +13,8 @@ export const ROOT_SLOT_Y = GY + 48;
 export function drawEnemy(c: Ctx, e: Enemy, time: number) {
   const flash = e.hitFlash > 0;
   const body = flash ? '#ffffff' : e.lit ? '#241f3c' : PAL.shade1;
-  const rim = flash ? '#ffffff' : e.lit ? '#8a6cc8' : PAL.shadeRim;
+  // golden rim = «высвечен» стрекозами (takes extra damage)
+  const rim = flash ? '#ffffff' : e.vuln > 0 ? (Math.sin(time * 10 + e.id) > 0 ? PAL.gold4 : PAL.gold2) : e.lit ? '#8a6cc8' : PAL.shadeRim;
   const t = e.age;
   const moving = !e.attacking && e.stun <= 0 && e.rooted <= 0;
   switch (e.kind) {
@@ -23,6 +24,9 @@ export function drawEnemy(c: Ctx, e: Enemy, time: number) {
     case 'worm': return worm(c, e, t, flash);
     case 'larva': return larva(c, e, t, flash);
     case 'mother': return mother(c, e, t, flash, time);
+    case 'forager': return forager(c, e, t, moving, body, rim);
+    case 'guard': return guard(c, e, t, flash);
+    case 'executioner': return executioner(c, e, t, flash, time, rim);
   }
 }
 
@@ -124,6 +128,77 @@ function worm(c: Ctx, e: Enemy, t: number, flash: boolean) {
   rect(c, hx + d * (open + 1), hy + 2, 1, 1, '#f0e0e0');
 }
 
+/** Имаго-Фуражир: «чёрный таракан чуть поменьше человека». */
+function forager(c: Ctx, e: Enemy, t: number, moving: boolean, body: string, rim: string) {
+  const d = e.dir;
+  const x = Math.round(e.x), y = GY;
+  const ph = moving ? t * 16 : 0;
+  for (let i = 0; i < 3; i++) {
+    const lx = x + (i - 1) * 4;
+    const sw = Math.sin(ph + i * 2.1) * 2;
+    line(c, lx, y - 4, lx + sw - d * 2, y, PAL.shade0);
+    line(c, lx, y - 4, lx - sw + d * 2, y, PAL.shade0);
+  }
+  ellipse(c, x, y - 6, 8, 3, body);
+  ellipse(c, x - d, y - 7, 6, 2, '#16121f');
+  rect(c, x - 6, y - 9, 12, 1, rim);
+  ellipse(c, x + 8 * d, y - 6, 2, 2, body);
+  // antennae
+  line(c, x + 9 * d, y - 7, x + 14 * d, y - 11 - Math.sin(t * 6), rim);
+  line(c, x + 9 * d, y - 7, x + 13 * d, y - 9 + Math.sin(t * 5), rim);
+}
+
+/** Имаго-Страж: an armoured worm under the ground, plated segments. */
+function guard(c: Ctx, e: Enemy, t: number, flash: boolean) {
+  const d = e.dir;
+  for (let i = 9; i >= 0; i--) {
+    const sx = e.x - i * 6 * d;
+    const sy = e.y + Math.sin(t * 3 - i * 0.7) * 2;
+    const r = 7.5 - i * 0.4;
+    disc(c, sx, sy, r, flash ? '#fff' : '#20202c');
+    disc(c, sx, sy - 1, r - 1.2, flash ? '#fff' : '#3c3c4e');
+    // armour plates
+    rect(c, sx - r * 0.7, sy - r + 1, r * 1.4, 2, '#6e6e86');
+    rect(c, sx - 1, sy - r, 2, 1, '#a8a8c0');
+  }
+  const hx = e.x + 5 * d, hy = e.y + Math.sin(t * 3) * 2;
+  disc(c, hx, hy, 5, '#3c3c4e');
+  disc(c, hx + d * 2, hy, e.attacking ? 3 + Math.abs(Math.sin(t * 9)) : 2, PAL.maw);
+  line(c, hx + d * 3, hy - 3, hx + d * 7, hy - 5, '#c8c8dc');
+  line(c, hx + d * 3, hy + 3, hx + d * 7, hy + 5, '#c8c8dc');
+}
+
+/** Имаго-Палач: «создан для уничтожения Восходящих» — huge armoured mantis-scolopendra. */
+function executioner(c: Ctx, e: Enemy, t: number, flash: boolean, time: number, rim: string) {
+  const d = e.dir;
+  const x = Math.round(e.x), y = GY;
+  const walk = e.attacking ? 0 : t * 4;
+  // many legs
+  for (let i = 0; i < 6; i++) {
+    const lx = x - 18 * d + i * 7 * d;
+    const sw = Math.sin(walk + i * 1.3) * 3;
+    line(c, lx, y - 14, lx + sw, y, PAL.shade0, 2);
+  }
+  // segmented body
+  for (let i = 0; i < 6; i++) {
+    const bx = x - 20 * d + i * 7 * d;
+    const by = y - 16 - Math.max(0, i - 3) * 6;
+    ellipse(c, bx, by, 6, 5, flash ? '#fff' : '#121019');
+    rect(c, bx - 4, by - 5, 8, 1, '#4a3a5a');
+  }
+  // raised torso and head
+  const hx = x + 18 * d, hy = y - 44;
+  line(c, x + 10 * d, y - 30, hx, hy, '#121019', 5);
+  ellipse(c, hx, hy, 6, 5, flash ? '#fff' : '#1a1624');
+  rect(c, hx - 5, hy - 5, 10, 1, rim);
+  // the poisoned claw (strikes when attacking)
+  const swing = e.attacking ? Math.sin(t * 5) : 0.3;
+  const cx = hx + d * (14 + swing * 8), cy = hy + 10 + swing * 14;
+  line(c, hx + d * 3, hy + 2, hx + d * 9, hy + 8, '#121019', 3);
+  line(c, hx + d * 9, hy + 8, cx, cy, '#d8d0e8', 2);
+  rect(c, cx, cy, 2, 2, Math.sin(time * 8) > 0 ? PAL.acid2 : PAL.acid1);
+}
+
 function larva(c: Ctx, e: Enemy, t: number, flash: boolean) {
   for (let i = 0; i < 3; i++) {
     const sx = e.x - i * 3 * e.dir;
@@ -199,6 +274,16 @@ export function drawEnemyEyes(c: Ctx, e: Enemy, time: number) {
     case 'worm':
       eye(e.x + 5 * d, e.y + Math.sin(e.age * 4) * 3 - 3, '#ffb070');
       break;
+    case 'guard':
+      eye(e.x + 6 * d, e.y + Math.sin(e.age * 3) * 2 - 3, '#ff5a5a');
+      eye(e.x + 7 * d, e.y + Math.sin(e.age * 3) * 2 - 2, '#ff5a5a');
+      break;
+    case 'forager':
+      eye(x + 9 * d, y - 7, '#ffd0a0');
+      break;
+    case 'executioner':
+      for (let i = 0; i < 3; i++) eye(x + (20 + i) * d, y - 45 + i, '#ff4a4a');
+      break;
     default:
       break;
   }
@@ -207,8 +292,8 @@ export function drawEnemyEyes(c: Ctx, e: Enemy, time: number) {
 export function drawEnemyHp(c: Ctx, e: Enemy) {
   if (e.hp >= e.maxHp || !e.lit) return;
   const def = ENEMIES[e.kind];
-  const w = Math.max(8, Math.min(30, def.radius * 2));
-  const y = def.underground ? e.y - 12 : e.kind === 'mother' ? GY - 66 : GY - def.height - 6;
+  const w = def.boss ? 60 : Math.max(8, Math.min(30, def.radius * 2));
+  const y = def.underground ? e.y - 12 : e.kind === 'mother' ? GY - 66 : e.kind === 'executioner' ? GY - 62 : GY - def.height - 6;
   rect(c, e.x - w / 2, y, w, 2, '#1a0b14');
   rect(c, e.x - w / 2, y, Math.max(1, (w * e.hp) / e.maxHp), 1, def.worm ? '#ff9a3c' : '#c58cff');
 }
@@ -266,9 +351,9 @@ export function drawStructure(c: Ctx, s: Structure, time: number) {
     case 'spider': spider(c, s, time); break;
   }
   c.restore();
-  if (s.hp < s.maxHp && s.family !== 'spider') {
+  if (s.hp < s.maxHp || s.family === 'beetle') {
     const w = 16;
-    const y = s.family === 'beetle' ? GY - 24 - s.tier * 2 : s.family === 'dragonfly' ? GY - 44 : GY - 52;
+    const y = s.family === 'spider' ? ROOT_SLOT_Y - 14 : s.family === 'beetle' ? GY - 24 - s.tier * 2 : s.family === 'dragonfly' ? GY - 44 : GY - 52;
     rect(c, s.x - w / 2, y, w, 2, '#10070c');
     rect(c, s.x - w / 2, y, Math.max(1, (w * s.hp) / s.maxHp), 1, s.hp / s.maxHp < 0.35 ? '#ff5a4a' : '#ffd25a');
   }

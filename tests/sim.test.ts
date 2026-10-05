@@ -43,7 +43,7 @@ describe('economy', () => {
     const start = g.state.amber;
     expect(g.build('L0', 'hive')).toBe(true);
     expect(g.state.amber).toBe(start - NESTS.hive.costs[0].amber);
-    const locked = SLOTS.find((s) => s.unlockStage > 1)!;
+    const locked = SLOTS.find((s) => !s.underground && s.offset > 100)!;
     expect(g.build(locked.id, 'beetle')).toBe(false);
   });
 
@@ -53,7 +53,7 @@ describe('economy', () => {
     g.feed(TREE_STAGES[0].growCost);
     expect(g.state.tree.stage).toBe(1);
     expect(g.choice?.kind).toBe('branch');
-    const st2 = SLOTS.find((s) => s.unlockStage === 2 && !s.underground)!;
+    const st2 = SLOTS.find((s) => !s.underground && s.offset > TREE_STAGES[0].radius && s.offset < TREE_STAGES[1].radius - 14)!;
     expect(g.build(st2.id, 'beetle')).toBe(true);
   });
 
@@ -80,6 +80,38 @@ describe('economy', () => {
     g.state.star = 50;
     expect(g.specialize(st.id, 'B')).toBe(true);
     expect(g.nestStats(st).pierce).toBeGreaterThan(0);
+  });
+
+  it('properties fill rune slots; a development rune opens the 4th', () => {
+    const g = new Game();
+    g.state.star = 999;
+    for (let i = 0; i < 3; i++) expect(g.buyProperty('sp-power')).toBe(true);
+    expect(g.buyProperty('sp-cheap')).toBe(false); // 3 slots full
+    g.state.devRunes = 1;
+    expect(g.developRune('spear')).toBe(true);
+    expect(g.buyProperty('sp-cheap')).toBe(true);
+    expect(g.abilityMult('spear')).toBeGreaterThan(2);
+  });
+
+  it('armor reduces weak hits but never below 25%', () => {
+    const g = new Game();
+    const st = g.spawnEnemy('guard', 30, 1);
+    const dealt = g.damageEnemy(st, 8, false);
+    expect(dealt).toBeCloseTo(2);
+  });
+
+  it('Igg-light burns worm-type enemies standing in it', () => {
+    const g = new Game();
+    const f = g.spawnEnemy('forager', 480, 1);
+    f.speedMul = 0;
+    const hp0 = f.hp;
+    for (let i = 0; i < 60; i++) g.step();
+    expect(f.hp).toBeLessThan(hp0);
+  });
+
+  it('light regenerates faster near the trunk', () => {
+    const g = new Game();
+    expect(g.lightRegenFactor(480)).toBeGreaterThan(g.lightRegenFactor(480 + 300) * 3);
   });
 
   it('dawn offers a choice of 3 and the chosen rune changes mods', () => {
@@ -120,7 +152,10 @@ describe('balance corridor (heuristic bots)', () => {
   });
   it('a balanced player usually wins', () => {
     const wins = seeds.map((s) => runBot('balanced', s)).filter((r) => r.phase === 'won').length;
-    expect(wins).toBeGreaterThanOrEqual(2);
+    expect(wins).toBeGreaterThanOrEqual(3);
+  });
+  it('defense without growing the tree falls early', () => {
+    expect(seeds.map((s) => runBot('turtle', s)).every((r) => r.phase === 'lost' && r.night <= 4)).toBe(true);
   });
   it('pure tree greed without defense loses', () => {
     expect(seeds.map((s) => runBot('greedy', s)).every((r) => r.phase === 'lost')).toBe(true);

@@ -4,6 +4,11 @@ import { BAYER4, type Ctx, PAL, disc, ellipse, line, makeCanvas, rect, seeded } 
 const W = WORLD.width;
 const H = WORLD.height;
 const GY = WORLD.groundY;
+/** vertical offset of the old 640×360 layout (ground was at 236) */
+const OY = GY - 236;
+const ECLIPSE = { x: Math.round(492 * W / 640), y: 96, r: 26 };
+/** horizontal stretch of the old layout */
+const SX = W / 640;
 
 function hex(c: string): [number, number, number] {
   const n = parseInt(c.slice(1), 16);
@@ -37,7 +42,7 @@ export interface Backdrop {
 
 /** Pre-renders the static parallax layers once. */
 export function buildBackdrop(): Backdrop {
-  const eclipse = { x: 492, y: 66, r: 23 };
+  const eclipse = ECLIPSE;
   return { sky: buildSky(eclipse), far: buildFar(), mid: buildMid(), ground: buildGround(), eclipse };
 }
 
@@ -46,7 +51,7 @@ function buildSky(ec: { x: number; y: number; r: number }) {
   ditherGradient(c, 0, 0, W, GY, [PAL.sky0, PAL.sky1, PAL.sky2, PAL.sky3, PAL.sky4, '#311f4a']);
   const r = seeded(7);
   // stars
-  for (let i = 0; i < 170; i++) {
+  for (let i = 0; i < 380; i++) {
     const x = r() * W, y = r() * GY * 0.7;
     const b = r();
     rect(c, x, y, 1, 1, b > 0.92 ? '#d9d4ff' : b > 0.6 ? '#7c79b8' : '#3d3b6e');
@@ -57,10 +62,10 @@ function buildSky(ec: { x: number; y: number; r: number }) {
     }
   }
   // faint nebula streaks
-  for (let i = 0; i < 900; i++) {
+  for (let i = 0; i < 1600; i++) {
     const t = r();
-    const x = 280 + t * 340 + (r() - 0.5) * 40;
-    const y = 30 + Math.sin(t * 5) * 18 + t * 40 + (r() - 0.5) * 30;
+    const x = (280 + t * 340 + (r() - 0.5) * 40) * SX;
+    const y = 60 + Math.sin(t * 5) * 18 + t * 40 + (r() - 0.5) * 30;
     rect(c, x, y, 1, 1, r() > 0.5 ? '#2c2050' : '#241a44');
   }
   // eclipse halo (dithered rings)
@@ -89,7 +94,7 @@ function buildFar() {
   // distant spires band
   for (let x = 0; x < FW; x += 3) {
     const h = 10 + Math.abs(Math.sin(x * 0.05) * 14) + r() * 8;
-    rect(c, x, 168 - h, 3, h + 70, '#111230');
+    rect(c, x, 168 + OY - h, 3, h + 70, '#111230');
   }
   // cathedral clusters
   const spire = (cx: number, base: number, h: number, w: number) => {
@@ -104,16 +109,16 @@ function buildFar() {
       }
     }
   };
-  for (const [x0, x1, top] of [[18, 170, 40], [470, 650, 52]] as const) {
-    for (let i = 0; i < 9; i++) {
+  for (const [x0, x1, top] of [[18 * SX, 170 * SX, 40], [470 * SX, 650 * SX, 52]] as const) {
+    for (let i = 0; i < 12; i++) {
       const cx = x0 + r() * (x1 - x0);
       const h = 40 + r() * (150 - top) * (1 - Math.abs((cx - (x0 + x1) / 2) / (x1 - x0)));
-      spire(cx, 172, h, 6 + Math.floor(r() * 6));
+      spire(cx, 172 + OY, h, 6 + Math.floor(r() * 6));
     }
   }
   // the ritual tower under the eclipse
-  spire(496, 172, 84, 10);
-  rect(c, 494, 96, 4, 4, '#a070ff');
+  spire(ECLIPSE.x + 4, 172 + OY, 84 + OY, 10);
+  rect(c, ECLIPSE.x + 2, 96 + 24, 4, 4, '#a070ff');
   // aqueduct: two tiers of arches
   const aq = (y: number, pierW: number, span: number, h: number, col: string, hi: string) => {
     rect(c, 0, y, FW, 6, col);
@@ -131,13 +136,12 @@ function buildFar() {
       if (r() > 0.85) rect(c, x + pierW + 2, y + 6, span - pierW - 4, h, '#0e0f26');
     }
   };
-  aq(112, 5, 30, 62, '#17183e', '#2a2b62');
-  aq(150, 4, 20, 30, PAL.far0, '#232456');
+  aq(112 + OY, 5, 30, 62, '#17183e', '#2a2b62');
+  aq(150 + OY, 4, 20, 30, PAL.far0, '#232456');
   // broken gaps in the aqueduct
   for (let i = 0; i < 4; i++) {
     const gx = 60 + r() * (FW - 120);
-    rect(c, gx, 110, 10 + r() * 12, 14, 'rgba(0,0,0,0)');
-    c.clearRect(gx, 108, 8 + r() * 10, 12);
+    c.clearRect(gx, 108 + OY, 8 + r() * 10, 12);
   }
   return cv;
 }
@@ -156,19 +160,19 @@ function buildMid() {
       if (r() > 0.5) line(c, x, y + 1, x - dir * len * 0.7, y - len * 0.3, col);
     }
   };
-  for (let i = 0; i < 70; i++) tree(r() * MW, 214, 26 + r() * 40, '#0e1028');
+  for (let i = 0; i < 105; i++) tree(r() * MW, 214 + OY, 26 + r() * 40, '#0e1028');
   // rolling hill band
   for (let x = 0; x < MW; x++) {
     const h = 18 + Math.sin(x * 0.03) * 6 + Math.sin(x * 0.11) * 3;
-    rect(c, x, 214 - h, 1, h + 30, PAL.mid1);
+    rect(c, x, 214 + OY - h, 1, h + 30, PAL.mid1);
   }
-  for (let i = 0; i < 60; i++) tree(r() * MW, 226, 20 + r() * 34, PAL.mid0);
+  for (let i = 0; i < 90; i++) tree(r() * MW, 226 + OY, 20 + r() * 34, PAL.mid0);
   for (let x = 0; x < MW; x++) {
     const h = 6 + Math.sin(x * 0.05 + 2) * 3 + Math.sin(x * 0.17) * 2;
-    rect(c, x, 230 - h, 1, h + 10, PAL.mid0);
+    rect(c, x, 230 + OY - h, 1, h + 10, PAL.mid0);
   }
   // low fog (dithered)
-  const img = c.getImageData(0, 180, MW, 56);
+  const img = c.getImageData(0, 180 + OY, MW, 56);
   for (let y = 0; y < 56; y++) {
     const v = Math.sin((y / 56) * Math.PI) * 0.35;
     for (let x = 0; x < MW; x++) {
@@ -178,7 +182,7 @@ function buildMid() {
       }
     }
   }
-  c.putImageData(img, 0, 180);
+  c.putImageData(img, 0, 180 + OY);
   return cv;
 }
 
@@ -198,7 +202,7 @@ function buildGround() {
     }
   }
   // rocks
-  for (let i = 0; i < 70; i++) {
+  for (let i = 0; i < 150; i++) {
     const x = r() * W, y = GY + 8 + r() * (H - GY - 10);
     const s = 2 + r() * 6;
     ellipse(c, x, y, s, s * 0.6, PAL.rock);
@@ -213,7 +217,7 @@ function buildGround() {
   // worm tunnels (faint)
   for (let side = 0; side < 2; side++) {
     let y = WORLD.wormLaneY;
-    for (let i = 0; i < 230; i++) {
+    for (let i = 0; i < W * 0.36; i++) {
       const x = side === 0 ? i : W - i;
       y += Math.sin(i * 0.07 + side) * 0.35;
       ellipse(c, x, y, 3, 6, '#0a070d');

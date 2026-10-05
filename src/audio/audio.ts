@@ -180,7 +180,6 @@ export class Audio {
         case 'cast':
           if (e.ability === 'spear') { this.hiss(0.18, 3500, 0.2, 1.5); this.tone(900, 0.18, 'sine', 0.12, 1800); }
           else if (e.ability === 'hammer') { this.tone(1200, 0.5, 'sine', 0.2, 400); this.hiss(0.4, 4000, 0.25, 0.6, 'highpass'); }
-          else if (e.ability === 'roots') { this.tone(70, 0.5, 'sawtooth', 0.15, 45); this.hiss(0.5, 300, 0.35, 0.8, 'lowpass'); }
           else { [1568, 1319, 1047, 784].forEach((f, i) => this.tone(f, 0.5, 'sine', 0.1, f * 0.5, i * 0.08)); }
           break;
         case 'spikeStrike':

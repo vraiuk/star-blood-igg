@@ -11,18 +11,21 @@ export interface BotPlan {
   dragonflies: boolean;
   /** buy specializations / ranks with Star Blood */
   specialize: boolean;
+  /** think-cycles between ability casts (1 = perfect, 4 = casual human) */
+  castEvery?: number;
 }
 
 export const PLANS: Record<string, BotPlan> = {
   idle: { grow: false, defend: false, abilities: false, collect: false, dragonflies: false, specialize: false },
   balanced: { grow: true, defend: true, abilities: true, collect: true, dragonflies: true, specialize: true },
+  casual: { grow: true, defend: true, abilities: true, collect: true, dragonflies: true, specialize: true, castEvery: 4 },
   turtle: { grow: false, defend: true, abilities: true, collect: true, dragonflies: true, specialize: true },
   greedy: { grow: true, defend: false, abilities: true, collect: true, dragonflies: false, specialize: false },
   passiveKeeper: { grow: true, defend: true, abilities: false, collect: false, dragonflies: true, specialize: false },
 };
 
 /** Desired layout per side, by slot index (0 = closest to the tree). */
-const LAYOUT: Family[] = ['hive', 'beetle', 'hive', 'dragonfly', 'hive', 'beetle'];
+const LAYOUT: Family[] = ['hive', 'beetle', 'dragonfly', 'hive', 'hive', 'beetle', 'dragonfly', 'hive', 'hive', 'beetle'];
 
 export interface BotResult {
   phase: string;
@@ -68,6 +71,8 @@ export function runBot(planName: keyof typeof PLANS, seed = 1, maxMinutes = 30, 
   };
 }
 
+let castTick = 0;
+
 function act(g: Game, plan: BotPlan) {
   const s = g.state;
   const k = s.keeper;
@@ -82,7 +87,10 @@ function act(g: Game, plan: BotPlan) {
       if (st.tier === 2) g.specialize(st.id, st.family === 'hive' ? (st.slotId.endsWith('0') ? 'A' : 'B') : 'A');
       else if (st.tier === 3) g.upgrade(st.id);
     }
-    if (s.star >= 20) g.ascend();
+    if (s.star >= 25) g.ascend();
+    // Observer's treasury: power properties first
+    for (const id of ['sp-power', 'hm-power', 'sp-power', 'lt-spring', 'sf-power']) if (s.star >= 14) g.buyProperty(id);
+    if (s.devRunes > 0) g.developRune('spear');
   }
   if (s.phase === 'day' && s.night > 0 && s.dayLeft < 18) g.callNight();
 
@@ -103,8 +111,10 @@ function act(g: Game, plan: BotPlan) {
   g.setMove(Math.abs(goal - k.x) < 4 ? 0 : goal > k.x ? 1 : -1);
 
   if (!plan.abilities) return;
+  castTick++;
+  if (castTick % (plan.castEvery ?? 1) !== 0) return;
   const worm = s.enemies.find((e) => ENEMIES[e.kind].underground && Math.abs(e.x - WORLD.treeX) < 160);
-  if (worm) g.cast('roots', worm.x);
+  if (worm && Math.abs(worm.x - k.x) < 100) g.cast('hammer', k.x);
   const close = threats.filter((e) => Math.abs(e.x - k.x) < 160);
   if (close.length) {
     const t = close.sort((a, b) => Math.abs(a.x - k.x) - Math.abs(b.x - k.x))[0];
@@ -113,7 +123,6 @@ function act(g: Game, plan: BotPlan) {
     const big = close.find((e) => e.kind === 'stalker' || e.kind === 'mother');
     if (big) {
       g.cast('starfall', big.x);
-      if (k.light > 70) g.cast('roots', big.x);
     }
   }
 }

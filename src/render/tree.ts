@@ -5,12 +5,18 @@ interface Seg { x0: number; y0: number; x1: number; y1: number; t: number; depth
 interface Leaf { x: number; y: number; r: number; depth: number; seed: number; }
 interface TreeShape { segs: Seg[]; leaves: Leaf[]; roots: Seg[]; height: number; }
 
+/**
+ * Growth ladder (design/v3-plan.md): a glowing seed → a sprout with two translucent
+ * leaves → … → the Great Igg-Tree whose crown spreads across the whole sky.
+ * `spread` stretches the crown sideways; `flat` lets branches go nearly horizontal.
+ */
 const STAGE_SIZE = [
-  { len: 30, depth: 5, thick: 4, roots: 40 },
-  { len: 36, depth: 5, thick: 5, roots: 54 },
-  { len: 42, depth: 6, thick: 6, roots: 66 },
-  { len: 47, depth: 6, thick: 7, roots: 78 },
-  { len: 52, depth: 7, thick: 8, roots: 92 },
+  { len: 8, depth: 1, thick: 1, roots: 18, spread: 1, flat: 0.5, leaf: 3 },
+  { len: 18, depth: 3, thick: 2, roots: 34, spread: 1, flat: 0.5, leaf: 5 },
+  { len: 32, depth: 5, thick: 4, roots: 56, spread: 1.1, flat: 0.45, leaf: 8 },
+  { len: 46, depth: 6, thick: 6, roots: 80, spread: 1.3, flat: 0.35, leaf: 10 },
+  { len: 62, depth: 7, thick: 8, roots: 108, spread: 1.55, flat: 0.25, leaf: 12 },
+  { len: 80, depth: 7, thick: 11, roots: 140, spread: 1.9, flat: 0.16, leaf: 15 },
 ];
 
 function grow(stage: number): TreeShape {
@@ -23,7 +29,7 @@ function grow(stage: number): TreeShape {
     const y1 = y + Math.sin(ang) * len;
     segs.push({ x0: x, y0: y, x1, y1, t, depth: d });
     if (d >= sz.depth || len < 4) {
-      leaves.push({ x: x1, y: y1, r: 7 + r() * 5 + stage * 1.3, depth: d, seed: r() * 1000 });
+      leaves.push({ x: x1, y: y1, r: sz.leaf + r() * sz.leaf * 0.6, depth: d, seed: r() * 1000 });
       return;
     }
     const n = d < 2 ? 2 : r() > 0.35 ? 2 : 3;
@@ -31,10 +37,10 @@ function grow(stage: number): TreeShape {
       const spread = 0.42 + r() * 0.28;
       const a = ang + (i - (n - 1) / 2) * spread * (n === 3 ? 0.9 : 1.6) + (r() - 0.5) * 0.25;
       // keep branches from drooping below horizontal
-      const clampA = Math.max(-Math.PI + 0.5, Math.min(-0.5, a));
+      const clampA = Math.max(-Math.PI + sz.flat, Math.min(-sz.flat, a));
       branch(x1, y1, clampA, len * (0.7 + r() * 0.12), Math.max(1, t * 0.68), d + 1);
     }
-    if (d > 1 && r() > 0.2) leaves.push({ x: x1, y: y1, r: 6 + r() * 4 + stage, depth: d, seed: r() * 1000 });
+    if (d > 1 && r() > 0.2) leaves.push({ x: x1, y: y1, r: sz.leaf * 0.8 + r() * sz.leaf * 0.4, depth: d, seed: r() * 1000 });
   };
   // slight S-curve trunk: two segments
   const trunkLen = sz.len * 1.25;
@@ -53,7 +59,11 @@ function grow(stage: number): TreeShape {
       root(x1, y1, Math.max(0.05, Math.min(Math.PI - 0.05, a)), len * (0.68 + r() * 0.15), Math.max(1, t * 0.66), d + 1);
     }
   };
-  for (const a of [0.35, 1.05, 1.57, 2.1, 2.8]) root(0, 2, a, sz.roots * (a === 1.57 ? 0.5 : 0.42), sz.thick * 0.8, 1);
+  for (const a of [0.35, 1.05, 1.57, 2.1, 2.8]) root(0, 2, a, sz.roots * (a === 1.57 ? 0.5 : 0.42), Math.max(1, sz.thick * 0.8), 1);
+  // stretch the crown sideways (the trunk stays put)
+  for (const sg of segs) if (sg.depth > 0) { sg.x0 *= sz.spread; sg.x1 *= sz.spread; }
+  for (const l of leaves) l.x *= sz.spread;
+  for (const rt of roots) { rt.x0 *= sz.spread; rt.x1 *= sz.spread; }
   const height = Math.max(...leaves.map((l) => -l.y)) + 10;
   return { segs, leaves, roots, height };
 }
@@ -92,6 +102,7 @@ export function drawRoots(c: Ctx, stage: number, time: number, hurt: number) {
  * `grow` 0..1 animates a growth pulse right after a stage-up.
  */
 export function drawTree(c: Ctx, stage: number, time: number, hurt: number, growPulse: number) {
+  if (stage === 0) { drawSeed(c, time, hurt, growPulse); return; }
   const shape = SHAPES[stage];
   const ox = WORLD.treeX, oy = WORLD.groundY;
   const sway = (y: number) => Math.sin(time * 0.9 + y * 0.03) * (-y / 120) * 1.6;
@@ -166,5 +177,25 @@ export function drawGrass(c: Ctx, radius: number, time: number, lanterns: Array<
     if (on && lit > 0.6 && hseed === 3) {
       rect(c, x + sway, gy - h - 1, 1, 1, PAL.gold5);
     }
+  }
+}
+
+/** Stage 0: «Семя Великого Игг-Древа. Не пророщено. Содержит Звёздную Кровь.» */
+function drawSeed(c: Ctx, time: number, hurt: number, pulse: number) {
+  const x = WORLD.treeX, y = WORLD.groundY;
+  const g = 0.5 + 0.5 * Math.sin(time * 2.4);
+  // seed bulb half-buried, glowing with star blood
+  ellipse(c, x, y - 2, 5 + pulse * 2, 4 + pulse, PAL.gold0);
+  ellipse(c, x, y - 3, 4, 3, hurt > 0 ? '#ff7a6a' : PAL.gold2);
+  ellipse(c, x - 1, y - 4, 2, 1.5, g > 0.5 ? PAL.gold5 : PAL.gold4);
+  rect(c, x + 1, y - 3, 1, 1, PAL.blood2);
+  // a first thread of a sprout
+  line(c, x, y - 6, x + Math.round(Math.sin(time) * 1), y - 11, PAL.gold3);
+  rect(c, x - 2 + Math.round(Math.sin(time)), y - 12, 2, 1, 'rgba(255,240,180,0.8)');
+  rect(c, x + 1 + Math.round(Math.sin(time)), y - 13, 2, 1, 'rgba(255,240,180,0.6)');
+  // motes rising from the seed
+  for (let i = 0; i < 4; i++) {
+    const k = (time * 0.4 + i * 0.25) % 1;
+    rect(c, x + Math.sin(i * 2 + time) * 4, y - 6 - k * 18, 1, 1, k < 0.6 ? PAL.gold5 : PAL.gold3);
   }
 }
