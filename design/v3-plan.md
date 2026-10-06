@@ -209,3 +209,5 @@
 - Nest ring menu is always the same 4 buttons with fixed hotkeys: Q (upgrade / spec A /
   ascension), W (spec B), E (merge), S (release); unavailable ones are greyed with what they
   need (e.g. merge: «N из 3 одинаковых гнёзд»).
+- One key scheme for every ring: 1-2-3-4 by position, both when building (families) and when
+  upgrading (1 upgrade/spec A/ascension, 2 spec B, 3 merge, 4 release — 4 must be pressed twice).

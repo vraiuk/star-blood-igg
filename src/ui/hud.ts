@@ -510,10 +510,17 @@ export class Hud {
   }
 
   /** Keyboard shortcut for the ring: key matches an option's hotkey. */
+  private sellArmed = -1e9;
   ringKey(key: string): boolean {
     if (!this.menuTarget) return false;
     const i = this.ringOpts.findIndex((o) => o.key.toLowerCase() === key && !o.locked);
     if (i < 0) return false;
+    // releasing a nest from the keyboard needs a second press (no accidental sales)
+    if (this.ringOpts[i].danger && performance.now() - this.sellArmed > 1500) {
+      this.sellArmed = performance.now();
+      this.say('Нажми 4 ещё раз, чтобы отпустить гнездо');
+      return true;
+    }
     this.ringOpts[i].act();
     this.ringSig = '';
     return true;
@@ -594,7 +601,7 @@ export class Hud {
       const next = g.nestStats({ family: st.family, tier: st.tier + 1, spec: st.spec });
       opts.push({
         icon: icon('upgrade'), title: st.tier === 2 ? `Мастерство: ${def.specs[st.spec!].name}` : `Уровень ${st.tier + 2}`,
-        sub: st.tier === 2 ? 'Высшая форма специализации' : 'Сильнее и крепче', key: 'Q',
+        sub: st.tier === 2 ? 'Высшая форма специализации' : 'Сильнее и крепче', key: '1',
         body: this.statsBlock(st.family, cur, next), price, ok: g.canPay(price),
         preview: { x: st.x, r: rng(next), underground: st.underground, y: st.y },
         pos: 0,
@@ -607,7 +614,7 @@ export class Hud {
         const price = g.specPrice(st, sp);
         const next = g.nestStats({ family: st.family, tier: 2, spec: sp });
         opts.push({
-          icon: icon(st.family), title: spec.name, sub: `${spec.desc} · <i>${spec.perk}</i>`, key: sp === 'A' ? 'Q' : 'W',
+          icon: icon(st.family), title: spec.name, sub: `${spec.desc} · <i>${spec.perk}</i>`, key: sp === 'A' ? '1' : '2',
           body: this.statsBlock(st.family, cur, next), price, ok: g.canPay(price),
           preview: { x: st.x, r: rng(next), underground: st.underground, y: st.y },
           pos: sp === 'A' ? 0 : 1,
@@ -618,7 +625,7 @@ export class Hud {
     const partners = g.mergePartners(st);
     if (partners) {
       opts.push({
-        icon: icon('merge'), title: `Слияние ★${st.merge + 1}`, sub: 'Три одинаковых гнезда → одно: сила ×2, освобождает 2 слота', key: 'E',
+        icon: icon('merge'), title: `Слияние ★${st.merge + 1}`, sub: 'Три одинаковых гнезда → одно: сила ×2, освобождает 2 слота', key: '3',
         body: `<div class="stats"><div>Сольются: <b>${partners.map((p) => `ур.${p.tier + 1}`).join(', ')}</b></div><div>Урон и прочность: <b class="up">+110%</b></div></div>`,
         price: { amber: 0, star: 0 }, ok: true, pos: 2, act: () => { g.mergeNests(st.id); },
       });
@@ -627,7 +634,7 @@ export class Hud {
       const c = g.ascendCost(st);
       const next = g.nestStats({ family: st.family, tier: st.tier, spec: st.spec, merge: st.merge, ascend: st.ascend + 1 });
       opts.push({
-        icon: icon('upgrade'), title: `Возвышение ${st.ascend + 1}`, sub: 'Бесконечный рост: +12% силы', key: 'Q', pos: 0,
+        icon: icon('upgrade'), title: `Возвышение ${st.ascend + 1}`, sub: 'Бесконечный рост: +12% силы', key: '1', pos: 0,
         body: this.statsBlock(st.family, cur, next), price: { amber: c, star: 0 }, ok: g.state.amber >= c, act: () => { g.ascendNest(st.id); },
       });
     }
@@ -636,19 +643,19 @@ export class Hud {
     const lockedOpt = (pos: number, key: string, ic: string, title: string, sub: string): RingOpt => ({
       icon: ic, title, sub, key, body: '', price: null, ok: false, locked: true, pos, act: () => {},
     });
-    if (!opts.some((o) => o.pos === 0)) opts.push(lockedOpt(0, 'Q', icon('upgrade'), 'Улучшение', 'Гнездо на пределе'));
+    if (!opts.some((o) => o.pos === 0)) opts.push(lockedOpt(0, '1', icon('upgrade'), 'Улучшение', 'Гнездо на пределе'));
     if (!opts.some((o) => o.pos === 1)) {
-      opts.push(lockedOpt(1, 'W', icon(st.family), st.tier < 1 ? 'Специализация' : `Другая ветвь: ${def.specs[st.spec === 'A' ? 'B' : 'A'].name}`,
-        st.tier < 1 ? 'На 2-м уровне гнездо выбирает одну из двух специализаций (Q или W)' : 'Специализация выбрана — другую ветвь не взять'));
+      opts.push(lockedOpt(1, '2', icon(st.family), st.tier < 1 ? 'Специализация' : `Другая ветвь: ${def.specs[st.spec === 'A' ? 'B' : 'A'].name}`,
+        st.tier < 1 ? 'На 2-м уровне гнездо выбирает одну из двух специализаций (1 или 2)' : 'Специализация выбрана — другую ветвь не взять'));
     }
     if (!opts.some((o) => o.pos === 2)) {
       const same = s.structures.filter((o) => o !== st && o.family === st.family && o.merge === st.merge && o.crown === st.crown).length;
-      opts.push(lockedOpt(2, 'E', icon('merge'), `Слияние ★${st.merge + 1}`,
+      opts.push(lockedOpt(2, '3', icon('merge'), `Слияние ★${st.merge + 1}`,
         `Нужно 3 гнезда «${def.name}» с одинаковым числом ★ (сейчас ${same + 1} из 3). Два сольются в это: урон и прочность ×2.1, +6% дальности, освобождаются 2 слота`));
     }
     const sv = g.sellValue(st);
     opts.push({
-      icon: icon('sell'), title: 'Отпустить', sub: 'Вернуть 60% вложенного', key: 'S', danger: true,
+      icon: icon('sell'), title: 'Отпустить', sub: 'Вернуть 60% вложенного · с клавиатуры — нажми 4 дважды', key: '4', danger: true,
       body: '', price: sv, ok: true, pos: 3, act: () => { if (g.sell(st.id)) this.closeMenu(); },
     });
     const name = (st.spec ? `${def.name}: ${def.specs[st.spec].name}` : def.name) + (st.merge ? ` ${'★'.repeat(st.merge)}` : '') + (st.ascend ? ` +${st.ascend}` : '');
