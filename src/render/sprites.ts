@@ -709,15 +709,57 @@ export function drawKeeperHp(c: Ctx, k: Keeper, maxHp: number) {
 // ───────────────────────────── nests ───────────────────────────────
 
 /** Visual tier 0..4 → size step; spec decides the silhouette at tier ≥ 3. */
+/**
+ * A nest grows with its level, specialization and merge stars: bigger (less in the crown and
+ * the roots, where space is tight), a coloured halo (gold level 2, warm amber for branch A,
+ * cool blue for branch B) and a crown of sparks at Mastery.
+ */
+export function nestLook(s: Pick<Structure, 'tier' | 'spec' | 'merge' | 'ascend' | 'crown' | 'underground'>) {
+  const merge = Math.min(s.merge, 5), asc = Math.min(s.ascend, 10);
+  const scale = s.crown ? Math.min(1.35, 1 + 0.06 * s.tier + 0.04 * merge + 0.01 * asc)
+    : s.underground ? Math.min(1.4, 1 + 0.06 * s.tier + 0.05 * merge + 0.01 * asc)
+    : Math.min(1.7, 1 + 0.1 * s.tier + 0.06 * merge + 0.012 * asc);
+  const color = s.tier >= 2 ? (s.spec === 'B' ? '#8fd0ff' : '#ffb24a') : s.tier >= 1 ? '#ffd27a' : '';
+  return { scale, color, mastery: s.tier >= 3 };
+}
+
+/** Halo behind a nest and the Mastery spark crown above it. */
+function nestHalo(c: Ctx, cx: number, cy: number, r: number, color: string, time: number, behind: boolean) {
+  if (!color) return;
+  if (behind) {
+    for (let i = 0; i < 28; i++) {
+      const a = (i / 28) * Math.PI * 2;
+      const k = 0.55 + 0.45 * Math.sin(time * 2 + i);
+      rect(c, cx + Math.cos(a) * r * k, cy + Math.sin(a) * r * 0.7 * k, 1, 1, color);
+    }
+  } else {
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + (i - 2) * 0.42;
+      const h = 3 + (i % 2) * 2 + Math.round(Math.sin(time * 6 + i) * 1);
+      rect(c, cx + Math.cos(a) * r, cy + Math.sin(a) * r - h, 1, h, color);
+      rect(c, cx + Math.cos(a) * r, cy + Math.sin(a) * r - h - 1, 1, 1, PAL.white);
+    }
+  }
+}
+
 export function drawStructure(c: Ctx, s: Structure, time: number) {
   const flash = s.hitFlash > 0;
   const build = Math.min(1, s.age / 0.35);
+  const look = nestLook(s);
+  const ax = s.x, ay = s.underground ? s.y : GY;
+  const baseTop = s.underground ? 16 : s.family === 'beetle' ? 30 : s.family === 'dragonfly' ? 50 : 58;
+  const midY = s.underground ? s.y : GY - baseTop * 0.45 * look.scale;
+  nestHalo(c, ax, midY, 10 + baseTop * 0.25 * look.scale, look.color, time, true);
   c.save();
   if (build < 1) {
     c.beginPath();
-    c.rect(s.x - 30, s.underground ? s.y - 20 : GY - 70 * build - 2, 60, 200);
+    c.rect(s.x - 30 * look.scale, s.underground ? s.y - 20 : GY - 70 * build * look.scale - 2, 60 * look.scale, 200);
     c.clip();
   }
+  // grow around the nest's anchor (its foot on the ground / its root knot)
+  c.translate(ax, ay);
+  c.scale(look.scale, look.scale);
+  c.translate(-ax, -ay);
   switch (s.family) {
     case 'hive': hive(c, s, time, flash); break;
     case 'beetle': beetle(c, s, time, flash); break;
@@ -727,16 +769,17 @@ export function drawStructure(c: Ctx, s: Structure, time: number) {
     case 'termite': mound(c, s, time, flash); break;
   }
   c.restore();
+  if (look.mastery) nestHalo(c, ax, s.underground ? s.y - 10 * look.scale : GY - baseTop * look.scale + 4, 6, look.color, time, false);
   if (s.hp < s.maxHp || s.family === 'beetle') {
     const w = 16;
-    const y = s.family === 'spider' ? s.y - 14 : s.family === 'beetle' ? GY - 24 - s.tier * 2 : s.family === 'dragonfly' ? GY - 44 : GY - 52;
+    const y = s.family === 'spider' ? s.y - 14 * look.scale : GY - (s.family === 'beetle' ? 24 + s.tier * 2 : s.family === 'dragonfly' ? 44 : 52) * look.scale;
     rect(c, s.x - w / 2, y, w, 2, '#10070c');
     rect(c, s.x - w / 2, y, Math.max(1, (w * s.hp) / s.maxHp), 1, s.hp / s.maxHp < 0.35 ? '#ff5a4a' : '#ffd25a');
   }
   // merge stars and ascension glow (colour bands)
   if (s.merge > 0 || s.ascend > 0) {
     const col = glowBand(s.merge + Math.floor(s.ascend / ASCEND.band));
-    const top = s.underground ? s.y - 16 : GY - (s.family === 'beetle' ? 30 : s.family === 'dragonfly' ? 50 : 58);
+    const top = s.underground ? s.y - 16 * look.scale : GY - baseTop * look.scale - (look.mastery ? 7 : 0);
     for (let i = 0; i < s.merge; i++) {
       const sx = s.x - (s.merge - 1) * 3 + i * 6;
       rect(c, sx, top - 2, 1, 5, col); rect(c, sx - 2, top, 5, 1, col); rect(c, sx, top, 1, 1, PAL.white);
@@ -1122,6 +1165,18 @@ export function drawProjectile(c: Ctx, p: Projectile, tint?: string) {
 
 /** Utility nests living in the crown: small glowing pods hanging from branches. */
 export function drawCrownNest(c: Ctx, s: Structure, time: number) {
+  const look = nestLook(s);
+  nestHalo(c, s.x, s.y + 2, 8 * look.scale, look.color, time, true);
+  c.save();
+  c.translate(s.x, s.y);
+  c.scale(look.scale, look.scale);
+  c.translate(-s.x, -s.y);
+  drawCrownNestBody(c, s, time);
+  c.restore();
+  if (look.mastery) nestHalo(c, s.x, s.y - 6 * look.scale, 5, look.color, time, false);
+}
+
+function drawCrownNestBody(c: Ctx, s: Structure, time: number) {
   const x = Math.round(s.x), y = Math.round(s.y);
   const g = 0.5 + 0.5 * Math.sin(time * 3 + s.id);
   line(c, x, y - 8, x, y - 3, PAL.bark2);

@@ -229,3 +229,6 @@
 - Build with merge stars: every build option has its own − ★N + stepper (0–6 stars) and plants a
   nest already merged for the price of the 3ⁿ nests it replaces — no more planting three
   nests just to fuse them (levels are upgraded afterwards as usual).
+- Nests grow visibly: size by level, merge stars and ascension (surface up to ×1.7, crown ×1.35,
+  roots ×1.4 — space is tight there), a halo coloured by progress (gold level 2, warm amber
+  branch A, cool blue branch B) and a spark crown at Mastery (level 4).
