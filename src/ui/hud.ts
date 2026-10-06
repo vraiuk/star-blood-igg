@@ -591,32 +591,41 @@ export class Hud {
     };
     if (this.panelKind === 'tree') {
       const need = g.growNeed();
-      html += `<h3>Древо Игг</h3><div class="sub">Стадии роста — как ранги Восхождения</div><div class="ladder">`;
+      const cur = TREE_STAGES[s.tree.stage];
+      html += `<h3>Древо Игг</h3><div class="sub">Сейчас: <b>${cur.name}</b> · стадия ${s.tree.stage + 1} из ${TREE_STAGES.length}</div>`;
+      // ── the action first: grow (or add a growth ring)
+      if (need > 0) {
+        const nextSt = TREE_STAGES[s.tree.stage + 1];
+        const give = Math.min(need, s.amber);
+        const br = TREE_BRANCHES[s.tree.stage + 1];
+        html += `<div class="growcard">
+          <div class="gc-head">Следующая стадия: <b>${nextSt.name}</b></div>
+          <div class="gc-un">${nextSt.unlocks.join(' · ')} · сила гнёзд ×${nextSt.power}${br ? `<br>Ветвь на выбор: <i>${br[0].name}</i> или <i>${br[1].name}</i>` : ''}</div>
+          <div class="growrow"><div class="bar thin grow"><i style="width:${(s.tree.growth / cur.growCost) * 100}%"></i></div>
+            <span><img class="icon" src="${icon('amber')}"> ${s.tree.growth} / ${cur.growCost}</span></div>
+          <div class="row">${btn(give >= need ? `Вырастить Древо (−${give})` : give > 0 ? `Напитать (−${give})` : `Нужно ещё ${need} Янтаря`, give > 0, () => { g.feed(give); })}
+            ${btn('+10', s.amber >= 10 && need > 10, () => { g.feed(10); }, '')}</div>
+        </div>`;
+      } else {
+        const rc = g.ringCost();
+        html += `<div class="growcard"><div class="gc-head">Великое Игг-Древо в полной силе</div>
+          <div class="gc-un">Теперь оно наращивает <b>годичные кольца</b>: каждое +7% силы гнёзд и +10% здоровья Древа.${s.tree.rings ? `<br>Колец: <b>${s.tree.rings}</b> · сила гнёзд ×${g.treePower().toFixed(2)}` : ''}</div>
+          <div class="row">${btn(`Годичное кольцо №${s.tree.rings + 1} (<img class="icon" src="${icon('amber')}"> ${rc})`, s.amber >= rc, () => { g.addRing(); })}</div></div>`;
+      }
+      // ── reference: the whole ladder (current at the top of the list, compact)
+      html += `<div class="sub">Все стадии:</div><div class="ladder">`;
       TREE_STAGES.forEach((st, i) => {
         const state = i < s.tree.stage ? 'done' : i === s.tree.stage ? 'cur' : 'next';
-        const br = TREE_BRANCHES[i];
-        const chosen = br?.find((b) => s.tree.branches.includes(b.id));
+        const brs = TREE_BRANCHES[i];
+        const chosen = brs?.find((x) => s.tree.branches.includes(x.id));
         html += `<div class="step ${state}">
           <div class="dot">${i + 1}</div>
           <div class="body"><div class="nm">${st.name}</div>
             <div class="un">${st.unlocks.join(' · ')} · сила гнёзд ×${st.power}</div>
-            ${br ? `<div class="br">Ветвь: ${chosen ? `<b>${chosen.name}</b>` : `<i>${br[0].name}</i> или <i>${br[1].name}</i>`}</div>` : ''}
-            ${i === s.tree.stage + 1 ? `<div class="cost"><img class="icon" src="${icon('amber')}"> ${TREE_STAGES[s.tree.stage].growCost}</div>` : ''}
+            ${brs ? `<div class="br">Ветвь: ${chosen ? `<b>${chosen.name}</b>` : `<i>${brs[0].name}</i> или <i>${brs[1].name}</i>`}</div>` : ''}
           </div></div>`;
       });
       html += `</div>`;
-      if (need > 0) {
-        const give = Math.min(need, s.amber);
-        html += `<div class="growrow"><div class="bar thin grow"><i style="width:${(s.tree.growth / TREE_STAGES[s.tree.stage].growCost) * 100}%"></i></div>
-          <span>${s.tree.growth} / ${TREE_STAGES[s.tree.stage].growCost}</span></div>`;
-        html += `<div class="row">${btn(give >= need ? `Вырастить Древо (−${give})` : `Напитать (−${give})`, give > 0, () => { g.feed(give); })}
-          ${btn('+10', s.amber >= 10 && need > 10, () => { g.feed(10); }, '')}</div>`;
-      } else {
-        const rc = g.ringCost();
-        html += `<div class="sub">Великое Игг-Древо в полной силе. Теперь оно наращивает <b>годичные кольца</b>: каждое +7% силы гнёзд и +10% здоровья Древа.</div>`;
-        html += `<div class="row">${btn(`Годичное кольцо №${s.tree.rings + 1} (<img class="icon" src="${icon('amber')}"> ${rc})`, s.amber >= rc, () => { g.addRing(); })}</div>`;
-        if (s.tree.rings) html += `<div class="sub">Колец: <b>${s.tree.rings}</b> · сила гнёзд ×${g.treePower().toFixed(2)}</div>`;
-      }
     } else if (this.panelKind === 'keeper') {
       const k = s.keeper;
       const rank = KEEPER_RANKS[k.rank];
