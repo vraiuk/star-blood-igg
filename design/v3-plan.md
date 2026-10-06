@@ -160,3 +160,12 @@
 - Big worms toughen faster in endless (heavyHp 0.1/night), more Stражи in the generator.
 - «Натиск» opens once 60% of the night's creatures are out; a dim button shows the progress.
 - Speed resets to ×1 when the Keeper falls; no rune choice can show over the title screen.
+
+## v0.5.x — версии, звёздные ранги (по статистике забега 29 ночей)
+- Versioning: package.json semver, bumped by .githooks/pre-commit on every commit (patch);
+  vite injects version + git hash; shown on the title, stored in run logs, stats filter
+  «эта версия / все версии».
+- Playtest log (29 nights): hammer 23% of damage, spear 17, hives 17, spiders 11, starfall 9;
+  24 rushes in 29 nights; 17k Amber / 5k Star Blood unspent at night 27; star ranks felt weak.
+- Star rune ranks: +30% power each (was +15%), price ×1.3 per rank (was ×1.45).
+- Rush pays only for creatures already out (pending ones bring their own loot).

@@ -1,0 +1,7 @@
+#!/bin/sh
+# Every commit bumps the patch version so playtest logs and patches never get mixed up.
+# Skip with SKIP_BUMP=1 git commit ...
+[ -n "$SKIP_BUMP" ] && exit 0
+npm version patch --no-git-tag-version >/dev/null 2>&1 || exit 0
+git add package.json package-lock.json 2>/dev/null
+exit 0

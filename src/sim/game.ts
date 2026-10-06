@@ -708,7 +708,8 @@ export class Game {
     const s = this.state;
     const gift = (ECONOMY.dawnBase + ECONOMY.dawnPerNight * (s.night + 1)) * (1 + this.mods.dawnGift);
     return {
-      amber: Math.round(gift * ECONOMY.rushGiftShare + (s.enemies.length + s.pending.length) * ECONOMY.rushPerEnemy * ENDLESS.bounty(s.night)),
+      // only creatures already out count: the rest still bring their own loot when they come
+      amber: Math.round(gift * ECONOMY.rushGiftShare + s.enemies.length * ECONOMY.rushPerEnemy * ENDLESS.bounty(s.night)),
       star: ECONOMY.rushStar + Math.floor(s.night / 5),
     };
   }

@@ -148,9 +148,14 @@ const RANK_POWER = [1, 1.35, 1.8, 2.4, 3.2];
 const RANK_AREA = [1, 1.1, 1.2, 1.35, 1.5];
 /** a stronger rune is heavier: every rank lengthens its cooldown */
 const RANK_CD = [1, 1.08, 1.16, 1.25, 1.35];
-/** Beyond «Небо» runes climb endless Star ranks: +15% power each, exponentially priced. */
-export const runeRankCost = (r: number) => (r < RANK_COST.length ? RANK_COST[r] : Math.round(80 * Math.pow(1.45, r - 4)));
-export const runeRankPower = (r: number) => (r < RANK_POWER.length ? RANK_POWER[r] : 3.2 * Math.pow(1.15, r - 4));
+/**
+ * Beyond «Небо» runes climb endless Star ranks. Endless creatures thicken ~8–9% a night, so a
+ * Star rank must be felt: +30% power each, price growing ×1.3 (playtest: +15% / ×1.45 was
+ * expensive and invisible by night 25+).
+ */
+export const STAR_RANK = { power: 1.3, cost: 1.3 } as const;
+export const runeRankCost = (r: number) => (r < RANK_COST.length ? RANK_COST[r] : Math.round(80 * Math.pow(STAR_RANK.cost, r - 4)));
+export const runeRankPower = (r: number) => (r < RANK_POWER.length ? RANK_POWER[r] : 3.2 * Math.pow(STAR_RANK.power, r - 4));
 export const runeRankArea = (r: number) => RANK_AREA[Math.min(r, RANK_AREA.length - 1)];
 /** a stronger rune also burns more Light per cast (so Дух — light regen — matters) */
 const RANK_LIGHT = [1, 1.15, 1.3, 1.5, 1.7];

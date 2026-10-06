@@ -478,3 +478,4 @@ body { display: grid; place-items: center; }
 .pathc .pc i { font-style: normal; color: var(--c); opacity: 0.9; }
 .pathc .pc span::before { content: '• '; color: var(--c); }
 .pathc.done .pc span { color: #f0e8d8; }
+.screen .ver { margin-top: calc(4 * var(--u)); font-size: calc(5.5 * var(--u)); opacity: 0.45; font-family: var(--pix); }

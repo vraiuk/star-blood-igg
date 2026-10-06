@@ -6,6 +6,7 @@ import {
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
 import type { Game } from '../sim/game';
+import { VERSION_LABEL } from '../version';
 import type { GameEvent } from '../sim/types';
 import { icon } from './icons';
 import { QUESTS } from './quests';
@@ -284,6 +285,7 @@ export class Hud {
           <button class="btn" data-a="stats">Статистика</button>
         </div>
         <div class="stat">${pathName}</div>
+        <div class="ver">${VERSION_LABEL}</div>
       </div>`;
     this.title.querySelector('[data-a=start]')!.addEventListener('click', () => this.cb.onStart());
     this.title.querySelector('[data-a=meta]')!.addEventListener('click', () => this.cb.onOpenMeta());
@@ -799,7 +801,7 @@ export class Hud {
         if (unlocked) {
           const cost = runeRankCost(rr + 1);
           html += `<div class="row left">${btn(`Повышение → ${runeRankName(rr + 1)} (<img class="icon" src="${icon('star')}"> ${cost})`, s.star >= cost, () => { g.promoteRune(rid); }, 'tiny')}
-            <span class="hint">${rr + 1 === FORM_RANK && hasForms ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && hasForms ? 'Апофеоз Формы' : FACET_RANKS.includes(rr + 1) ? 'откроет выбор Грани' : 'сила и площадь ↑'} · ${rid === 'light' ? 'Свойства высших рангов' : `откат +${Math.round((runeRankCd(rr + 1) / runeRankCd(rr) - 1) * 100)}%`}${rid !== 'light' && rid !== 'starfall' ? ` · Свет +${Math.round((runeRankLight(rr + 1) / runeRankLight(rr) - 1) * 100)}%` : ''}</span></div>`;
+            <span class="hint">${rr + 1 === FORM_RANK && hasForms ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && hasForms ? 'Апофеоз Формы' : FACET_RANKS.includes(rr + 1) ? 'откроет выбор Грани' : rr >= 4 ? 'звёздный ранг' : 'площадь ↑'} · сила ×${(runeRankPower(rr + 1) / runeRankPower(rr)).toFixed(2)} · ${rid === 'light' ? 'Свойства высших рангов' : `откат +${Math.round((runeRankCd(rr + 1) / runeRankCd(rr) - 1) * 100)}%`}${rid !== 'light' && rid !== 'starfall' ? ` · Свет +${Math.round((runeRankLight(rr + 1) / runeRankLight(rr) - 1) * 100)}%` : ''}</span></div>`;
         }
         if ((rid === 'spear' || rid === 'hammer' || rid === 'starfall') && unlocked) {
           const forms = RUNE_FORMS[rid];

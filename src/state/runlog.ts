@@ -2,6 +2,7 @@ import { NESTS } from '../data/nests';
 import { PATHS } from '../data/meta';
 import { TREE_STAGES, branchById } from '../data/tree';
 import type { Game } from '../sim/game';
+import { VERSION, VERSION_LABEL } from '../version';
 
 const KEY = 'igg-tree-runlogs-v1';
 const KEEP = 100;
@@ -10,6 +11,8 @@ const KEEP = 100;
 export interface RunLog {
   id: string;
   date: string;
+  /** game version (semver) and full label with the build hash */
+  version: string;
   build: string;
   path: string;
   result: 'lost' | 'quit';
@@ -47,7 +50,8 @@ export function buildRunLog(g: Game, result: RunLog['result']): RunLog {
   return {
     id: `${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`,
     date: new Date().toISOString(),
-    build: (import.meta as { env?: { MODE?: string } }).env?.MODE ?? 'web',
+    version: VERSION,
+    build: VERSION_LABEL,
     path: PATHS[g.path]?.name ?? String(g.path),
     result,
     nights: s.night,

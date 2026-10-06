@@ -1,5 +1,6 @@
 import { ENEMIES, type EnemyKind } from '../data/balance';
 import { clearRunLogs, downloadRunLogs, loadRunLogs, type RunLog } from '../state/runlog';
+import { VERSION, VERSION_LABEL } from '../version';
 
 /** Readable names of damage sources in run logs. */
 const SRC: Record<string, string> = {
@@ -50,7 +51,7 @@ function summary(logs: RunLog[]): string {
 
 function runRow(l: RunLog): string {
   const top = Object.entries(l.dmg).filter(([k]) => KEEPER_SRC.has(k)).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k]) => SRC[k] ?? k).join(', ');
-  return `<tr><td>${new Date(l.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${new Date(l.date).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</td>
+  return `<tr><td>${l.version ? `v${l.version}` : '—'}</td><td>${new Date(l.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${new Date(l.date).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</td>
     <td>${l.path}</td><td><b>${l.nights}</b>${l.result === 'quit' ? ' <small>(вышел)</small>' : ''}</td><td>${l.tree.stage}${l.tree.rings ? ` +${l.tree.rings}` : ''}</td>
     <td>${l.keeper.learned.length}</td><td>${top || '—'}</td><td>${l.keeperDeaths}</td><td>${l.rushes}</td></tr>`;
 }
@@ -59,13 +60,17 @@ function runRow(l: RunLog): string {
 export function openStats(root: HTMLElement, onClose: () => void) {
   const el = document.createElement('div');
   el.className = 'screen st-screen';
+  let onlyCurrent = true;
   const render = () => {
-    const logs = loadRunLogs();
+    const all = loadRunLogs();
+    const logs = onlyCurrent ? all.filter((l) => l.version === VERSION) : all;
     el.innerHTML = `<div class="box st-box">
-      <div class="kicker">Летопись Наблюдателя</div><h1>Статистика забегов</h1>
+      <div class="kicker">Летопись Наблюдателя · ${VERSION_LABEL}</div><h1>Статистика забегов</h1>
+      <div class="row"><button class="btn ${onlyCurrent ? 'gold' : ''}" data-a="cur">Эта версия (${all.filter((l) => l.version === VERSION).length})</button>
+        <button class="btn ${onlyCurrent ? '' : 'gold'}" data-a="all">Все версии (${all.length})</button></div>
       ${summary(logs)}
       ${logs.length ? `<h3>Последние забеги</h3><div class="st-table"><table>
-        <tr><th>Когда</th><th>Тропа</th><th>Ночей</th><th>Древо</th><th>Рун</th><th>Главные руны</th><th>Смертей</th><th>Натиск</th></tr>
+        <tr><th>Версия</th><th>Когда</th><th>Тропа</th><th>Ночей</th><th>Древо</th><th>Рун</th><th>Главные руны</th><th>Смертей</th><th>Натиск</th></tr>
         ${logs.slice().reverse().slice(0, 15).map(runRow).join('')}</table></div>` : ''}
       <div class="row">
         <button class="btn" data-a="dl" ${logs.length ? '' : 'disabled'}>Скачать JSON</button>
@@ -73,6 +78,8 @@ export function openStats(root: HTMLElement, onClose: () => void) {
         <button class="btn gold" data-a="back">Назад</button>
       </div></div>`;
     el.querySelector('[data-a=dl]')?.addEventListener('click', () => downloadRunLogs());
+    el.querySelector('[data-a=cur]')?.addEventListener('click', () => { onlyCurrent = true; render(); });
+    el.querySelector('[data-a=all]')?.addEventListener('click', () => { onlyCurrent = false; render(); });
     el.querySelector('[data-a=clear]')?.addEventListener('click', () => { clearRunLogs(); render(); });
     el.querySelector('[data-a=back]')!.addEventListener('click', close);
   };
