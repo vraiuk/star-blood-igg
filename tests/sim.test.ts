@@ -211,6 +211,8 @@ describe('economy', () => {
   it('properties fill rune slots; a development rune opens the 4th', () => {
     const g = new Game();
     g.state.star = 999;
+    expect(g.buyProperty('sp-power')).toBe(false); // Бронза property won't fit a Дерево rune
+    expect(g.promoteRune('spear')).toBe(true);
     for (let i = 0; i < 3; i++) expect(g.buyProperty('sp-power')).toBe(true);
     expect(g.buyProperty('sp-cheap')).toBe(false); // 3 slots full
     g.state.devRunes = 1;

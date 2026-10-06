@@ -61,7 +61,7 @@ export const META_NODES: MetaNode[] = [
     { id: 's1', name: 'Липкий шёлк', desc: 'Пауки +15% урона', cost: 1, mods: { famDamage: { spider: 0.15 } } },
     { id: 's2', name: 'Чутьё глубин', desc: 'Пауки +20% охвата', cost: 1, mods: { famRange: { spider: 0.2 } } },
     { id: 's3', name: 'Кровавый урожай', desc: 'Черви роняют +1 Звёздную Кровь', cost: 2, mods: { wormStar: 1 } },
-    { id: 's4', name: 'Паутина над землёй', desc: 'Пауки бьют тварей на земле в полную силу', cost: 3, mods: { spiderSurface: true }, capstone: true },
+    { id: 's4', name: 'Паутина над землёй', desc: 'Нить вверх по тварям на земле бьёт вдвое сильнее', cost: 3, mods: { spiderSurface: true }, capstone: true },
   ]),
   ...chain('roots', [
     { id: 'r1', name: 'Закалка', desc: 'Хранитель +25 HP', cost: 1, mods: { keeperHp: 25 } },

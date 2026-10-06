@@ -51,12 +51,12 @@ export const NIGHTS: NightDef[] = [
     ],
   },
   {
-    title: 'Четвёртая ночь', hpMul: 1.8,
+    title: 'Четвёртая ночь', hpMul: 1.65,
     hint: 'Тьма давит на Круг. Прыгуны перескакивают Светожуков, а Тенекрылы летят к кроне — их бьют стрекозы, ульи и Копьё.',
     groups: [
-      g(2, 'hound', 'B', 6, 1), g(8, 'stalker', 'L', 2, 4), g(10, 'spitter', 'R', 3, 2.5), g(14, 'worm', 'B', 1), g(24, 'stalker', 'B', 1),
+      g(2, 'hound', 'B', 6, 1), g(8, 'stalker', 'L', 1), g(10, 'spitter', 'R', 3, 2.5), g(14, 'worm', 'B', 1), g(24, 'stalker', 'B', 1),
       g(32, 'jumper', 'L', 4, 0.8), g(18, 'moth', 'R', 4, 1), g(40, 'moth', 'L', 4, 1),
-      g(20, 'forager', 'B', 6, 0.8), g(26, 'stalker', 'R', 2, 4), g(30, 'spitter', 'L', 3, 2.5), g(36, 'worm', 'B', 1),
+      g(20, 'forager', 'B', 6, 0.8), g(26, 'stalker', 'R', 1), g(30, 'spitter', 'L', 3, 2.5), g(36, 'worm', 'B', 1),
       g(42, 'hound', 'B', 8, 0.7), g(50, 'stalker', 'B', 1),
     ],
   },
@@ -128,7 +128,7 @@ export const ENDLESS = {
   /** hand-made nights before the procedural generator takes over */
   campaignNights: NIGHTS.length,
   /** enemy max-hp multiplier */
-  hp: (n: number) => (1 + 0.2 * n + 0.025 * n * n) * Math.pow(1.06, Math.max(0, n - 9)),
+  hp: (n: number) => (1 + 0.2 * n + 0.025 * n * n) * Math.pow(1.085, Math.max(0, n - 9)),
   /** enemy damage multiplier */
   damage: (n: number) => (1 + 0.12 * n) * Math.pow(1.03, Math.max(0, n - 9)),
   /** group-size multiplier for the hand-made nights */
@@ -136,11 +136,13 @@ export const ENDLESS = {
   /** Amber/Star Blood bounty multiplier */
   bounty: (n: number) => 1 + 0.02 * n,
   /** boss hp multiplier (bosses are tuned absolute at their first appearance) */
-  bossHp: (n: number) => (1 + 0.12 * Math.max(0, n - 4)) * Math.pow(1.04, Math.max(0, n - 9)),
+  bossHp: (n: number) => (1 + 0.12 * Math.max(0, n - 4)) * Math.pow(1.07, Math.max(0, n - 9)),
   /** extra growth of underground worm groups per night */
   wormCount: 0.06,
   /** big Imago (Копатель, Страж) toughen faster after the campaign: hp, armor, bite */
   heavyHp: (n: number) => 1 + 0.07 * Math.max(0, n - 9),
+  /** every Worm-kind creature toughens a bit more in the endless nights */
+  wormHp: (n: number) => 1 + 0.03 * Math.max(0, n - 9),
   heavyArmor: (n: number) => 0.8 * Math.max(0, n - 9),
   heavyDamage: (n: number) => 1 + 0.035 * Math.max(0, n - 9),
   /** threat budget of a generated night */

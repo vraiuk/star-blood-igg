@@ -98,8 +98,26 @@ export function drawFog(c: Ctx, e: Enemy, time: number, night: number) {
       if (k > 1) continue;
       const h = ((x0 + x) * 7 + (y0 + y) * 13 + ph * 5) & 15;
       if (h > (1 - k) * 14) continue;
-      rect(c, x0 + x, y0 + y, 2, 2, h % 3 === 0 ? 'rgba(60,30,90,0.55)' : 'rgba(8,5,18,0.6)');
+      rect(c, x0 + x, y0 + y, 2, 2, h % 3 === 0 ? 'rgba(80,40,120,0.7)' : 'rgba(8,5,18,0.78)');
     }
+  }
+}
+
+/** Violet edge and drifting wisps of the shroud — drawn above the darkness so it reads at night. */
+export function drawFogEdge(c: Ctx, e: Enemy, time: number, night: number) {
+  const r = ENEMIES[e.kind].fog;
+  if (!r || e.dead || night < FOG.fromNight) return;
+  const cy = e.layer === 'ground' && !ENEMIES[e.kind].underground ? GY - ENEMIES[e.kind].height * 0.5 : e.y;
+  const ry = r * 0.45;
+  const x0 = Math.round(e.x), y0 = Math.round(cy);
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2 + time * 0.6;
+    if (Math.sin(time * 3 + i * 1.7) < -0.2) continue;
+    rect(c, x0 + Math.cos(a) * r, y0 + Math.sin(a) * ry, 1, 1, '#9a6ad8');
+  }
+  for (let i = 0; i < 5; i++) {
+    const t = (time * 0.4 + i / 5) % 1;
+    rect(c, x0 + Math.sin(i * 2.3 + time) * r * 0.7, y0 - ry * 0.3 - t * 18, 2, 1, `rgba(150,100,220,${(1 - t) * 0.6})`);
   }
 }
 
@@ -721,20 +739,24 @@ function dragonflyNest(c: Ctx, s: Structure, time: number, flash: boolean) {
   const storm = s.spec === 'B';
   const core = storm ? (g > 0.6 ? '#e8f4ff' : '#9fd0ff') : g > 0.5 ? PAL.gold5 : PAL.gold4;
   disc(c, x, ny - 3, 2 + (s.spec === 'A' ? 2 + (s.tier - 2) : 0), core);
-  // dragonflies
-  const n = 2 + s.tier;
-  for (let i = 0; i < n; i++) {
-    const a = time * (1.2 + i * 0.17) + i * 2.4;
-    const r = 10 + (i % 3) * 5;
-    const fx = x + Math.cos(a) * r;
-    const fy = ny - 4 + Math.sin(a * 1.7) * 5;
-    const dir = -Math.sin(a) > 0 ? 1 : -1;
-    line(c, fx - dir * 3, fy, fx + dir * 1, fy, storm ? '#bfe4ff' : PAL.gold3);
-    const wing = Math.sin(time * 30 + i) > 0;
-    rect(c, fx - 1, fy - (wing ? 2 : 1), 1, 1, storm ? '#e8f4ff' : PAL.gold5);
-    rect(c, fx + 1, fy - (wing ? 1 : 2), 1, 1, storm ? '#e8f4ff' : PAL.gold5);
-    rect(c, fx + dir * 2, fy, 1, 1, PAL.white);
-  }
+  // the little dragonflies themselves are drawn by the renderer (they fly out on sorties)
+}
+
+/** Where a nest's dragonfly i circles when at home. */
+export function dragonflyHome(s: Structure, i: number, time: number): [number, number] {
+  const ny = GY - (26 + Math.min(s.tier, 2) * 3) - 3;
+  const a = time * (1.2 + i * 0.17) + i * 2.4;
+  const r = 10 + (i % 3) * 5;
+  return [s.x + Math.cos(a) * r, ny - 4 + Math.sin(a * 1.7) * 5];
+}
+
+/** One little golden (or storm-blue) dragonfly. */
+export function drawDragonfly(c: Ctx, fx: number, fy: number, dir: number, storm: boolean, time: number, i: number) {
+  line(c, fx - dir * 3, fy, fx + dir * 1, fy, storm ? '#bfe4ff' : PAL.gold3);
+  const wing = Math.sin(time * 30 + i) > 0;
+  rect(c, fx - 1, fy - (wing ? 2 : 1), 1, 1, storm ? '#e8f4ff' : PAL.gold5);
+  rect(c, fx + 1, fy - (wing ? 1 : 2), 1, 1, storm ? '#e8f4ff' : PAL.gold5);
+  rect(c, fx + dir * 2, fy, 1, 1, PAL.white);
 }
 
 /** A termite mound of clay and amber. */
@@ -1008,13 +1030,16 @@ export function drawCrownNest(c: Ctx, s: Structure, time: number) {
 
 /** An empty crown slot: a glowing hollow in the branches. */
 export function drawCrownSlot(c: Ctx, x: number, y: number, time: number, hover: boolean) {
+  // a dark hollow in the foliage so the marker reads against golden leaves
   const g = 0.5 + 0.5 * Math.sin(time * 3 + x);
-  const r = 5 + g + (hover ? 2 : 0);
-  for (let a = 0; a < 16; a++) {
+  disc(c, x, y, 6 + (hover ? 1 : 0), '#140a1e');
+  disc(c, x, y, 5 + (hover ? 1 : 0), '#2a1640');
+  const r = 7 + g + (hover ? 2 : 0);
+  for (let a = 0; a < 20; a++) {
     if (a % 2 && !hover) continue;
-    const ang = (a / 16) * Math.PI * 2 + time;
-    rect(c, x + Math.cos(ang) * r, y + Math.sin(ang) * r, 1, 1, hover ? PAL.gold5 : PAL.gold4);
+    const ang = (a / 20) * Math.PI * 2 + time;
+    rect(c, x + Math.cos(ang) * r, y + Math.sin(ang) * r, 1, 1, hover ? PAL.white : '#b8f0ff');
   }
-  rect(c, x - 2, y, 5, 1, PAL.gold5);
-  rect(c, x, y - 2, 1, 5, PAL.gold5);
+  rect(c, x - 3, y, 7, 1, hover ? PAL.white : '#c8f4ff');
+  rect(c, x, y - 3, 1, 7, hover ? PAL.white : '#c8f4ff');
 }

@@ -103,3 +103,20 @@
   Igg-light burn/×2 and cuts aura damage to 40% inside.
 - Surface/crown nest range scales with tree stage (reach ×1.0 → ×1.55); camera up to 1240.
 - Feat modal removed (always continue); the start offer is titled as the first gift.
+
+## v4.3 — Уклоны, Грани, изучение рун
+- Crown slot marker: dark hollow + pale-blue ring so it reads on golden foliage; crown picks
+  checked before surface nests, surface hitboxes match sprite heights.
+- Igg-Beam hive: lasting 1.6 s beam (ticks 0.1 s, ignores armor, re-aims on kill).
+- Dragonfly sorties: 2+tier+merge little dragonflies fly out to a lit creature within
+  2.6× light radius and sting (0.22×burn each, ×1.6 vs flyers); drawn by the renderer.
+- Weavers vs surface: 30% damage, 1.5× slower, web 1.2 s (capstone 65%).
+- Keeper starts with the Spear only; other runes are learned for Star Blood (stage-gated)
+  or gifted by the Observer at dawn.
+- Tree branches: 1 of 3 per growth, each from a path (Янтарный / Светоносный / Корневой /
+  Звёздный); 3 of one path → capstone (fogPierce, rootSeal, abilityCd…).
+- Rune Facets (Грани) at Бронза and Золото: 2 base + resonance options unlocked by installed
+  Properties. Properties stack (Усиление ×4, Уменьшение ×2), need rune rank ≥ property rank,
+  can be pulled out for Star Blood; each rune rank adds cooldown (×1.08 … ×1.35).
+- Keeper Tablet pauses time; ability hover card with live numbers; no rune offer under the
+  title screen.

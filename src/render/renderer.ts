@@ -5,9 +5,9 @@ import { type Backdrop, buildBackdrop } from './background';
 import { Camera } from './camera';
 import { Lighting } from './lighting';
 import { Particles } from './particles';
-import { type Ctx, PAL, makeCanvas, rect } from './pixel';
+import { type Ctx, PAL, line, makeCanvas, rect } from './pixel';
 import {
-  ROOT_SLOT_Y, drawTunnel, drawTunnelMouths, drawFog, drawAffix, drawWeb, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
+  ROOT_SLOT_Y, drawTunnel, drawTunnelMouths, drawFog, drawFogEdge, drawDragonfly, dragonflyHome, drawAffix, drawWeb, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
   drawCrownNest, drawCrownSlot, drawSoldier, drawStructure, drawWorker,
 } from './sprites';
 import { drawGrass, drawRoots, drawTree } from './tree';
@@ -236,6 +236,22 @@ export class Renderer {
 
     // ── above darkness: eyes, light, drops, projectiles
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
+    for (const e of s.enemies) drawFogEdge(c, e, time, s.night);
+    this.drawDragonflies(c, game, time, dt);
+    // lasting Igg-Beams of the hives
+    for (const st of s.structures) {
+      if (!st.beamT || st.beamT <= 0) continue;
+      const t = s.enemies.find((e) => e.id === st.beamTo && !e.dead);
+      if (!t) continue;
+      const ox = st.x, oy = st.crown ? st.y + 3 : WORLD.groundY - 40;
+      const out = Math.sign(t.x - WORLD.treeX) || 1;
+      const tx = t.x + out * 12, ty = t.y - ENEMIES[t.kind].height * 0.5;
+      const w = Math.sin(time * 40 + st.id) > 0 ? 3 : 2;
+      line(c, ox, oy, tx, ty, PAL.gold2, w + 1);
+      line(c, ox, oy, tx, ty, PAL.gold5, 1);
+      rect(c, t.x - 1, ty - 1, 3, 3, PAL.white);
+      if (Math.random() < 0.5) this.particles.emit(1, t.x, ty, { speed: 40, max: 0.3, colors: [PAL.gold5, PAL.gold3], glow: true });
+    }
     // build runes and root nodes sit above the darkness so they stay readable at night
     if (!game.over) {
       for (const sl of SLOTS) {
@@ -382,6 +398,38 @@ export class Renderer {
       const f = Math.sin(time * 14 + i);
       rect(c, x + i, WORLD.groundY - 1 - (f > 0.3 ? 2 : 1), 1, f > 0.3 ? 2 : 1, f > 0.6 ? PAL.gold4 : '#ff7a3a');
     }
+  }
+
+  /** Little dragonflies: circle their nest, fly out to sting a creature in the Tree's light. */
+  private drones = new Map<string, { x: number; y: number }>();
+  private drawDragonflies(c: Ctx, game: Game, time: number, dt: number) {
+    const s = game.state;
+    const live = new Set<string>();
+    for (const st of s.structures) {
+      if (st.family !== 'dragonfly') continue;
+      const foe = st.stingTo ? s.enemies.find((e) => e.id === st.stingTo && !e.dead) : undefined;
+      const n = game.dragonflyDrones(st);
+      for (let i = 0; i < n; i++) {
+        const key = `${st.id}:${i}`;
+        live.add(key);
+        let [tx, ty] = dragonflyHome(st, i, time);
+        if (foe) {
+          const a = time * (5 + i * 0.6) + i * 2.1;
+          const fy = foe.layer === 'ground' ? WORLD.groundY - ENEMIES[foe.kind].height * 0.6 : foe.y - ENEMIES[foe.kind].height * 0.5;
+          tx = foe.x + Math.cos(a) * (ENEMIES[foe.kind].radius + 4);
+          ty = fy + Math.sin(a * 1.3) * 6;
+        }
+        let d = this.drones.get(key);
+        if (!d) { d = { x: tx, y: ty }; this.drones.set(key, d); }
+        const px = d.x;
+        const k = Math.min(1, dt * (foe ? 5 : 3.5));
+        d.x += (tx - d.x) * k;
+        d.y += (ty - d.y) * k;
+        drawDragonfly(c, d.x, d.y, d.x >= px ? 1 : -1, st.spec === 'B', time, i);
+        if (foe && Math.random() < dt * 3) this.particles.emit(1, d.x, d.y, { speed: 15, max: 0.25, colors: [PAL.gold5], glow: true });
+      }
+    }
+    for (const key of this.drones.keys()) if (!live.has(key)) this.drones.delete(key);
   }
 
   private drawRange(c: Ctx, game: Game, st: import('../sim/types').Structure, x: number, underground: boolean, y?: number) {

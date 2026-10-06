@@ -405,3 +405,29 @@ body { display: grid; place-items: center; }
 .ab:not(.ready) img { filter: grayscale(0.35) brightness(0.75); }
 .ab.pop::before { content: ''; position: absolute; inset: 0; background: rgba(255, 240, 190, 0.85); animation: abpop 0.45s ease-out forwards; pointer-events: none; z-index: 3; }
 @keyframes abpop { from { opacity: 1; } to { opacity: 0; } }
+
+/* v4.3: a rune that can be learned right now */
+.ab.learnable .lock { animation: learnPulse 1.2s ease-in-out infinite; }
+@keyframes learnPulse { 0%,100% { background: rgba(10,8,20,0.75); } 50% { background: rgba(120,60,140,0.6); } }
+
+/* v4.3: rich ability card on hover */
+.abtip { position: absolute; z-index: 30; width: calc(125 * var(--u)); pointer-events: none;
+  background: linear-gradient(180deg, rgba(28,20,44,0.97), rgba(14,10,24,0.97)); border: 1px solid #ffd24a66;
+  box-shadow: 0 0 0 1px #000a, 0 6px 22px #000c, inset 0 0 18px #ffd24a14; border-radius: 6px;
+  padding: calc(4 * var(--u)) calc(5 * var(--u)); color: #e8dcc4; font-family: Philosopher, serif; font-size: calc(6 * var(--u)); }
+.abtip.hidden { display: none; }
+.abtip .hd { display: flex; gap: calc(4 * var(--u)); align-items: center; margin-bottom: calc(2.5 * var(--u)); }
+.abtip .hd img { width: calc(14 * var(--u)); height: calc(14 * var(--u)); image-rendering: pixelated; }
+.abtip .hd div { display: flex; flex-direction: column; flex: 1; }
+.abtip .hd b { color: #ffe58a; font-size: calc(7 * var(--u)); }
+.abtip .hd span { font-size: calc(5.5 * var(--u)); }
+.abtip .hd .key { flex: 0; border: 1px solid #ffffff44; border-radius: 3px; padding: 0 calc(2.5 * var(--u)); color: #fff; }
+.abtip .ds { line-height: 1.3; margin-bottom: calc(3 * var(--u)); opacity: .9; }
+.abtip .lockline { color: #ffb08a; margin-bottom: calc(3 * var(--u)); }
+.abtip .st { display: grid; grid-template-columns: 1fr auto; gap: calc(1 * var(--u)) calc(5 * var(--u)); border-top: 1px solid #ffffff1a; padding-top: calc(2.5 * var(--u)); }
+.abtip .st span { opacity: .7; }
+.abtip .st b { color: #fff; text-align: right; }
+.abtip .tags { display: flex; flex-wrap: wrap; gap: calc(1.5 * var(--u)); margin-top: calc(2.5 * var(--u)); }
+.abtip .tags i { font-style: normal; font-size: calc(5 * var(--u)); border: 1px solid var(--c); color: var(--c); border-radius: 3px; padding: 0 calc(2 * var(--u)); }
+.slot .rm { margin-left: calc(2 * var(--u)); font-size: calc(4.5 * var(--u)); background: #3a1420; color: #ffb0b0; border: 1px solid #ff6a6a66; border-radius: 3px; cursor: pointer; padding: 0 calc(1.5 * var(--u)); }
+.slot .rm.no { opacity: .4; cursor: default; }

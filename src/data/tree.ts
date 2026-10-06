@@ -75,33 +75,66 @@ export const TREE = {
   growBurn: 40,
 } as const;
 
+/**
+ * Уклон Древа: every branch belongs to one of four paths. Three branches of one path turn
+ * the tree into that kind of Igg-Tree for the run (a strong capstone).
+ */
+export type TreePath = 'amber' | 'light' | 'root' | 'star';
+export const TREE_PATHS: Record<TreePath, { name: string; tree: string; color: string; capstone: string; mods: ModPatch }> = {
+  amber: { name: 'Янтарный', tree: 'Янтарное Древо', color: '#ff9a3c', capstone: 'Янтарь с тварей +25%, Звёздной Крови +20%, рассветный дар +50%', mods: { amberGain: 0.25, starGain: 0.2, dawnGift: 0.5 } },
+  light: { name: 'Светоносный', tree: 'Светоносное Древо', color: '#ffe58a', capstone: 'Игг-свет прожигает Туман Тьмы, Круг +10%, Высвечивание +20%', mods: { fogPierce: true, lightRadius: 0.1, vuln: 0.2 } },
+  root: { name: 'Корневой', tree: 'Корневое Древо', color: '#8fd06a', capstone: 'Корни сами засыпают Лазы, гнёзда +20% прочности, Древо +20% здоровья', mods: { rootSeal: true, famHp: { hive: 0.2, beetle: 0.2, dragonfly: 0.2, spider: 0.2, termite: 0.2 }, treeHp: 0.2 } },
+  star: { name: 'Звёздный', tree: 'Звёздное Древо', color: '#8fd0ff', capstone: 'Умения Хранителя перезаряжаются на 25% быстрее и бьют на 20% сильнее', mods: { abilityCd: -0.25, abilityDamage: 0.2 } },
+};
+/** Branches of one path needed for its capstone. */
+export const PATH_CAPSTONE = 3;
+
 export interface BranchDef {
   id: string;
   name: string;
   desc: string;
+  path: TreePath;
   mods: ModPatch;
 }
 
-/** Branch choice offered when the tree reaches stage index i (1..5). */
-export const TREE_BRANCHES: Record<number, [BranchDef, BranchDef]> = {
+/** Branch choice offered when the tree reaches stage index i (1..5): one of three paths. */
+export const TREE_BRANCHES: Record<number, BranchDef[]> = {
   1: [
-    { id: 'resin', name: 'Смоляные слёзы', desc: '+30% Янтаря с тварей', mods: { amberGain: 0.3 } },
-    { id: 'sap', name: 'Терпкий сок', desc: 'Древо лечится 5 HP/с и ночью', mods: { treeRegen: 5 } },
+    { id: 'resin', path: 'amber', name: 'Смоляные слёзы', desc: '+30% Янтаря с тварей', mods: { amberGain: 0.3 } },
+    { id: 'sap', path: 'root', name: 'Терпкий сок', desc: 'Древо лечится 6 HP/с и ночью, +15% здоровья', mods: { treeRegen: 6, treeHp: 0.15 } },
+    { id: 'dew', path: 'star', name: 'Звёздная роса', desc: 'Умения на 20% дешевле, +20% регенерации Света', mods: { abilityCost: -0.2, lightRegen: 0.2 } },
   ],
   2: [
-    { id: 'undergrowth', name: 'Светлый подлесок', desc: 'Стрекозы +25% света, ульи +15% урона', mods: { famRange: { dragonfly: 0.25 }, famDamage: { hive: 0.15 } } },
-    { id: 'deeproots', name: 'Глубокие корни', desc: 'Пауки +35% урона, Черви роняют +1 Кровь', mods: { famDamage: { spider: 0.35 }, wormStar: 1 } },
+    { id: 'undergrowth', path: 'light', name: 'Светлый подлесок', desc: 'Стрекозы +25% света, ульи +15% урона', mods: { famRange: { dragonfly: 0.25 }, famDamage: { hive: 0.15 } } },
+    { id: 'deeproots', path: 'root', name: 'Глубокие корни', desc: 'Пауки +35% урона, Черви роняют +1 Кровь', mods: { famDamage: { spider: 0.35 }, wormStar: 1 } },
+    { id: 'honeyflow', path: 'amber', name: 'Щедрая крона', desc: 'Гнёзда на 15% дешевле, Звёздной Крови +15%', mods: { nestCost: -0.15, starGain: 0.15 } },
   ],
   3: [
-    { id: 'bark', name: 'Янтарная кора', desc: 'Древо отражает 30% урона в атакующих', mods: { treeReflect: 0.3 } },
-    { id: 'song', name: 'Песнь листвы', desc: 'Свет Хранителя +40% регенерации, умения +15%', mods: { lightRegen: 0.4, abilityDamage: 0.15 } },
+    { id: 'bark', path: 'root', name: 'Янтарная кора', desc: 'Древо отражает 30% урона в атакующих', mods: { treeReflect: 0.3 } },
+    { id: 'song', path: 'star', name: 'Песнь листвы', desc: 'Свет Хранителя +40% регенерации, умения +15%', mods: { lightRegen: 0.4, abilityDamage: 0.15 } },
+    { id: 'glare', path: 'light', name: 'Слепящий блеск', desc: 'Высвечивание +25%, стрекозы +30% урона (и по летунам)', mods: { vuln: 0.25, famDamage: { dragonfly: 0.3 } } },
   ],
   4: [
-    { id: 'beacon', name: 'Крона-маяк', desc: 'Искры бьют тремя целями, Полярий на 2 больше', mods: { sparkCount: 2, polaria: 2 } },
-    { id: 'worldroot', name: 'Корень мира', desc: 'Гнёзда +20% прочности, жуки +50%', mods: { famHp: { hive: 0.2, dragonfly: 0.2, spider: 0.2, beetle: 0.5 } } },
+    { id: 'beacon', path: 'light', name: 'Крона-маяк', desc: 'Искры бьют тремя целями, Полярий на 2 больше', mods: { sparkCount: 2, polaria: 2 } },
+    { id: 'worldroot', path: 'root', name: 'Корень мира', desc: 'Гнёзда +20% прочности, жуки +50%', mods: { famHp: { hive: 0.2, dragonfly: 0.2, spider: 0.2, beetle: 0.5 } } },
+    { id: 'goldleaf', path: 'amber', name: 'Золотая листва', desc: 'Рассветный дар +60%, Янтарь +15%', mods: { dawnGift: 0.6, amberGain: 0.15 } },
   ],
   5: [
-    { id: 'goldenrain', name: 'Золотой дождь', desc: 'Игг-свет жжёт Червей вдвое сильнее', mods: { wormBurn: 1 } },
-    { id: 'starcrown', name: 'Звёздная крона', desc: 'Все гнёзда +20% урона, Звездопад заряжается быстрее', mods: { famDamage: { hive: 0.2, beetle: 0.2, dragonfly: 0.2, spider: 0.2 }, chargeGain: 0.3 } },
+    { id: 'goldenrain', path: 'light', name: 'Золотой дождь', desc: 'Игг-свет жжёт Червей вдвое сильнее', mods: { wormBurn: 1 } },
+    { id: 'starcrown', path: 'star', name: 'Звёздная крона', desc: 'Все гнёзда +20% урона, Звездопад заряжается быстрее', mods: { famDamage: { hive: 0.2, beetle: 0.2, dragonfly: 0.2, spider: 0.2 }, chargeGain: 0.3 } },
+    { id: 'rootwall', path: 'root', name: 'Стена корней', desc: 'Корни жгут Червей вдвое сильнее, Древо +25% здоровья', mods: { rootBurn: 1, treeHp: 0.25 } },
   ],
 };
+
+/** Branch definition by id. */
+export function branchById(id: string): BranchDef | undefined {
+  for (const list of Object.values(TREE_BRANCHES)) for (const b of list) if (b.id === id) return b;
+  return undefined;
+}
+
+/** How many branches of each path are chosen. */
+export function pathCounts(branches: string[]): Record<TreePath, number> {
+  const out: Record<TreePath, number> = { amber: 0, light: 0, root: 0, star: 0 };
+  for (const id of branches) { const b = branchById(id); if (b) out[b.path]++; }
+  return out;
+}

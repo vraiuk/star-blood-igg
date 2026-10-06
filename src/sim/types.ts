@@ -70,6 +70,8 @@ export interface Tunnel {
   open: boolean;
   /** Keeper's sealing progress 0..1 */
   seal: number;
+  /** creatures it can still let through */
+  left: number;
 }
 
 export interface Structure {
@@ -99,6 +101,12 @@ export interface Structure {
   haste: number;
   /** dragonfly: time until it can shoot down another acid glob */
   intercept: number;
+  /** dragonfly nest: the creature its little dragonflies are stinging (0 = none) */
+  stingTo?: number;
+  /** Igg-Beam hive: seconds the beam keeps burning, its target and tick timer */
+  beamT?: number;
+  beamTo?: number;
+  beamTick?: number;
   /** merge stars (Слияние) and endless ascension levels (Возвышение) */
   merge: number;
   ascend: number;
@@ -124,6 +132,10 @@ export interface Projectile {
   age: number;
   /** spear: has it already ricocheted */
   bounced?: boolean;
+  /** ricochets done so far */
+  bounces?: number;
+  /** damage multiplier vs flyers */
+  airMult?: number;
   /** knockback on hit (fan apotheosis, wave) */
   knock?: number;
   /** stun on hit (wave apotheosis) */
@@ -208,6 +220,10 @@ export interface Keeper {
   runeRank: Record<KeeperRuneId, number>;
   /** chosen Form of each ability rune */
   forms: Record<'spear' | 'hammer' | 'starfall', 'A' | 'B' | null>;
+  /** chosen rune facets (Грани) */
+  facets: string[];
+  /** runes the Keeper has learned (bought or gifted by the Observer) */
+  learned: Record<import('../data/balance').AbilityId, boolean>;
   /** Ascended attributes 0..10 */
   attrs: Record<import('../data/balance').AttrId, number>;
   castAnim: number;
@@ -279,6 +295,7 @@ export type Phase = 'day' | 'night' | 'won' | 'lost';
 export type Choice =
   | { kind: 'dawn'; offers: string[]; start?: boolean }
   | { kind: 'branch'; stage: number }
+  | { kind: 'facet'; rune: KeeperRuneId; rank: number; offers: string[] }
   | { kind: 'feat'; night: number };
 
 export type GameEvent =
@@ -308,7 +325,7 @@ export type GameEvent =
   | { type: 'emerge'; x: number }
   | { type: 'tunnelOpen'; x: number }
   | { type: 'cleave'; x: number; r: number }
-  | { type: 'tunnelSealed'; x: number; by: 'keeper' | 'hammer' }
+  | { type: 'tunnelSealed'; x: number; by: 'keeper' | 'hammer' | 'worn' }
   | { type: 'blast'; x: number; y: number }
   | { type: 'intercept'; x: number; y: number; fx: number; fy: number }
   | { type: 'jump'; x: number }

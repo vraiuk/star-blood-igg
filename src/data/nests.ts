@@ -99,10 +99,10 @@ export const NESTS: Record<Family, FamilyDef> = {
         costs: [p(160, 8), p(120, 14)],
       },
       B: {
-        name: 'Игг-Луч', desc: 'Сфокусированный луч прошивает строй и броню', perk: 'дальний луч, пробивает 3, против брони',
+        name: 'Игг-Луч', desc: 'Долгий луч 1.6 с жжёт цель и тварей за ней, игнорируя броню', perk: 'длительный луч, пробивает 3, сквозь броню',
         levels: [
-          { hp: 360, damage: 130, rate: 2.8, range: 290, pierce: 3 },
-          { hp: 430, damage: 210, rate: 2.4, range: 320, pierce: 4 },
+          { hp: 360, damage: 95, rate: 3.2, range: 260, pierce: 3 },
+          { hp: 430, damage: 150, rate: 2.8, range: 290, pierce: 4 },
         ],
         costs: [p(160, 8), p(120, 14)],
       },

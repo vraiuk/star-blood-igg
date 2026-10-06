@@ -2,9 +2,9 @@ import { ABILITIES, ATTR_MAX, ATTRIBUTES, KEEPER_RANKS, SLOTS, WORLD, attrCost, 
 import { MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   APOTHEOSIS_RANK, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
-  runeRankPower, runeColor, boonById, propertyById, type FormId, type KeeperRuneId,
+  runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, FACETS, FACET_RANKS, type FormId, type KeeperRuneId,
 } from '../data/runes';
-import { TREE_BRANCHES, TREE_STAGES } from '../data/tree';
+import { PATH_CAPSTONE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, pathCounts, type TreePath } from '../data/tree';
 import type { Game } from '../sim/game';
 import type { GameEvent } from '../sim/types';
 import { icon } from './icons';
@@ -58,6 +58,8 @@ interface RingOpt {
   danger?: boolean;
   locked?: boolean;
   preview?: RangePreview;
+  /** fixed place on the arc, so buttons never swap under the cursor */
+  pos?: number;
   act: () => void;
 }
 
@@ -78,6 +80,7 @@ export class Hud {
   private track!: HTMLElement;
   private stageCount!: HTMLElement;
   private nightInfo!: HTMLElement;
+  private abTip!: HTMLElement;
   private abEls = {} as Record<AbilityId, { box: HTMLElement; cd: HTMLElement; lock: HTMLElement; charge: HTMLElement; cdt: HTMLElement; wasReady: boolean }>;
   private callBtn!: HTMLButtonElement;
   private speedBtn!: HTMLButtonElement;
@@ -178,15 +181,18 @@ export class Hud {
     AB_IDS.forEach((id) => {
       const def = ABILITIES[id];
       const box = el('div', `ab hit ${id === 'starfall' ? 'ult' : ''}`);
-      box.title = `${def.name}: ${def.desc}`;
+      box.addEventListener('mouseenter', () => this.showAbTip(id, box));
+      box.addEventListener('mouseleave', () => this.abTip.classList.add('hidden'));
       box.innerHTML = `<img src="${icon(id)}"><div class="charge"></div><div class="cd"></div><span class="cdt"></span>
-        <div class="lock"><img src="${icon('lock')}"><span>ст. ${def.unlockStage}</span></div>
+        <div class="lock"><img src="${icon('lock')}"><span class="lk">ст. ${def.unlockStage}</span></div>
         ${def.cost ? `<span class="cost">${def.cost}</span>` : ''}<span class="key">${def.key}</span>`;
       box.addEventListener('mousedown', (ev) => { ev.stopPropagation(); this.cb.onCast(id); });
       abs.appendChild(box);
       this.abEls[id] = { box, cd: box.querySelector('.cd')!, lock: box.querySelector('.lock')!, charge: box.querySelector('.charge')!, cdt: box.querySelector('.cdt')!, wasReady: false };
     });
     r.appendChild(abs);
+    this.abTip = el('div', 'abtip hidden');
+    r.appendChild(this.abTip);
 
     const ctr = el('div');
     ctr.id = 'controls';
@@ -345,7 +351,11 @@ export class Hud {
         case 'rune': {
           const p = propertyById(e.id);
           const b = boonById(e.id);
-          if (e.id.startsWith('form:')) {
+          if (e.id.startsWith('facet:')) {
+            this.say(`Грань «${facetById(e.id.slice(6))?.name ?? ''}» повёрнута.`);
+          } else if (e.id.startsWith('learn:')) {
+            this.say(`Восходящий изучил руну «${ABILITIES[e.id.slice(6) as AbilityId].name}».`);
+          } else if (e.id.startsWith('form:')) {
             const [, rid, f] = e.id.split(':') as [string, 'spear' | 'hammer' | 'starfall', FormId];
             this.say(`Руна «${KEEPER_RUNES[rid].name}» приняла Форму «${RUNE_FORMS[rid][f].name}».`);
           } else if (p) this.say(`Свойство «${p.name}» вставлено в руну «${KEEPER_RUNES[p.rune].name}».`);
@@ -358,7 +368,7 @@ export class Hud {
         case 'tunnelOpen':
           if (!this.once('tunnel', 'Червь прорыл Лаз! Твари ныряют в него и выходят за строем. Встань Хранителем на выход (красная метка) — он засыплет Лаз; Игг-Молот обрушит его сразу.')) this.say('Червь прорыл Лаз за строем!', true);
           break;
-        case 'tunnelSealed': this.say(e.by === 'hammer' ? 'Молот обрушил Лаз — твари внутри засыпаны.' : 'Хранитель засыпал Лаз.'); break;
+        case 'tunnelSealed': if (e.by !== 'worn') this.say(e.by === 'hammer' ? 'Молот обрушил Лаз — твари внутри засыпаны.' : 'Хранитель засыпал Лаз.'); break;
         case 'devRune': this.say('С Червя выпала Малая Руна Развития! Открой ею 4-й слот руны [R].'); break;
         case 'structureLost':
           if (this.menuTarget?.kind === 'structure' && !g.state.structures.some((s) => s.id === (this.menuTarget as { id: number }).id)) this.closeMenu();
@@ -381,6 +391,49 @@ export class Hud {
     this.noticeTimer = warn ? 1.6 : 4;
   }
 
+  /** Rich hover card of an ability: what it does now, with live numbers. */
+  private showAbTip(id: AbilityId, box: HTMLElement) {
+    const g = this.game();
+    const k = g.state.keeper;
+    const def = ABILITIES[id];
+    const rr = k.runeRank[id];
+    const mult = g.abilityMult(id);
+    const form = id === 'spear' || id === 'hammer' || id === 'starfall' ? k.forms[id] : null;
+    const formDef = form ? RUNE_FORMS[id as 'spear' | 'hammer' | 'starfall'][form] : null;
+    const rows: Array<[string, string]> = [];
+    const n0 = (v: number) => String(Math.round(v));
+    if (id === 'spear') {
+      if (form === 'B') rows.push(['Урон луча', `${n0(ABILITIES.spear.damage * 2.2 * mult)} за 1.6 с`]);
+      else if (form === 'A') rows.push(['Урон', `${n0(ABILITIES.spear.damage * 0.8 * mult)} × 5 копий`]);
+      else rows.push(['Урон', n0(ABILITIES.spear.damage * mult)], ['Пробивает', `${ABILITIES.spear.pierce + g.mods.spearPierce + (rr >= 1 ? 1 : 0) + (rr >= 3 ? 1 : 0)} тварей`]);
+    } else if (id === 'hammer') {
+      rows.push(['Урон', n0(ABILITIES.hammer.damage * mult)], ['Радиус', n0(ABILITIES.hammer.radius * (1 + g.mods.hammerRadius) * g.runeArea('hammer'))], ['Оглушение', `${ABILITIES.hammer.stun} с`]);
+    } else if (id === 'starfall') {
+      rows.push(['Урон звезды', n0(ABILITIES.starfall.damage * mult)], ['Звёзд', String(ABILITIES.starfall.meteors + g.mods.starfallMeteors)], ['Заряд', `${Math.floor(k.charge)}/${ABILITIES.starfall.chargeMax} (убийства)`]);
+    } else if (id === 'radiance') {
+      rows.push(['Длительность', `${(ABILITIES.radiance.duration * g.runeArea('radiance')).toFixed(1)} с`], ['Круг', `+${Math.round(ABILITIES.radiance.radius * 100)}%`], ['Ожог Червей', `×${ABILITIES.radiance.burn}`]);
+    } else {
+      rows.push(['Длительность', `${(ABILITIES.swarm.duration * g.runeArea('swarm')).toFixed(1)} с`], ['Охват', n0(g.swarmReach())], ['Ускорение гнёзд', `+${Math.round(ABILITIES.swarm.haste * 100)}%`]);
+    }
+    if (def.cost) rows.push(['Свет', String(g.abilityCost(id))]);
+    if (id !== 'starfall') rows.push(['Перезарядка', `${g.abilityCooldown(id).toFixed(1)} с`]);
+    const props = g.runeProps(id);
+    const facets = k.facets.map((f) => facetById(f)).filter((f) => f && f.rune === id);
+    const locked = !g.abilityUnlocked(id);
+    this.abTip.innerHTML = `<div class="hd"><img src="${icon(id)}"><div><b>${def.name}</b><span style="color:${runeColor(rr)}">${runeRankName(rr)} · сила ×${runeRankPower(rr).toFixed(2)}</span></div><span class="key">${def.key}</span></div>
+      <div class="ds">${formDef ? `<b>${formDef.name}:</b> ${formDef.desc}` : def.desc}</div>
+      ${locked ? `<div class="lockline">${g.abilityAvailable(id) ? `Изучить в Скрижали [R] за ★${def.learn} или даром Наблюдателя` : `Откроется на стадии Древа ${def.unlockStage}`}</div>` : ''}
+      <div class="st">${rows.map(([a, b]) => `<span>${a}</span><b>${b}</b>`).join('')}</div>
+      ${props.length ? `<div class="tags">${props.map((p) => `<i style="--c:${RUNE_RANK_COLORS[p.rank]}">${p.name}</i>`).join('')}</div>` : ''}
+      ${facets.length ? `<div class="tags">${facets.map((f) => `<i style="--c:#b48cff">◆ ${f!.name}</i>`).join('')}</div>` : ''}`;
+    const r = box.getBoundingClientRect();
+    const pr = this.abTip.parentElement!.getBoundingClientRect();
+    this.abTip.classList.remove('hidden');
+    const w = this.abTip.offsetWidth;
+    this.abTip.style.left = `${Math.max(8, Math.min(pr.width - w - 8, r.left - pr.left + r.width / 2 - w / 2))}px`;
+    this.abTip.style.bottom = `${pr.bottom - r.top + 10}px`;
+  }
+
   /** Show a tip only the first time; returns whether it was shown. */
   private once(key: string, text: string): boolean {
     if (this.seen.has(key)) return false;
@@ -392,6 +445,8 @@ export class Hud {
   // ───────────────────────────── ring menu ───────────────────────────
 
   get menuOpen() { return this.menuTarget !== null || this.panelKind !== null; }
+  /** The Keeper's Tablet freezes time so runes can be bought calmly in a crowded night. */
+  get tabletOpen() { return this.panelKind === 'keeper'; }
   get target() { return this.menuTarget; }
 
   openMenu(t: MenuTarget) {
@@ -504,6 +559,7 @@ export class Hud {
         sub: st.tier === 2 ? 'Высшая форма специализации' : 'Сильнее и крепче', key: 'U',
         body: this.statsBlock(st.family, cur, next), price, ok: g.canPay(price),
         preview: { x: st.x, r: rng(next), underground: st.underground, y: st.y },
+        pos: 0,
         act: () => { g.upgrade(st.id); },
       });
     }
@@ -516,6 +572,7 @@ export class Hud {
           icon: icon(st.family), title: spec.name, sub: `${spec.desc} · <i>${spec.perk}</i>`, key: sp === 'A' ? 'Q' : 'E',
           body: this.statsBlock(st.family, cur, next), price, ok: g.canPay(price),
           preview: { x: st.x, r: rng(next), underground: st.underground, y: st.y },
+          pos: sp === 'A' ? 0 : 1,
           act: () => { g.specialize(st.id, sp); },
         });
       });
@@ -525,21 +582,21 @@ export class Hud {
       opts.push({
         icon: icon('merge'), title: `Слияние ★${st.merge + 1}`, sub: 'Три одинаковых гнезда → одно: сила ×2, освобождает 2 слота', key: 'M',
         body: `<div class="stats"><div>Сольются: <b>${partners.map((p) => `ур.${p.tier + 1}`).join(', ')}</b></div><div>Урон и прочность: <b class="up">+110%</b></div></div>`,
-        price: { amber: 0, star: 0 }, ok: true, act: () => { g.mergeNests(st.id); },
+        price: { amber: 0, star: 0 }, ok: true, pos: 2, act: () => { g.mergeNests(st.id); },
       });
     }
     if (st.tier >= MAX_TIER - 1) {
       const c = g.ascendCost(st);
       const next = g.nestStats({ family: st.family, tier: st.tier, spec: st.spec, merge: st.merge, ascend: st.ascend + 1 });
       opts.push({
-        icon: icon('upgrade'), title: `Возвышение ${st.ascend + 1}`, sub: 'Бесконечный рост: +12% силы, цвет меняется каждые 5 уровней', key: 'U',
+        icon: icon('upgrade'), title: `Возвышение ${st.ascend + 1}`, sub: 'Бесконечный рост: +12% силы', key: 'U', pos: 0,
         body: this.statsBlock(st.family, cur, next), price: { amber: c, star: 0 }, ok: g.state.amber >= c, act: () => { g.ascendNest(st.id); },
       });
     }
     const sv = g.sellValue(st);
     opts.push({
       icon: icon('sell'), title: 'Отпустить', sub: 'Вернуть 60% вложенного', key: 'S', danger: true,
-      body: '', price: sv, ok: true, act: () => { if (g.sell(st.id)) this.closeMenu(); },
+      body: '', price: sv, ok: true, pos: 3, act: () => { if (g.sell(st.id)) this.closeMenu(); },
     });
     const name = (st.spec ? `${def.name}: ${def.specs[st.spec].name}` : def.name) + (st.merge ? ` ${'★'.repeat(st.merge)}` : '') + (st.ascend ? ` +${st.ascend}` : '');
     const y = st.underground || st.crown ? st.y : WORLD.groundY - (st.family === 'beetle' ? 12 : 26);
@@ -555,13 +612,15 @@ export class Hud {
     const sig = data.title + data.opts.map((o) => o.title + o.ok + JSON.stringify(o.price)).join('|');
     if (sig !== this.ringSig) {
       this.ringSig = sig;
-      const n = data.opts.length;
+      const fixed = data.opts.every((o) => o.pos !== undefined);
+      const n = fixed ? 4 : data.opts.length;
       const R = 30;
       // KR-style ring: options on an upper arc around the target
       const spread = n <= 1 ? 0 : Math.min(150, 50 * (n - 1));
       let html = `<div class="ring-title">${data.title}</div><div class="ring-circle"></div>`;
       data.opts.forEach((o, i) => {
-        const ang = (-90 - spread / 2 + (n <= 1 ? 0 : (spread / (n - 1)) * i)) * (Math.PI / 180);
+        const at = fixed ? o.pos! : i;
+        const ang = (-90 - spread / 2 + (n <= 1 ? 0 : (spread / (n - 1)) * at)) * (Math.PI / 180);
         const ox = Math.cos(ang) * R;
         const oy = Math.sin(ang) * R;
         html += `<div class="ropt ${o.ok ? '' : 'no'} ${o.danger ? 'danger' : ''}" data-i="${i}" style="left:calc(${ox} * var(--u));top:calc(${oy} * var(--u))">
@@ -655,6 +714,13 @@ export class Hud {
           <div class="gc-un">Теперь оно наращивает <b>годичные кольца</b>: каждое +7% силы гнёзд и +10% здоровья Древа, Древо растёт, а каждые 2 кольца открывают новый слот кроны.${s.tree.rings ? `<br>Колец: <b>${s.tree.rings}</b> · сила гнёзд ×${g.treePower().toFixed(2)}` : ''}</div>
           <div class="row">${btn(`Годичное кольцо №${s.tree.rings + 1} (<img class="icon" src="${icon('amber')}"> ${rc})`, s.amber >= rc, () => { g.addRing(); })}</div></div>`;
       }
+      // ── Уклоны Древа
+      const counts = pathCounts(s.tree.branches);
+      html += `<div class="sub">Уклон Древа (${PATH_CAPSTONE} ветви одного пути — особое Древо):</div><div class="runes small">${(Object.keys(TREE_PATHS) as TreePath[]).map((p) => {
+        const d = TREE_PATHS[p];
+        const done = counts[p] >= PATH_CAPSTONE;
+        return `<div class="rune" style="--c:${d.color};${done ? '' : 'opacity:0.75'}"><div><b>${done ? d.tree : d.name} ${'●'.repeat(Math.min(counts[p], PATH_CAPSTONE))}${'○'.repeat(Math.max(0, PATH_CAPSTONE - counts[p]))}</b><small>${d.capstone}</small></div></div>`;
+      }).join('')}</div>`;
       // ── reference: the whole ladder (current at the top of the list, compact)
       html += `<div class="sub">Все стадии:</div><div class="ladder">`;
       TREE_STAGES.forEach((st, i) => {
@@ -665,7 +731,7 @@ export class Hud {
           <div class="dot">${i + 1}</div>
           <div class="body"><div class="nm">${st.name}</div>
             <div class="un">${st.unlocks.join(' · ')} · сила гнёзд ×${st.power}</div>
-            ${brs ? `<div class="br">Ветвь: ${chosen ? `<b>${chosen.name}</b>` : `<i>${brs[0].name}</i> или <i>${brs[1].name}</i>`}</div>` : ''}
+            ${brs ? `<div class="br">Ветвь: ${chosen ? `<b style="color:${TREE_PATHS[chosen.path].color}">${chosen.name}</b>` : brs.map((b) => `<i>${b.name}</i>`).join(' / ')}</div>` : ''}
           </div></div>`;
       });
       html += `</div>`;
@@ -673,7 +739,7 @@ export class Hud {
       const k = s.keeper;
       const rank = KEEPER_RANKS[k.rank];
       const next = KEEPER_RANKS[k.rank + 1];
-      html += `<h3>Скрижаль Восходящего</h3><div class="sub">Ранг: <b style="color:${RUNE_RANK_COLORS[k.rank]}">${rank.name}</b> · HP ${Math.ceil(k.hp)}/${g.keeperMaxHp()} · Свет ${g.maxLight()} · сила умений ×${rank.power}</div>`;
+      html += `<h3>Скрижаль Восходящего <small style="opacity:.6;font-size:11px">⏸ время стоит</small></h3><div class="sub">Ранг: <b style="color:${RUNE_RANK_COLORS[k.rank]}">${rank.name}</b> · HP ${Math.ceil(k.hp)}/${g.keeperMaxHp()} · Свет ${g.maxLight()} · сила умений ×${rank.power}</div>`;
       html += `<div class="ranks">${KEEPER_RANKS.map((r, i) => `<span class="${i <= k.rank ? 'on' : ''}" style="--c:${RUNE_RANK_COLORS[i]}">${r.name}</span>`).join('<i></i>')}</div>`;
       if (next) html += `<div class="row">${btn(`Восхождение: ${next.name} (<img class="icon" src="${icon('star')}"> ${next.cost})`, s.star >= next.cost, () => { g.ascend(); })}</div>`;
       html += `<div class="sub">Защита ${Math.round(g.keeperGuard() * 100)}% · сияние ${Math.round(g.keeperAura())}/с — сжигает тварей вплотную</div>`;
@@ -705,7 +771,7 @@ export class Hud {
         if (unlocked) {
           const cost = runeRankCost(rr + 1);
           html += `<div class="row left">${btn(`Повышение → ${runeRankName(rr + 1)} (<img class="icon" src="${icon('star')}"> ${cost})`, s.star >= cost, () => { g.promoteRune(rid); }, 'tiny')}
-            <span class="hint">${rr + 1 === FORM_RANK && hasForms ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && hasForms ? 'Апофеоз Формы' : rr >= 4 ? 'Звёздный ранг: +15% силы, новый цвет' : 'сила, площадь, перезарядка'}</span></div>`;
+            <span class="hint">${rr + 1 === FORM_RANK && hasForms ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && hasForms ? 'Апофеоз Формы' : FACET_RANKS.includes(rr + 1) && rid !== 'light' ? 'откроет выбор Грани' : 'сила и площадь ↑'} · откат +${Math.round((runeRankCd(rr + 1) / runeRankCd(rr) - 1) * 100)}%${rid !== 'light' && rid !== 'starfall' ? ` · Свет +${Math.round((runeRankLight(rr + 1) / runeRankLight(rr) - 1) * 100)}%` : ''}</span></div>`;
         }
         if ((rid === 'spear' || rid === 'hammer' || rid === 'starfall') && unlocked) {
           const forms = RUNE_FORMS[rid];
@@ -722,10 +788,23 @@ export class Hud {
             if (rr < FORM_RANK) html += `<div class="sub">Форма выбирается на ранге «Серебро»</div>`;
           }
         }
+        if (rid !== 'light' && unlocked) {
+          const mine = k.facets.map((id) => facetById(id)).filter((f) => f && f.rune === rid);
+          const next = FACET_RANKS.find((r) => r > rr);
+          const opts = next !== undefined ? FACETS.filter((f) => f.rune === rid && f.rank === next) : [];
+          html += `<div class="sub">Грани: ${mine.length ? mine.map((f) => `<b title="${f!.desc}">${f!.name}</b>`).join(' · ') : '—'}${next !== undefined ? ` · на «${runeRankName(next)}»: ${opts.map((f) => {
+            const on = !f.requires || k.props[rid].includes(f.requires);
+            return `<span title="${f.desc}" style="${on ? '' : 'opacity:.45'}">${f.name}${f.requires ? ` (резонанс: ${propertyById(f.requires)?.name})` : ''}</span>`;
+          }).join(', ')}` : ''}</div>`;
+        }
         html += `<div class="slots">`;
         for (let i = 0; i < cap; i++) {
           const p = props[i];
-          html += p ? `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}">${p.name}</span>` : `<span class="slot">пусто</span>`;
+          if (p) {
+            const rc = removeCost(p);
+            actions.push(() => { g.removeProperty(rid, i); });
+            html += `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}">${p.name}<button class="rm ${s.star >= rc ? '' : 'no'}" data-i="${actions.length - 1}" title="Вынуть Свойство за ${rc} Звёздной Крови">✕${rc}</button></span>`;
+          } else html += `<span class="slot">пусто</span>`;
         }
         if (cap < MAX_SLOTS) html += `<span class="slot locked" title="Нужна Малая Руна Развития">+</span>`;
         html += `</div>`;
@@ -734,14 +813,20 @@ export class Hud {
           for (const p of PROPERTIES.filter((x) => x.rune === rid)) {
             const owned = k.props[rid].filter((x) => x === p.id).length;
             const ok = g.canInstall(p) && s.star >= p.price;
+            const rankLock = p.rank > rr;
             actions.push(() => { g.buyProperty(p.id); });
             html += `<div class="item ${ok ? '' : 'no'}" data-i="${actions.length - 1}" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.type} · ${RUNE_RANKS[p.rank]}">
-              <span class="nm">${p.name}${p.stack > 1 ? ` <i>${owned}/${p.stack}</i>` : owned ? ' <i>✓</i>' : ''}</span><span class="ds">${p.desc}</span>
+              <span class="nm">${p.name}${p.stack > 1 ? ` <i>${owned}/${p.stack}</i>` : owned ? ' <i>✓</i>' : ''}</span><span class="ds">${rankLock ? `<b style="color:#ff9a8a">нужна руна ранга «${RUNE_RANKS[p.rank]}»</b> · ` : ''}${p.desc}</span>
               <span class="pr ${s.star >= p.price ? '' : 'no'}"><img src="${icon('star')}">${p.price}</span></div>`;
           }
           html += `</div>`;
+        } else if (g.abilityAvailable(rid as AbilityId)) {
+          const price = ABILITIES[rid as AbilityId].learn;
+          html += `<div class="row left">${btn(`Изучить руну (<img class="icon" src="${icon('star')}"> ${price})`, s.star >= price, () => { g.learnAbility(rid as AbilityId); }, 'tiny')}
+            <span class="hint">${ABILITIES[rid as AbilityId].desc}</span></div>
+            <div class="sub">Или дождись дара Наблюдателя на рассвете.</div>`;
         } else {
-          html += `<div class="sub">Откроется на стадии Древа ${ABILITIES[rid as AbilityId].unlockStage}</div>`;
+          html += `<div class="sub">Изучить можно со стадии Древа ${ABILITIES[rid as AbilityId].unlockStage} — за Звёздную Кровь или даром Наблюдателя.</div>`;
         }
         html += `</div>`;
       }
@@ -755,7 +840,8 @@ export class Hud {
       this.panelSig = html;
       this.panel.innerHTML = html;
       this.panel.querySelectorAll<HTMLElement>('button[data-i], .item[data-i], .form[data-i]').forEach((b) => {
-        b.addEventListener('click', () => { actions[Number(b.dataset.i)](); this.panelSig = ''; this.renderPanel(); });
+        b.addEventListener('click', (ev) => {
+          ev.stopPropagation(); actions[Number(b.dataset.i)](); this.panelSig = ''; this.renderPanel(); });
       });
       this.panel.querySelector('.close')!.addEventListener('click', () => this.closeMenu());
     }
@@ -767,7 +853,8 @@ export class Hud {
 
   private renderChoice() {
     const g = this.game();
-    const c = g.choice;
+    // nothing to choose while the title screen is up (the run hasn't started yet)
+    const c = this.title.classList.contains('hidden') ? g.choice : null;
     if (!c || g.over) {
       if (!this.modal.classList.contains('hidden')) { this.modal.classList.add('hidden'); this.modalSig = ''; }
       return;
@@ -775,7 +862,9 @@ export class Hud {
     const sig = JSON.stringify(c);
     if (sig === this.modalSig) return;
     this.modalSig = sig;
-    this.closeMenu();
+    // a choice pops over the Keeper's Tablet without closing it (e.g. a Facet after Повышение)
+    if (this.panelKind === 'keeper') { this.menuTarget = null; this.ring.classList.remove('show'); this.card.classList.remove('show'); }
+    else this.closeMenu();
     let html = '';
     if (c.kind === 'dawn') {
       html = `<div class="tablet big"><div class="orbit-wrap"><div class="orbit">${'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃ'.split('').map((r, i) => `<span style="--i:${i}">${r}</span>`).join('')}</div></div>
@@ -800,12 +889,32 @@ export class Hud {
           <div class="rcard" data-i="0" style="--c:#8fd0ff"><img src="${icon('tree')}"><div class="nm">Держать Круг</div><div class="ds">Ночи станут тяжелее. Гибель Древа — меньше Монет.</div><div class="hk">[1]</div></div>
           <div class="rcard" data-i="1" style="--c:#ffd24a"><img src="${icon('star')}"><div class="nm">Уйти в Вечность</div><div class="ds">Завершить забег: Монеты Наблюдателя ×1.5</div><div class="hk">[2]</div></div>
         </div></div>`;
+    } else if (c.kind === 'facet') {
+      const rune = KEEPER_RUNES[c.rune];
+      html = `<div class="tablet big"><div class="who">Скрижаль · Грань руны</div>
+        <h3>«${rune.name}» достигла ранга «${runeRankName(c.rank)}»</h3>
+        <div class="sub">Руна поворачивается новой Гранью. Резонансные Грани открывают вставленные в руну Свойства.</div>
+        <div class="cards">${c.offers.map((id, i) => {
+          const f = facetById(id)!;
+          const req = f.requires ? propertyById(f.requires) : undefined;
+          return `<div class="rcard" data-i="${i}" style="--c:${req ? '#b48cff' : runeColor(c.rank)}">
+            <div class="rank">${req ? `Резонанс: ${req.name}` : 'Грань'}</div><img src="${icon(rune.icon)}">
+            <div class="nm">${f.name}</div><div class="ds">${f.desc}</div><div class="hk">[${i + 1}]</div></div>`;
+        }).join('')}</div></div>`;
     } else {
-      const pair = TREE_BRANCHES[c.stage];
+      const list = TREE_BRANCHES[c.stage];
+      const counts = pathCounts(g.state.tree.branches);
       html = `<div class="branch-box"><div class="who">${TREE_STAGES[c.stage].name}</div>
-        <h3>Древо растёт. Куда пустить новую ветвь?</h3><div class="sub">Выбор навсегда для этого забега.</div>
-        <div class="cards two">${pair.map((b, i) => `<div class="rcard gold" data-i="${i}">
-          <img src="${icon('tree')}"><div class="nm">${b.name}</div><div class="ds">${b.desc}</div><div class="hk">[${i + 1}]</div></div>`).join('')}</div></div>`;
+        <h3>Древо растёт. Куда пустить новую ветвь?</h3><div class="sub">Каждая ветвь — шаг Уклона Древа. ${PATH_CAPSTONE} ветви одного Уклона превращают его в особое Древо.</div>
+        <div class="cards">${list.map((b, i) => {
+          const p = TREE_PATHS[b.path];
+          const n = counts[b.path];
+          const full = n + 1 >= PATH_CAPSTONE && n < PATH_CAPSTONE;
+          return `<div class="rcard gold" data-i="${i}" style="--c:${p.color}">
+          <div class="rank">${p.name} ${'●'.repeat(Math.min(n + 1, PATH_CAPSTONE))}${'○'.repeat(Math.max(0, PATH_CAPSTONE - n - 1))}</div>
+          <img src="${icon('tree')}"><div class="nm">${b.name}</div><div class="ds">${b.desc}</div>
+          ${full ? `<div class="ds" style="color:${p.color}"><b>→ ${p.tree}:</b> ${p.capstone}</div>` : ''}<div class="hk">[${i + 1}]</div></div>`;
+        }).join('')}</div></div>`;
     }
     this.modal.innerHTML = html;
     this.modal.classList.remove('hidden');
@@ -823,7 +932,7 @@ export class Hud {
       return true;
     }
     const i = Number(key) - 1;
-    if (Number.isInteger(i) && i >= 0 && i < 3) {
+    if (Number.isInteger(i) && i >= 0 && i < 4) {
       this.game().choose(i);
       this.modalSig = '';
       this.renderChoice();
@@ -892,6 +1001,12 @@ export class Hud {
       const { box, cd, lock, charge, cdt } = el;
       const unlocked = g.abilityUnlocked(id);
       lock.style.display = unlocked ? 'none' : 'grid';
+      if (!unlocked) {
+        const lk = lock.querySelector('.lk')!;
+        const t = g.abilityAvailable(id) ? `★${ABILITIES[id].learn}` : `ст. ${ABILITIES[id].unlockStage}`;
+        if (lk.textContent !== t) lk.textContent = t;
+        box.classList.toggle('learnable', g.abilityAvailable(id) && s.star >= ABILITIES[id].learn);
+      }
       const c = s.keeper.cooldowns[id];
       const frac = c > 0 ? Math.min(1, c / Math.max(0.01, s.keeper.cdMax[id])) : 0;
       cd.style.transform = `scaleY(${frac})`;

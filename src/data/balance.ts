@@ -112,7 +112,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   }),
   larva: E({ name: 'Личинка', hp: 18, speed: 38, damage: 3, attackRate: 0.7, amber: 1, star: 0.2, charge: 1, worm: true, radius: 4, height: 5 }),
   mother: E({
-    name: 'Имаго-Матерь', hp: 5200, armor: 4, speed: 8, damage: 80, attackRate: 2, amber: 79, star: 30, devRune: 1, charge: 40,
+    name: 'Имаго-Матерь', hp: 7000, armor: 6, speed: 8, damage: 100, attackRate: 2, amber: 79, star: 30, devRune: 1, charge: 40,
     worm: true, smashesStructures: true, ccMult: 0.25, radius: 26, height: 40, boss: true, cleave: 34, fog: 70,
   }),
   executioner: E({
@@ -123,7 +123,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
 
 /** Mother spawns larvae; the Executioner spawns foragers. */
 export const BROOD: Partial<Record<EnemyKind, { every: number; count: number; kind: EnemyKind }>> = {
-  mother: { every: 7, count: 3, kind: 'larva' },
+  mother: { every: 6, count: 4, kind: 'larva' },
   executioner: { every: 9, count: 2, kind: 'forager' },
 };
 
@@ -157,9 +157,13 @@ export const TUNNELS = {
   /** diggers break out at max(exitMin, radius × exitShare) from the trunk */
   exitMin: 56, exitShare: 0.3,
   /** speed of ground creatures inside a tunnel */
-  crawl: 1.35,
+  crawl: 1.0,
+  /** creatures a tunnel lets through before it caves in by itself (grows with the night) */
+  capacity: (night: number) => 3 + Math.floor(night / 3),
   /** seconds the Keeper needs to seal a mouth */
   sealTime: 1.4, sealReach: 18,
+  /** Корневое Древо: roots seal a lit mouth by themselves at this rate (per second) */
+  rootSeal: 0.25,
   /** creatures buried by a collapse lose this share of max hp */
   collapseDamage: 0.25,
 } as const;
@@ -304,6 +308,8 @@ export interface AbilityDef {
   cost: number;
   cooldown: number;
   unlockStage: number;
+  /** Star Blood to learn the rune (spear is known from the start) */
+  learn: number;
   key: string;
 }
 
@@ -315,27 +321,27 @@ export interface AbilityDef {
 export const ABILITIES = {
   spear: {
     name: 'Копьё Игг-Света', desc: 'Пронзающий луч игг-сияния туда, куда смотрит Восходящий: пробивает 3 тварей, бьёт и во тьме.',
-    cost: 14, cooldown: 0.55, unlockStage: 1, key: '1',
+    cost: 14, cooldown: 0.55, unlockStage: 1, learn: 0, key: '1',
     damage: 52, pierce: 3, falloff: 0.2, speed: 420, range: 320,
   },
   hammer: {
     name: 'Игг-Молот', desc: '«Сияние»: удар вокруг Хранителя, оглушает и отбрасывает, зажигает свет.',
-    cost: 34, cooldown: 11, unlockStage: 2, key: '2',
+    cost: 34, cooldown: 11, unlockStage: 2, learn: 4, key: '2',
     damage: 70, radius: 92, stun: 1.6, knockback: 50, lightTime: 6, lightRadius: 80, restunWindow: 4,
   },
   starfall: {
     name: 'Звездопад', desc: 'Заряжается убийствами. Пять огромных звёзд падают у курсора: оглушают, рвут броню и выжигают землю.',
-    cost: 0, cooldown: 70, unlockStage: 4, key: '3',
+    cost: 0, cooldown: 70, unlockStage: 4, learn: 20, key: '3',
     damage: 520, meteors: 5, spread: 60, burnDps: 60, burnTime: 5, chargeMax: 100, impactRadius: 34, stun: 1.2,
   },
   radiance: {
     name: 'Сияние Игг', desc: 'Древо вспыхивает: Круг шире на 25%, Игг-свет жжёт Червей втрое, освещённые твари получают +30% урона.',
-    cost: 45, cooldown: 35, unlockStage: 3, key: '4',
+    cost: 45, cooldown: 35, unlockStage: 3, learn: 12, key: '4',
     duration: 8, radius: 0.25, burn: 3, vuln: 0.3,
   },
   swarm: {
     name: 'Зов Роя', desc: 'Гнёзда рядом с Восходящим 6 с атакуют на 60% быстрее и сразу чинятся на 25%.',
-    cost: 40, cooldown: 28, unlockStage: 2, key: '5',
+    cost: 40, cooldown: 28, unlockStage: 2, learn: 8, key: '5',
     duration: 6, reach: 170, haste: 0.6, heal: 0.25,
   },
 } satisfies Record<AbilityId, AbilityDef & Record<string, number | string>>;

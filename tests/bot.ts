@@ -112,6 +112,7 @@ function act(g: Game, plan: BotPlan) {
   const s = g.state;
   const k = s.keeper;
 
+  if (plan.abilities) g.learnAbility('hammer');
   if (plan.defend) buildDefense(g, plan, true);
   const need = g.growNeed();
   if (plan.grow && !plan.defend) g.feed(need);
@@ -122,6 +123,7 @@ function act(g: Game, plan: BotPlan) {
       if (st.tier === 1) g.specialize(st.id, st.family === 'hive' ? (st.slotId.endsWith('0') ? 'A' : 'B') : 'A');
       else if (st.tier === 2) g.upgrade(st.id);
     }
+    for (const id of ['hammer', 'starfall', 'swarm', 'radiance'] as const) g.learnAbility(id);
     if (s.star >= 25) g.ascend();
     // Observer's treasury: power properties first
     for (const id of ['sp-power', 'hm-power', 'sp-power', 'lt-spring', 'sf-power']) if (s.star >= 14) g.buyProperty(id);
@@ -194,8 +196,12 @@ function buildDefense(g: Game, plan: BotPlan, coreOnly: boolean) {
     if (s.amber >= g.buildPrice(fam).amber) g.build(sl.id, fam);
   }
   if (s.night >= 1) {
+    let spiders = s.structures.filter((x) => x.family === 'spider').length;
     for (const sl of SLOTS.filter((x) => x.underground && g.slotUnlocked(x))) {
       if (coreOnly && (sl.unlockStage ?? 1) > 1) continue;
+      // weavers are worm-catchers: a pair early, more once the worms get serious
+      if (spiders >= (s.night < 5 ? 2 : 99)) break;
+      if (!g.structureAt(sl.id)) spiders++;
       if (!g.structureAt(sl.id)) g.build(sl.id, 'spider');
     }
   }

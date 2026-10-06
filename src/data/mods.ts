@@ -25,6 +25,10 @@ export interface Mods {
   /** extra polaria drones */
   polaria: number;
   secondWind: boolean;
+  /** Светоносное Древо: Igg-light ignores «Туман Тьмы» */
+  fogPierce: boolean;
+  /** Корневое Древо: roots fill in tunnels by themselves */
+  rootSeal: boolean;
   // nests
   famDamage: Record<Family, number>;
   famHp: Record<Family, number>;
@@ -42,6 +46,8 @@ export interface Mods {
   magnet: number;
   abilityDamage: number;
   abilityCost: number;
+  /** ability cooldown multiplier (additive, −0.25 = 25% faster) */
+  abilityCd: number;
   spearDamage: number;
   spearCost: number;
   spearPierce: number;
@@ -71,10 +77,10 @@ const famZero = (): Record<Family, number> => ({ hive: 0, beetle: 0, dragonfly: 
 export function baseMods(): Mods {
   return {
     amberGain: 0, starGain: 0, startAmber: 0, startStar: 0, dawnGift: 0,
-    treeHp: 0, treeRegen: 0, treeReflect: 0, lightRadius: 0, sparkDamage: 0, sparkCount: 0, rootBurn: 0, wormBurn: 0, polaria: 0, secondWind: false,
+    treeHp: 0, treeRegen: 0, treeReflect: 0, lightRadius: 0, sparkDamage: 0, sparkCount: 0, rootBurn: 0, wormBurn: 0, polaria: 0, secondWind: false, fogPierce: false, rootSeal: false,
     famDamage: famZero(), famHp: famZero(), famRange: famZero(), nestCost: 0,
     hiveSeesDark: false, beetleRevive: false, dragonflyHaste: false, spiderSurface: false,
-    keeperHp: 0, keeperSpeed: 0, lightMax: 0, lightRegen: 0, magnet: 0, abilityDamage: 0, abilityCost: 0,
+    keeperHp: 0, keeperSpeed: 0, lightMax: 0, lightRegen: 0, magnet: 0, abilityDamage: 0, abilityCost: 0, abilityCd: 0,
     spearDamage: 0, spearCost: 0, spearPierce: 0, spearRicochet: false, spearBeacon: false, spearRhythm: false,
     hammerDamage: 0, hammerCost: 0, hammerRadius: 0, hammerQuake: false, hammerRefund: false, hammerEclipse: false,
     starfallDamage: 0, starfallMeteors: 0, starfallBurn: 0, nearRegen: 0,
