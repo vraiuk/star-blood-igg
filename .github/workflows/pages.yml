@@ -1,5 +1,7 @@
 name: Deploy to GitHub Pages
 
+# main → the site root; the `coop` branch (online co-op) → /coop/.
+# Pages deploys only from main, so a push to `coop` re-runs this workflow on main (coop-pages.yml).
 on:
   push:
     branches: [main]
@@ -26,6 +28,24 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Is there a co-op branch?
+        id: coop
+        run: echo "exists=$(git ls-remote --heads origin coop | grep -q . && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.coop.outputs.exists == 'true'
+        with:
+          ref: coop
+          path: coop-src
+      - name: Build the co-op branch
+        id: coopbuild
+        if: steps.coop.outputs.exists == 'true'
+        # a broken co-op build must not take the main site down
+        continue-on-error: true
+        working-directory: coop-src
+        run: npm ci && npm test && npm run build
+      - name: Put co-op under /coop/
+        if: steps.coopbuild.outcome == 'success'
+        run: cp -r coop-src/dist dist/coop
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
