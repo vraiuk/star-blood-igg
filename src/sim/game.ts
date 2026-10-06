@@ -238,6 +238,28 @@ export class Game {
 
   specPrice(st: Structure, spec: SpecId): Price { return this.scalePrice(NESTS[st.family].specs[spec].costs[0]); }
 
+  /** Total price to raise a new nest straight to `tier` (with `spec` for tiers 3–4). */
+  priceTo(family: Family, tier: number, spec: SpecId | null): Price {
+    const fam = NESTS[family];
+    const parts: Price[] = [fam.costs[0]];
+    if (tier >= 1) parts.push(fam.costs[1]);
+    if (tier >= 2 && spec) parts.push(fam.specs[spec].costs[0]);
+    if (tier >= 3 && spec) parts.push(fam.specs[spec].costs[1]);
+    return parts.map((p) => this.scalePrice(p)).reduce((a, b) => ({ amber: a.amber + b.amber, star: a.star + b.star }), { amber: 0, star: 0 });
+  }
+
+  /** Build a nest and raise it to the chosen level in one go (pays every step). */
+  buildTo(slotId: string, family: Family, tier: number, spec: SpecId | null): boolean {
+    if (tier >= 2 && !spec) return false;
+    if (!this.canPay(this.priceTo(family, tier, spec))) return this.deny('Не хватает на гнездо такого уровня');
+    if (!this.build(slotId, family)) return false;
+    const st = this.structureAt(slotId)!;
+    if (tier >= 1) this.upgrade(st.id);
+    if (tier >= 2 && spec) this.specialize(st.id, spec);
+    if (tier >= 3) this.upgrade(st.id);
+    return true;
+  }
+
   canPay(p: Price) { return this.state.amber >= p.amber && this.state.star >= p.star; }
 
   abilityCost(id: AbilityId) {

@@ -495,3 +495,8 @@ body { display: grid; place-items: center; }
 #pause .giveup { position: absolute; left: calc(10 * var(--u)); bottom: calc(10 * var(--u)); font-size: calc(6 * var(--u)); opacity: 0.55; border-color: #6a2a3a; }
 #pause .giveup:hover { opacity: 1; }
 #pause .giveup.armed { opacity: 1; background: #5a1420; color: #ffd0d0; border-color: #ff6a6a; }
+/* build-level chips on the left of the build ring */
+.lvchips { position: absolute; top: calc(-46 * var(--u)); display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); pointer-events: auto; transform: translateX(-50%); }
+.lvchip { font-family: var(--pix); font-size: calc(5.5 * var(--u)); min-width: calc(17 * var(--u)); padding: calc(1 * var(--u)) calc(2 * var(--u)); background: #120e1e; color: #c9b98a; border: var(--u) solid #3a3060; cursor: pointer; border-radius: calc(1.5 * var(--u)); }
+.lvchip:hover { border-color: var(--gold-dim); color: #ffe58a; }
+.lvchip.on { background: linear-gradient(180deg, #5a4214, #2a1e08); color: #fff0c0; border-color: var(--gold); box-shadow: 0 0 calc(4 * var(--u)) rgba(255, 200, 70, 0.45); }

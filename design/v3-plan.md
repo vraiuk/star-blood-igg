@@ -226,3 +226,6 @@
   Термитник B levels 16/22 (was 13/18 — a real dip); a test guards every upgrade path.
 - Pause screen: «Уйти в Вечность» in the corner, two clicks to confirm — ends the run (the Tree
   falls, coins counted as usual).
+- Build at a chosen level: chips on the left of the build ring (1, 2, 3·A, 3·B, 4·A, 4·B)
+  raise the new nest straight to that level for the summed price (no more building many
+  nests just to upgrade/merge them).

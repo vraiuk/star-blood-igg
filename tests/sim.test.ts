@@ -157,6 +157,24 @@ describe('upgrade previews', () => {
   });
 });
 
+describe('build at a chosen level', () => {
+  it('builds straight to level 4 with a spec for the summed price', () => {
+    const g = new Game();
+    g.state.amber = 5000; g.state.star = 100;
+    const price = g.priceTo('hive', 3, 'B');
+    const a0 = g.state.amber, s0 = g.state.star;
+    expect(g.buildTo('R0', 'hive', 3, 'B')).toBe(true);
+    const st = g.structureAt('R0')!;
+    expect(st.tier).toBe(3);
+    expect(st.spec).toBe('B');
+    expect(a0 - g.state.amber).toBe(price.amber);
+    expect(s0 - g.state.star).toBe(price.star);
+    g.state.amber = 0;
+    expect(g.buildTo('L0', 'hive', 1, null)).toBe(false); // can't afford: nothing is built
+    expect(g.structureAt('L0')).toBeUndefined();
+  });
+});
+
 describe('time stop', () => {
   it('freezes creatures and the night, then recovers over nights, not seconds', () => {
     const g = new Game();

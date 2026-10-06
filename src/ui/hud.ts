@@ -529,6 +529,8 @@ export class Hud {
 
   /** Keyboard shortcut for the ring: key matches an option's hotkey. */
   private sellArmed = -1e9;
+  /** level a new nest is built at (chips on the left of the build ring) */
+  private buildLevel: { tier: number; spec: SpecId | null } = { tier: 0, spec: null };
   ringKey(key: string): boolean {
     if (!this.menuTarget) return false;
     const i = this.ringOpts.findIndex((o) => o.key.toLowerCase() === key && !o.locked);
@@ -594,15 +596,18 @@ export class Hud {
     if (t.kind === 'slot') {
       const slot = SLOTS.find((sl) => sl.id === t.slotId)!;
       const fams: Family[] = slot.underground ? ['spider'] : slot.crown ? ['hive', 'caterpillar', 'honeycomb', 'mender'] : ['hive', 'beetle', 'dragonfly', 'termite'];
+      // the level chips on the left choose how high the new nest is raised right away
+      const { tier, spec } = this.buildLevel;
       fams.forEach((fam, i) => {
         const def = NESTS[fam];
-        const price = g.buildPrice(fam);
-        const stats = g.nestStats({ family: fam, tier: 0, spec: null });
+        const price = g.priceTo(fam, tier, spec);
+        const stats = g.nestStats({ family: fam, tier, spec });
+        const lvName = tier > 0 ? ` · ур. ${tier + 1}${spec ? ` ${def.specs[spec].name}` : ''}` : '';
         opts.push({
-          icon: icon(fam), title: def.name, sub: def.desc, key: String(i + 1),
+          icon: icon(fam), title: def.name + lvName, sub: spec ? `${def.specs[spec].desc} · <i>${def.specs[spec].perk}</i>` : def.desc, key: String(i + 1),
           body: this.statsBlock(fam, null, stats), price, ok: g.canPay(price),
           preview: { x: slot.x, r: fam === 'dragonfly' ? stats.light! : stats.range, underground: slot.underground, y: slot.y },
-          act: () => { if (g.build(t.slotId, fam)) this.closeMenu(); },
+          act: () => { if (g.buildTo(t.slotId, fam, tier, spec)) this.closeMenu(); },
         });
       });
       const cp = slot.crown ? crownPos(s.tree.stage, Number(slot.id.slice(1)), s.tree.rings) : null;
@@ -696,7 +701,7 @@ export class Hud {
     if (!data) { this.closeMenu(); return; }
     this.ringOpts = data.opts;
     const sc = this.scale;
-    const sig = data.title + data.opts.map((o) => o.title + o.ok + JSON.stringify(o.price)).join('|');
+    const sig = data.title + JSON.stringify(this.buildLevel) + data.opts.map((o) => o.title + o.ok + JSON.stringify(o.price)).join('|');
     if (sig !== this.ringSig) {
       this.ringSig = sig;
       const fixed = data.opts.every((o) => o.pos !== undefined);
@@ -714,7 +719,24 @@ export class Hud {
           <img src="${o.icon}"><span class="rk">${o.key}</span>
           <span class="rp">${o.price ? priceHtml(o.price, g).replace(/<img[^>]*>/g, (m) => m) : ''}</span></div>`;
       });
+      if (this.menuTarget?.kind === 'slot') {
+        // level chips: build straight at level 1–4 (3–4 with specialization A or B)
+        const lv: Array<[number, SpecId | null, string]> = [[0, null, '1'], [1, null, '2'], [2, 'A', '3·A'], [2, 'B', '3·B'], [3, 'A', '4·A'], [3, 'B', '4·B']];
+        html += `<div class="lvchips" style="left:calc(${-R - 40} * var(--u))">${lv.map(([t, sp, label], i) =>
+          `<button class="lvchip ${this.buildLevel.tier === t && this.buildLevel.spec === sp ? 'on' : ''}" data-lv="${i}" title="Построить сразу ${label.replace('·', ' ')} уровня">${label}</button>`).join('')}</div>`;
+      }
       this.ring.innerHTML = html;
+      this.ring.querySelectorAll<HTMLElement>('.lvchip').forEach((b) => {
+        b.addEventListener('mousedown', (ev) => ev.stopPropagation());
+        b.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const lv: Array<[number, SpecId | null]> = [[0, null], [1, null], [2, 'A'], [2, 'B'], [3, 'A'], [3, 'B']];
+          const [t, sp] = lv[Number(b.dataset.lv)];
+          this.buildLevel = { tier: t, spec: sp };
+          this.ringSig = '';
+          this.renderRing();
+        });
+      });
       this.ring.querySelectorAll<HTMLElement>('.ropt').forEach((node) => {
         const i = Number(node.dataset.i);
         node.addEventListener('mouseenter', () => { this.hoverOpt = i; this.showCard(); });
