@@ -724,10 +724,12 @@ export class Game {
   rushReward(): { amber: number; star: number } {
     const s = this.state;
     const gift = (ECONOMY.dawnBase + ECONOMY.dawnPerNight * (s.night + 1)) * (1 + this.mods.dawnGift);
+    // the bonus is for the risk: how many creatures are still alive (one straggler pays little)
+    const risk = Math.min(1, s.enemies.length / Math.max(4, this.nightSpawns * 0.25));
     return {
+      star: Math.floor((ECONOMY.rushStar + Math.floor(s.night / 5)) * risk),
       // only creatures already out count: the rest still bring their own loot when they come
       amber: Math.round(gift * ECONOMY.rushGiftShare + s.enemies.length * ECONOMY.rushPerEnemy * ENDLESS.bounty(s.night)),
-      star: ECONOMY.rushStar + Math.floor(s.night / 5),
     };
   }
 
@@ -902,8 +904,8 @@ export class Game {
     const dir = k.dir;
     void tx;
     const form = k.forms.spear;
-    const range = def.range * this.runeArea('spear') * this.fx('sp-sky', 1.4, 0.1, 1);
-    const airMult = this.fx('sp-sky', 1.8, 0.4, 1);
+    const range = def.range * this.runeArea('spear');
+    const airMult = 1;
     const before = s.projectiles.length;
     if (form === 'B') {
       // Пронзающий луч: the Ascended stands still and holds a beam to the edge of the world
@@ -1550,7 +1552,7 @@ export class Game {
         const apo = this.apotheosis('spear');
         // every spear Property and Facet carries over to the beam
         const twin = this.fx('sp-twin', 0.6, 0.2, 0);
-        const air = this.fx('sp-sky', 1.8, 0.4, 1);
+        const air = 1;
         const lance = this.facet('sp-lance') ? 0.5 / this.fx('sp-lance', 1, 0.25, 1) : 1;
         let rhythmMul = 1;
         if (this.mods.spearRhythm) {
@@ -1570,6 +1572,8 @@ export class Game {
           if (apo) { e.marked = Math.max(e.marked, 3); this.damageQuiet(e, k.channelDps * BEAM_TICK * 0.4 * fall); }
           if (ahead && (!nearest || Math.abs(e.x - k.x) < Math.abs(nearest.x - k.x))) nearest = e;
         }
+        // Пригвождение: the beam pins the first creature on its line
+        if (nearest && this.facet('sp-pin')) nearest.rooted = Math.max(nearest.rooted, (BEAM_TICK + 0.05) * ENEMIES[nearest.kind].ccMult);
         // Огненный след: the beam sets the ground under its first target on fire
         if (nearest && this.facet('sp-flame') && Math.floor(k.channel / 0.6) !== Math.floor(before / 0.6)) {
           s.burns.push({ x: nearest.x, halfWidth: 12, dps: k.channelDps * this.fx('sp-flame', 0.25, 0.15, 0), life: 2.5 });
@@ -2635,6 +2639,11 @@ export class Game {
             p.pierce--;
             let dmg = p.damage * Math.max(0.25, 1 - (this.facet('sp-lance') ? 0 : def.falloff) * n) * this.fx('sp-lance', 1, 0.1, 1);
             if (e.layer === 'air') dmg *= p.airMult ?? 1;
+            // Пригвождение: the first creature hit is pinned and takes more
+            if (n === 0 && this.facet('sp-pin')) {
+              dmg *= this.fx('sp-pin', 1.4, 0.1, 1);
+              e.rooted = Math.max(e.rooted, this.fx('sp-pin', 1, 0.3, 0) * ENEMIES[e.kind].ccMult);
+            }
             if (this.mods.spearRhythm) {
               k.rhythm++;
               k.rhythmT = 2;

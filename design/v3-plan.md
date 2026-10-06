@@ -180,3 +180,15 @@
   twin (backward light), sky (air), lance (gentler falloff), mark, flame, swift (cheaper hold),
   rhythm/crescendo ticks and ricochet sparks.
 - Rune promotions/slots no longer show the keeper-rank message.
+
+## v0.5.x — облик Древа, цены роста, Пригвождение, Натиск за риск
+- Tree look by Уклон: the strongest path recolours the crown (tint after 1 branch, full palette
+  after 2); the special Tree (3) gets a mark: amber resin drops, a light halo with rays, hanging
+  root vines, orbiting stars.
+- Tree growth costs 55/150/450/1300/3000 (late stages dearer), rings 1400 × 1.38^n.
+- Spear facet «Небесный бросок» (air bonus — useless for a ground-skimming spear) replaced by
+  «Пригвождение»: the first creature hit is pinned 1 s and takes +40%; the beam holds the
+  nearest creature on its line (giants resist by size).
+- Time Stop base 4 s (was 7).
+- «Натиск»: the dawn gift is no longer paid up front (it all arrives at the next dawn); the
+  bonus is 5 Amber per living creature and Star Blood scaled by how many still live.

@@ -10,7 +10,7 @@ import {
   ROOT_SLOT_Y, drawTunnel, drawTunnelMouths, drawFog, drawFogEdge, drawDragonfly, dragonflyHome, drawAffix, drawWeb, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
   drawCrownNest, drawCrownSlot, drawSoldier, drawStructure, drawWorker,
 } from './sprites';
-import { drawGrass, drawRoots, drawTree } from './tree';
+import { drawGrass, drawRoots, drawTree, treeLook } from './tree';
 import { TREE } from '../data/tree';
 import { runeColor } from '../data/runes';
 import { disc } from './pixel';
@@ -234,7 +234,7 @@ export class Renderer {
     c.translate(WORLD.treeX, WORLD.groundY);
     c.scale(tsc, tsc);
     c.translate(-WORLD.treeX, -WORLD.groundY);
-    drawTree(c, s.tree.stage, time, this.treeHurt, this.growPulse);
+    drawTree(c, s.tree.stage, time, this.treeHurt, this.growPulse, treeLook(s.tree.branches));
     // growth rings glow as golden bands on the trunk
     for (let i = 0; i < Math.min(12, s.tree.rings); i++) {
       const y = WORLD.groundY - 8 - i * 5;

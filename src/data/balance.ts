@@ -325,7 +325,7 @@ export const attrCost = (level: number) => 6 + level * 5;
 
 /** Growth rings after the Great Igg-Tree: endless Amber sink. */
 export const RINGS = {
-  cost: (r: number) => Math.round(900 * Math.pow(1.32, r)),
+  cost: (r: number) => Math.round(1400 * Math.pow(1.38, r)),
   power: 0.07,
   hp: 0.1,
 } as const;
@@ -376,7 +376,7 @@ export const ABILITIES = {
   timestop: {
     name: 'Остановка Времени', desc: 'Руна-Заклинание: время в Круге застывает — твари замирают (боссы вдвое короче), новые не выходят из тьмы. Восстанавливается за ночи, а не секунды.',
     cost: 60, cooldown: 0, unlockStage: 3, learn: 25, key: '6',
-    duration: 7, nights: 2,
+    duration: 4, nights: 2,
   },
 } satisfies Record<AbilityId, AbilityDef & Record<string, number | string>>;
 
@@ -400,7 +400,8 @@ export const ECONOMY = {
    * already spawned). Pays a share of the skipped dawn gift up front plus a bounty per
    * creature still alive; the skipped dawn (gift, roulette) arrives at the next real dawn.
    */
-  rushGiftShare: 0.5, rushPerEnemy: 3, rushStar: 2,
+  /** the dawn gift is never paid up front any more (it arrives at the next dawn in full) */
+  rushGiftShare: 0, rushPerEnemy: 5, rushStar: 2,
   /** share of the night's creatures that must be out before «Натиск» opens */
   rushOpen: 0.6,
   dropLifeLit: 25,

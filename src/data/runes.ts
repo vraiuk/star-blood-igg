@@ -210,7 +210,7 @@ const F = (o: FacetDef) => o;
 export const FACETS: FacetDef[] = [
   // Копьё
   F({ id: 'sp-twin', rune: 'spear', rank: 1, name: 'Обоюдное древко', desc: 'Копьё летит сразу в обе стороны (назад — 60% урона)' }),
-  F({ id: 'sp-sky', rune: 'spear', rank: 1, name: 'Небесный бросок', desc: 'Копьё ×1.8 по летунам и летит на 40% дальше' }),
+  F({ id: 'sp-pin', rune: 'spear', rank: 1, name: 'Пригвождение', desc: 'Первая задетая тварь пригвождена на 1 с и получает +40% урона (луч держит ближнюю тварь на месте)' }),
   F({ id: 'sp-lance', rune: 'spear', rank: 1, name: 'Сквозь строй', desc: 'Копьё не теряет урона, пробивая тварей', requires: 'sp-pierce' }),
   F({ id: 'sp-mark', rune: 'spear', rank: 1, name: 'Маяк стаи', desc: 'Метка держится 8 с и даёт гнёздам +45% урона', requires: 'sp-beacon' }),
   F({ id: 'sp-flame', rune: 'spear', rank: 3, name: 'Огненный след', desc: 'Где копьё ударило — 2.5 с горит земля' }),
