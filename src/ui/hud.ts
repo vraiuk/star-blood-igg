@@ -14,6 +14,8 @@ import { QUESTS } from './quests';
 
 /** Roman numerals for facet levels */
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
+/** the most merge stars a nest can be built with at once */
+const MAX_BUILD_STARS = 6;
 const AB_IDS: AbilityId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'timestop'];
 const RUNE_IDS: KeeperRuneId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'timestop', 'light'];
 
@@ -66,6 +68,8 @@ interface RingOpt {
   preview?: RangePreview;
   /** fixed place on the arc, so buttons never swap under the cursor */
   pos?: number;
+  /** build option of this family: gets a − ★N + stepper for merge stars */
+  fam?: Family;
   act: () => void;
 }
 
@@ -529,8 +533,8 @@ export class Hud {
 
   /** Keyboard shortcut for the ring: key matches an option's hotkey. */
   private sellArmed = -1e9;
-  /** merge stars a new nest is built with (chips on the left of the build ring) */
-  private buildStars = 0;
+  /** merge stars a new nest of each family is built with (the − ★N + steppers) */
+  private buildStars: Partial<Record<Family, number>> = {};
   ringKey(key: string): boolean {
     if (!this.menuTarget) return false;
     const i = this.ringOpts.findIndex((o) => o.key.toLowerCase() === key && !o.locked);
@@ -596,14 +600,14 @@ export class Hud {
     if (t.kind === 'slot') {
       const slot = SLOTS.find((sl) => sl.id === t.slotId)!;
       const fams: Family[] = slot.underground ? ['spider'] : slot.crown ? ['hive', 'caterpillar', 'honeycomb', 'mender'] : ['hive', 'beetle', 'dragonfly', 'termite'];
-      // the star chips on the left: build a nest already merged (★ = as if three were fused)
-      const stars = this.buildStars;
+      // each option has its own − ★N + stepper: build a nest already merged (★ = three fused)
       fams.forEach((fam, i) => {
+        const stars = this.buildStars[fam] ?? 0;
         const def = NESTS[fam];
         const price = g.priceStars(fam, stars);
         const stats = g.nestStats({ family: fam, tier: 0, spec: null, merge: stars });
         opts.push({
-          icon: icon(fam), title: def.name + (stars ? ` ${'★'.repeat(stars)}` : ''),
+          fam, icon: icon(fam), title: def.name + (stars ? ` ${'★'.repeat(stars)}` : ''),
           sub: stars ? `${def.desc} · сразу со ${'★'.repeat(stars)} — как ${Math.pow(3, stars)} гнёзд, слитых в одно` : def.desc, key: String(i + 1),
           body: this.statsBlock(fam, null, stats), price, ok: g.canPay(price),
           preview: { x: slot.x, r: fam === 'dragonfly' ? stats.light! : stats.range, underground: slot.underground, y: slot.y },
@@ -707,14 +711,16 @@ export class Hud {
     if (!data) { this.closeMenu(); return; }
     this.ringOpts = data.opts;
     const sc = this.scale;
-    const sig = data.title + String(this.buildStars) + data.opts.map((o) => o.title + o.ok + JSON.stringify(o.price)).join('|');
+    const sig = data.title + JSON.stringify(this.buildStars) + data.opts.map((o) => o.title + o.ok + JSON.stringify(o.price)).join('|');
     if (sig !== this.ringSig) {
       this.ringSig = sig;
       const fixed = data.opts.every((o) => o.pos !== undefined);
       const n = fixed ? 4 : data.opts.length;
-      const R = 30;
+      // the build ring is roomier: every option has a − ★N + stepper under its price
+      const building = data.opts.some((o) => o.fam);
+      const R = building ? 44 : 30;
       // KR-style ring: options on an upper arc around the target
-      const spread = n <= 1 ? 0 : Math.min(150, 50 * (n - 1));
+      const spread = n <= 1 ? 0 : Math.min(building ? 170 : 150, (building ? 58 : 50) * (n - 1));
       let html = `<div class="ring-title">${data.title} <span style="opacity:.6">⏸</span></div><div class="ring-circle"></div>`;
       data.opts.forEach((o, i) => {
         const at = fixed ? o.pos! : i;
@@ -725,18 +731,21 @@ export class Hud {
           <img src="${o.icon}"><span class="rk">${o.key}</span>
           <span class="rp">${o.price ? priceHtml(o.price, g).replace(/<img[^>]*>/g, (m) => m) : ''}</span></div>`;
       });
-      if (this.menuTarget?.kind === 'slot') {
-        // star chips: build already merged (★ = 3 nests fused, ★★ = 9, ★★★ = 27)
-        const labels = ['обычное', '★', '★★', '★★★'];
-        html += `<div class="lvchips" style="left:calc(${-R - 40} * var(--u))">${labels.map((label, i) =>
-          `<button class="lvchip ${this.buildStars === i ? 'on' : ''}" data-lv="${i}" title="${i ? `Сразу со ${label}: как ${Math.pow(3, i)} гнёзд, слитых в одно` : 'Обычное гнездо'}">${label}</button>`).join('')}</div>`;
-      }
+      // − ★N + under every build option
+      data.opts.forEach((o, i) => {
+        if (!o.fam) return;
+        const ang = (-90 - spread / 2 + (n <= 1 ? 0 : (spread / (n - 1)) * i)) * (Math.PI / 180);
+        const n0 = this.buildStars[o.fam] ?? 0;
+        html += `<div class="starstep" style="left:calc(${Math.cos(ang) * R} * var(--u));top:calc(${Math.sin(ang) * R + 22} * var(--u))">
+          <button data-fam="${o.fam}" data-d="-1" ${n0 > 0 ? '' : 'disabled'} title="Меньше звёзд">−</button><span>${n0 ? `★${n0}` : '★0'}</span><button data-fam="${o.fam}" data-d="1" ${n0 < MAX_BUILD_STARS ? '' : 'disabled'} title="Больше звёзд: каждая ★ — как 3 гнезда, слитых в одно">+</button></div>`;
+      });
       this.ring.innerHTML = html;
-      this.ring.querySelectorAll<HTMLElement>('.lvchip').forEach((b) => {
+      this.ring.querySelectorAll<HTMLButtonElement>('.starstep button').forEach((b) => {
         b.addEventListener('mousedown', (ev) => ev.stopPropagation());
         b.addEventListener('click', (ev) => {
           ev.stopPropagation();
-          this.buildStars = Number(b.dataset.lv);
+          const fam = b.dataset.fam as Family;
+          this.buildStars[fam] = Math.max(0, Math.min(MAX_BUILD_STARS, (this.buildStars[fam] ?? 0) + Number(b.dataset.d)));
           this.ringSig = '';
           this.renderRing();
         });
