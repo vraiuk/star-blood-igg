@@ -87,7 +87,7 @@ describe('revive', () => {
     g.callNight();
     const k = g.state.keeper;
     k.hp = 1;
-    (g as unknown as { damageKeeper(a: number): void }).damageKeeper(999);
+    (g as unknown as { damageKeeper(k: typeof g.state.keeper, a: number): void }).damageKeeper(k, 999);
     expect(k.alive).toBe(false);
     g.state.amber = 10000;
     const before = g.state.amber;

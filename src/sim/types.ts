@@ -154,6 +154,8 @@ export interface Projectile {
   giant?: boolean;
   /** a shard of a burst star (small, flies out of the crater) */
   shard?: boolean;
+  /** index of the Ascended who cast it (spears, stars) — their Light, rhythm and charge */
+  owner?: number;
 }
 
 export type DropKind = 'amber' | 'star';
@@ -345,9 +347,9 @@ export type GameEvent =
   | { type: 'treeGrew'; stage: number }
   | { type: 'shield' }
   | { type: 'secondWind' }
-  | { type: 'keeperHit' }
-  | { type: 'keeperDown' }
-  | { type: 'keeperBack' }
+  | { type: 'keeperHit'; k: number }
+  | { type: 'keeperDown'; k: number; x: number }
+  | { type: 'keeperBack'; k: number }
   | { type: 'rankUp'; rank: number }
   | { type: 'rune'; id: string }
   | { type: 'devRune'; x: number }
@@ -427,7 +429,17 @@ export interface GameState {
   tempLights: TempLight[];
   burns: GroundBurn[];
   tunnels: Tunnel[];
+  /**
+   * The Ascended whose turn it is: the local player's between ticks (UI), the acting one
+   * inside commands and per-keeper updates. Always one of `keepers`.
+   */
   keeper: Keeper;
+  /**
+   * Every Ascended of the run (co-op: up to 4). They share the Tree, the resources and the
+   * rune progression (Properties, ranks, facets, attributes are the same objects); each one
+   * has its own body — position, HP, Light, cooldowns, casts in flight.
+   */
+  keepers: Keeper[];
   tree: Tree;
   pending: PendingSpawn[];
   /** queue of choices; the first one is shown */

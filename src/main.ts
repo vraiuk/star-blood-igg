@@ -9,6 +9,8 @@ import { Hud, type MenuTarget } from './ui/hud';
 import { openMetaTree } from './ui/metaTree';
 import { buildRunLog, saveRunLog } from './state/runlog';
 import { openStats } from './ui/stats';
+import { Coop, commandProxy, type StartInfo } from './net/coop';
+import { CoopPanel } from './ui/coop';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -16,12 +18,14 @@ const ctx = canvas.getContext('2d')!;
 ctx.imageSmoothingEnabled = false;
 
 const save = loadSave();
-const newGame = () => new Game({
+/** What this peer would start a run with (as the host: for everyone). */
+const runInfo = (): Omit<StartInfo, 'players'> => ({
   seed: (Math.random() * 1e9) | 0,
   meta: metaPatches(save),
   startRune: hasStartRune(save),
   path: Math.min(save.path, save.pathUnlocked),
 });
+const newGame = (info: StartInfo = { ...runInfo(), players: 1 }) => new Game(info);
 
 let game = newGame();
 let started = false;
@@ -40,32 +44,66 @@ let lastRecord = false;
 const titleInfo = () => {
   const p = Math.min(save.path, save.pathUnlocked);
   hud.renderTitle(`${PATHS[p].name} · рекорд: ${save.bestNight[p] ?? 0} ноч. · Монеты Наблюдателя: ${save.coins}`, save.coins);
+  // the title was rebuilt: put the lobby back into it
+  if (lobby) coopPanel.renderLobby(lobby);
 };
 
-const hud: Hud = new Hud(uiRoot, () => game, {
+// ───────────────────────────── co-op ───────────────────────────────
+
+const coopPanel = new CoopPanel(uiRoot);
+let lobby: import('./net/coop').LobbyView | null = null;
+const coop = new Coop({
+  lobby(v) { lobby = v; coopPanel.renderLobby(v); },
+  start(info, you) { beginRun(info, you); },
+  paused(on) { coopPanel.hostPaused = on; },
+  desync() { coopPanel.desync = true; },
+});
+/** The UI and the input talk to this: commands go out over the network, reads pass through. */
+let cmd = commandProxy(game, coop);
+
+/** A run starts on this peer (the host started it, or a guest got the start message). */
+function beginRun(info: StartInfo, you: number) {
+  logQuit();
+  game = newGame(info);
+  game.setLocal(you);
+  cmd = commandProxy(game, coop);
+  coop.attach(game);
+  logged = false;
+  hud.resetQuests();
+  hud.hideEnd();
+  hud.closeMenu();
+  renderer.resetCamera(game.state.tree.radius);
+  started = true;
+  endShown = false;
+  coopPanel.hostPaused = false;
+  coopPanel.desync = false;
+  lastMove = 0;
+  setPaused(false);
+  audio.start();
+  hud.hideTitle();
+}
+
+/** A guest leaves the run (the others play on): back to a fresh lobby search. */
+function leaveRun() { logQuit(); location.reload(); }
+
+const hud: Hud = new Hud(uiRoot, () => cmd, {
   onStart() {
-    game = newGame();
-    logged = false;
-    hud.resetQuests();
-    renderer.resetCamera(game.state.tree.radius);
-    started = true;
-    endShown = false;
-    audio.start();
-    hud.hideTitle();
+    if (coop.canStart) coop.start(runInfo());
   },
   onRestart() {
-    logQuit();
+    if (coop.canStart) { coop.start(runInfo()); return; }
+    // a guest waits for the host's next run in the lobby
     hud.hideEnd();
     hud.closeMenu();
-    game = newGame();
-    logged = false;
-    hud.resetQuests();
-    renderer.resetCamera(game.state.tree.radius);
-    endShown = false;
+    if (!game.over) { leaveRun(); return; }
+    started = false;
+    hud.showTitle();
+    titleInfo();
   },
   onGiveUp() {
     setPaused(false);
-    game.surrender();
+    if (coop.isGuest) leaveRun();
+    else cmd.surrender();
   },
   onOpenStats() {
     metaOpen = true;
@@ -76,18 +114,21 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     openMetaTree(uiRoot, save, () => {
       metaOpen = false;
       titleInfo();
-      if (game.over) { hud.hideEnd(); started = false; game = newGame(); hud.showTitle(); }
+      if (game.over) { hud.hideEnd(); started = false; hud.showTitle(); titleInfo(); }
     });
   },
   onCast(id) { beginAim(id); },
-  onCallNight() { game.callNight(); },
-  onToggleSpeed() { speed = nextSpeed(); hud.setSpeed(speed); },
+  onCallNight() { cmd.callNight(); },
+  onToggleSpeed() { if (!coop.isGuest) { speed = nextSpeed(); hud.setSpeed(speed); } },
   onToggleSound() { hud.setSound(audio.toggle()); },
   onResume() { setPaused(false); },
   onMenuClosed() { view.selectedSlot = null; view.preview = null; },
   onPreview(p) { view.preview = p; },
 });
+hud.coop = true;
+hud.resetQuests();
 titleInfo();
+coop.connect();
 
 // ───────────────────────────── layout ──────────────────────────────
 
@@ -110,23 +151,36 @@ fit();
 // ───────────────────────────── input ───────────────────────────────
 
 const held = new Set<string>();
+/** the walk direction last sent (commands are only sent when it changes) */
+let lastMove: -1 | 0 | 1 = 0;
+let lastMoveAt = 0;
 
-function updateMove() {
+function wantedMove(): -1 | 0 | 1 {
   const l = held.has('a') || held.has('arrowleft') || held.has('ф');
   const r = held.has('d') || held.has('arrowright') || held.has('в');
-  game.setMove(l === r ? 0 : l ? -1 : 1);
+  return l === r ? 0 : l ? -1 : 1;
+}
+
+function updateMove() {
+  const m = wantedMove();
+  if (m === lastMove) return;
+  lastMove = m;
+  lastMoveAt = performance.now();
+  cmd.setMove(m);
 }
 
 function setPaused(p: boolean) {
   paused = p;
   hud.setPaused(p);
+  // the host's pause holds the whole world; a guest's is just the menu
+  coop.setPaused(p);
 }
 
 /** Abilities that need a target point enter aim mode on click; the hammer casts at once. */
 function beginAim(id: AbilityId) {
   hud.closeMenu();
   // the Starfall and the Hammer's leap are aimed with the next click
-  if (id !== 'starfall' && id !== 'hammer') { game.cast(id, game.state.keeper.x); return; }
+  if (id !== 'starfall' && id !== 'hammer') { cmd.cast(id, game.state.keeper.x); return; }
   hud.aiming = id;
   view.aiming = id;
 }
@@ -161,19 +215,19 @@ window.addEventListener('keydown', (e) => {
   updateMove();
   if (hud.target && hud.ringKey(k)) return;
   if (ABILITY_KEYS[k] && !e.repeat) {
-    game.cast(ABILITY_KEYS[k], view.mouseX, view.mouseY);
+    cmd.cast(ABILITY_KEYS[k], view.mouseX, view.mouseY);
     cancelAim();
   }
   if (k === ' ') {
     e.preventDefault();
     if (hud.deathPause) hud.releaseDeath();
-    else game.callNight();
+    else cmd.callNight();
   }
-  if (k === 'f') { speed = nextSpeed(); hud.setSpeed(speed); }
+  if (k === 'f' && !coop.isGuest) { speed = nextSpeed(); hud.setSpeed(speed); }
   if (k === 'm') hud.setSound(audio.toggle());
   if (k === 'r' || k === 'b') hud.togglePanel('keeper');
-  if (k === 'v') game.revive('amber');
-  if (k === 'g') game.revive('sacrifice');
+  if (k === 'v') cmd.revive('amber');
+  if (k === 'g') cmd.revive('sacrifice');
   if (k === 't') hud.togglePanel('tree');
   if (k === 'q') cycleNode(-1);
   if (k === 'e') cycleNode(1);
@@ -237,7 +291,7 @@ canvas.addEventListener('mousedown', (ev) => {
   const [mx, my] = toWorld(ev);
   if (ev.button === 2) { cancelAim(); hud.closeMenu(); return; }
   if (view.aiming) {
-    game.cast(view.aiming, mx, my);
+    cmd.cast(view.aiming, mx, my);
     cancelAim();
     return;
   }
@@ -309,31 +363,41 @@ function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   time += dt;
-  // choices (dawn rune, tree branch) pause the world
-  const frozen = !started || paused || game.over || !!game.choice || metaOpen || hud.tabletOpen || hud.ringOpen || hud.deathPause;
-  if (!frozen) {
+  // co-op lockstep: the host runs the world (its pause holds everyone), guests replay its frames;
+  // a pending choice (dawn rune, tree branch) holds the world still on every peer
+  const running = started && !game.over;
+  if (running && coop.isGuest) {
+    coop.guestTicks(dt);
+  } else if (running && !paused) {
     acc += dt * speed;
-    while (acc >= STEP) {
-      game.step();
-      acc -= STEP;
-      if (game.over || game.choice) { acc = 0; break; }
-    }
+    let n = 0;
+    while (acc >= STEP && n < 60) { acc -= STEP; n++; }
+    coop.hostTicks(n);
   } else {
     acc = 0;
   }
+  coop.flush();
+  const frozen = !started || game.over || !!game.choice || (coop.isGuest ? coopPanel.hostPaused : paused);
+  // keep the walk in sync if a command got lost in a death or a channel
+  const me = game.state.keeper;
+  if (running && me.alive && me.move !== lastMove && me.channel <= 0 && now - lastMoveAt > 300) { lastMoveAt = now; cmd.setMove(lastMove); }
   hud.inRun = started;
   const events = game.drainEvents();
+  // my own Ascended's fall and hits are mine to hear and see in the HUD
+  const mine = events.filter((e) => !('k' in e) || e.k === game.local);
   // the Ascended falls: back to normal speed so the moment isn't missed
-  if (speed !== 1 && events.some((e) => e.type === 'keeperDown')) { speed = 1; hud.setSpeed(1); }
+  if (speed !== 1 && mine.some((e) => e.type === 'keeperDown')) { speed = 1; hud.setSpeed(1); }
   if (events.length) {
     renderer.onEvents(events, game);
-    hud.onEvents(events);
-    audio.play(events);
+    hud.onEvents(mine);
+    audio.play(mine);
     audio.setPhase(game.state.phase);
   }
+  coopPanel.update(game, started, coop.lag);
   if (game.over && !endShown && started) {
     endShown = true;
     hud.closeMenu();
+    coop.ended();
     const coins = finishRun();
     // let the Tree fall and its light go out before the summary
     setTimeout(() => hud.showEnd(coins, save.bestNight[game.path] ?? 0, lastRecord), 3600);
@@ -348,6 +412,7 @@ requestAnimationFrame(frame);
 // debug hooks for automated playtests
 (window as unknown as Record<string, unknown>).__igg = {
   get game() { return game; },
+  coop,
   save,
   start: () => { if (!started) hud.hideTitle(); started = true; },
   setSpeed: (x: number) => { speed = x; },
