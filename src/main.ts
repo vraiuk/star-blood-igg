@@ -171,6 +171,8 @@ window.addEventListener('keydown', (e) => {
   if (k === 'v') game.revive('amber');
   if (k === 'g') game.revive('sacrifice');
   if (k === 't') hud.togglePanel('tree');
+  if (k === 'q') cycleNode(-1);
+  if (k === 'e') cycleNode(1);
 });
 window.addEventListener('keyup', (e) => {
   const k = ALIAS[e.key.toLowerCase()] ?? e.key.toLowerCase();
@@ -243,6 +245,26 @@ canvas.addEventListener('mousedown', (ev) => {
   else view.selectedSlot = null;
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+/**
+ * Q / E — previous / next build node (like Shift+Tab / Tab): surface left→right, then the
+ * crown, then the root nodes; opens the node's menu (build or upgrade).
+ */
+function cycleNode(step: 1 | -1) {
+  const s = game.state;
+  const xOf = (sl: (typeof SLOTS)[number]) => (sl.crown ? crownPos(s.tree.stage, Number(sl.id.slice(1)), s.tree.rings).x : sl.x);
+  const layer = (sl: (typeof SLOTS)[number]) => (sl.crown ? 1 : sl.underground ? 2 : 0);
+  const nodes = SLOTS.filter((sl) => game.slotUnlocked(sl) || game.structureAt(sl.id))
+    .sort((a, b) => layer(a) - layer(b) || xOf(a) - xOf(b));
+  if (!nodes.length) return;
+  const t = hud.target;
+  const curId = t?.kind === 'slot' ? t.slotId : t?.kind === 'structure' ? s.structures.find((x) => x.id === t.id)?.slotId : undefined;
+  const i = curId ? nodes.findIndex((n) => n.id === curId) : -1;
+  const next = nodes[(i < 0 ? (step > 0 ? 0 : nodes.length - 1) : (i + step + nodes.length) % nodes.length)];
+  const st = game.structureAt(next.id);
+  hud.openMenu(st ? { kind: 'structure', id: st.id } : { kind: 'slot', slotId: next.id });
+  view.selectedSlot = next.id;
+}
 
 // ───────────────────────────── run end ─────────────────────────────
 
