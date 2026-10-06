@@ -102,3 +102,37 @@ export function maxRankForNight(night: number): RuneRank {
 
 export function propertyById(id: string) { return PROPERTIES.find((p) => p.id === id); }
 export function boonById(id: string) { return BOONS.find((b) => b.id === id); }
+
+// ───────────────────────────── rune ranks & forms ─────────────────────────────
+
+/**
+ * Each keeper rune has its own rank (Повышение — a Property from the books that raises a
+ * rune's rank). Ranks scale power and area; at Серебро the rune takes one of two Forms
+ * that change how it is used; at Небо the chosen Form reaches its Apotheosis.
+ */
+export const RUNE_RANK_COST = [0, 12, 25, 45, 80] as const;
+/** damage, area and cooldown multipliers by rune rank */
+export const RUNE_RANK_POWER = [1, 1.35, 1.8, 2.4, 3.2] as const;
+export const RUNE_RANK_AREA = [1, 1.1, 1.2, 1.35, 1.5] as const;
+export const RUNE_RANK_CD = [1, 0.95, 0.9, 0.85, 0.8] as const;
+/** rank index where a Form is chosen / reaches Apotheosis */
+export const FORM_RANK = 2;
+export const APOTHEOSIS_RANK = 4;
+
+export type FormId = 'A' | 'B';
+export interface FormDef { name: string; desc: string; apo: string; }
+
+export const RUNE_FORMS: Record<'spear' | 'hammer' | 'starfall', Record<FormId, FormDef>> = {
+  spear: {
+    A: { name: 'Веер Игг', desc: 'Пять коротких копий веером: разрывает толпу у ног Восходящего', apo: 'Апофеоз: семь копий, каждое отбрасывает' },
+    B: { name: 'Пронзающий луч', desc: 'Мгновенный луч до края мира, бьёт всех на линии. Дороже и реже', apo: 'Апофеоз: луч оставляет горящий след и высвечивает тварей' },
+  },
+  hammer: {
+    A: { name: 'Сотрясение Тверди', desc: 'Волна бежит по земле в обе стороны, бьёт и Червей под землёй', apo: 'Апофеоз: волна вдвое дальше и оглушает' },
+    B: { name: 'Купол Сияния', desc: 'Купол света на 6 с: замедляет и жжёт тварей, ускоряет гнёзда внутри', apo: 'Апофеоз: купол 10 с и лечит гнёзда и Древо' },
+  },
+  starfall: {
+    A: { name: 'Сверхзвезда', desc: 'Одна гигантская звезда: огромный урон по точке, ломает броню', apo: 'Апофеоз: кратер горит 8 с, броня тварей рушится надолго' },
+    B: { name: 'Звёздный ливень', desc: '20 звёзд падают по всему Кругу за 5 секунд', apo: 'Апофеоз: 35 звёзд, сами ищут тварей' },
+  },
+};

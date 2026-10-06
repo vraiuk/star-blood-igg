@@ -95,6 +95,14 @@ function act(g: Game, plan: BotPlan) {
     if (g.growNeed() === 0 && s.amber > g.ringCost() + 150) g.addRing();
   }
   if (s.phase === 'day' && s.night > 0 && s.dayLeft < 18) g.callNight();
+  if (!k.alive && !g.revive('amber')) g.revive('sacrifice');
+  // rune ranks and forms
+  if (plan.specialize) {
+    for (const rid of ['spear', 'hammer', 'starfall'] as const) {
+      if (g.abilityUnlocked(rid) && s.star >= 60) g.promoteRune(rid);
+      if (k.runeRank[rid] >= 2 && !k.forms[rid]) g.chooseForm(rid, rid === 'hammer' ? 'B' : 'A');
+    }
+  }
 
   let goal: number = WORLD.treeX;
   const threats = s.enemies.filter((e) => !ENEMIES[e.kind].underground);

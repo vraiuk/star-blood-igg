@@ -28,6 +28,8 @@ export interface Enemy {
   burn: number;
   /** «Высвечивание»: extra damage taken (from dragonfly light) */
   vuln: number;
+  /** armour shattered (Сверхзвезда) while > 0 */
+  armorBreak: number;
   attacking: boolean;
   lit: boolean;
   /** seconds since spawn — drives animation */
@@ -63,7 +65,7 @@ export interface Structure {
   haste: number;
 }
 
-export type ProjectileKind = 'arrow' | 'acid' | 'spear' | 'spark' | 'beam' | 'meteor';
+export type ProjectileKind = 'arrow' | 'acid' | 'spear' | 'spark' | 'beam' | 'meteor' | 'wave';
 
 export interface Projectile {
   id: number;
@@ -83,6 +85,16 @@ export interface Projectile {
   age: number;
   /** spear: has it already ricocheted */
   bounced?: boolean;
+  /** knockback on hit (fan apotheosis, wave) */
+  knock?: number;
+  /** stun on hit (wave apotheosis) */
+  stun?: number;
+  /** meteor: impact radius / stun / armour break / burn override */
+  radius?: number;
+  breakArmor?: number;
+  burnTime?: number;
+  /** hits underground creatures too (wave) */
+  deep?: boolean;
 }
 
 export type DropKind = 'amber' | 'star';
@@ -110,8 +122,12 @@ export interface TempLight {
   radius: number;
   life: number;
   maxLife: number;
-  /** eclipse field: slows enemies */
+  /** eclipse field / dome: slows enemies */
   slow?: number;
+  /** dome of radiance: burns enemies, hastes and heals nests inside */
+  dps?: number;
+  haste?: number;
+  heal?: number;
 }
 
 export interface GroundBurn { x: number; halfWidth: number; dps: number; life: number; }
@@ -135,6 +151,10 @@ export interface Keeper {
   slots: Record<KeeperRuneId, number>;
   /** creature runes and lasting gifts from the dawn roulette */
   boons: string[];
+  /** rank of each keeper rune (0 Дерево … 4 Небо) */
+  runeRank: Record<KeeperRuneId, number>;
+  /** chosen Form of each ability rune */
+  forms: Record<'spear' | 'hammer' | 'starfall', 'A' | 'B' | null>;
   /** Ascended attributes 0..10 */
   attrs: Record<import('../data/balance').AttrId, number>;
   castAnim: number;

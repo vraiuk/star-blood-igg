@@ -1,7 +1,8 @@
 import { ABILITIES, ATTR_MAX, ATTRIBUTES, KEEPER_RANKS, SLOTS, WORLD, attrCost, type AbilityId, type AttrId } from '../data/balance';
 import { NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
-  KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_RANKS, RUNE_RANK_COLORS, boonById, propertyById, type KeeperRuneId,
+  APOTHEOSIS_RANK, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, RUNE_RANK_COST,
+  RUNE_RANK_POWER, boonById, propertyById, type FormId, type KeeperRuneId,
 } from '../data/runes';
 import { TREE_BRANCHES, TREE_STAGES } from '../data/tree';
 import { ROOT_SLOT_Y } from '../render/sprites';
@@ -89,6 +90,8 @@ export class Hud {
   private banner!: HTMLElement;
   private notice!: HTMLElement;
   private tip!: HTMLElement;
+  private reviveBox!: HTMLElement;
+  private reviveSig = '';
   private title!: HTMLElement;
   private end!: HTMLElement;
   private pause!: HTMLElement;
@@ -222,6 +225,10 @@ export class Hud {
     this.tip = el('div');
     this.tip.id = 'tip';
     r.appendChild(this.tip);
+    this.reviveBox = el('div', 'panel plain hit');
+    this.reviveBox.id = 'revive';
+    this.reviveBox.addEventListener('mousedown', (e) => e.stopPropagation());
+    r.appendChild(this.reviveBox);
 
     this.modal = el('div', 'screen modal hidden');
     this.modal.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -320,7 +327,7 @@ export class Hud {
           this.hpBar.classList.add('hurt');
           break;
         case 'denied': this.say(e.reason, true); break;
-        case 'keeperDown': this.say('Восходящий пал. Возрождение у Древа через 6 с', true); break;
+        case 'keeperDown': this.say('Восходящий пал! Четверть Звёздной Крови рассыпалась на месте гибели.', true); break;
         case 'pickup':
           if (e.kind === 'star') this.once('star', 'Получена Звёздная Кровь. Обменяй её на специализацию гнезда или ранг Восходящего.');
           break;
@@ -330,7 +337,10 @@ export class Hud {
         case 'rune': {
           const p = propertyById(e.id);
           const b = boonById(e.id);
-          if (p) this.say(`Свойство «${p.name}» вставлено в руну «${KEEPER_RUNES[p.rune].name}».`);
+          if (e.id.startsWith('form:')) {
+            const [, rid, f] = e.id.split(':') as [string, 'spear' | 'hammer' | 'starfall', FormId];
+            this.say(`Руна «${KEEPER_RUNES[rid].name}» приняла Форму «${RUNE_FORMS[rid][f].name}».`);
+          } else if (p) this.say(`Свойство «${p.name}» вставлено в руну «${KEEPER_RUNES[p.rune].name}».`);
           else if (b) this.say(`Получена ${b.category} (${RUNE_RANKS[b.rank]}): «${b.name}».`);
           break;
         }
@@ -525,7 +535,8 @@ export class Hud {
         node.addEventListener('click', () => {
           this.ringOpts[i]?.act();
           this.ringSig = '';
-          if (this.menuTarget) this.renderRing();
+          this.renderRevive(g);
+    if (this.menuTarget) this.renderRing();
           this.showCard();
         });
       });
@@ -634,9 +645,32 @@ export class Hud {
         const unlocked = rid === 'light' || g.abilityUnlocked(rid);
         const props = g.runeProps(rid);
         const cap = k.slots[rid];
-        html += `<div class="rblock ${unlocked ? '' : 'dim'}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b><span class="cap">${props.length}/${cap}</span>`;
+        const rr = k.runeRank[rid];
+        html += `<div class="rblock ${unlocked ? '' : 'dim'}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b>
+          <span class="rrank" style="--c:${RUNE_RANK_COLORS[rr]}">${RUNE_RANKS[rr]} · ×${RUNE_RANK_POWER[rr]}</span><span class="cap">${props.length}/${cap}</span>`;
         if (s.devRunes > 0 && cap < MAX_SLOTS) html += btn('+слот', true, () => { g.developRune(rid); }, 'tiny');
-        html += `</div><div class="slots">`;
+        html += `</div>`;
+        if (unlocked && rr < RUNE_RANK_COST.length - 1) {
+          const cost = RUNE_RANK_COST[rr + 1];
+          html += `<div class="row left">${btn(`Повышение → ${RUNE_RANKS[rr + 1]} (<img class="icon" src="${icon('star')}"> ${cost})`, s.star >= cost, () => { g.promoteRune(rid); }, 'tiny')}
+            <span class="hint">${rr + 1 === FORM_RANK && rid !== 'light' ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && rid !== 'light' ? 'Апофеоз Формы' : 'урон, площадь, перезарядка'}</span></div>`;
+        }
+        if (rid !== 'light' && unlocked) {
+          const forms = RUNE_FORMS[rid];
+          const cur = k.forms[rid];
+          if (cur) {
+            html += `<div class="form on"><b>Форма: ${forms[cur].name}</b><small>${forms[cur].desc}${rr >= APOTHEOSIS_RANK ? `<br><i>${forms[cur].apo}</i>` : ''}</small></div>`;
+          } else {
+            html += `<div class="forms ${rr >= FORM_RANK ? '' : 'locked'}">`;
+            for (const f of ['A', 'B'] as FormId[]) {
+              actions.push(() => { g.chooseForm(rid, f); });
+              html += `<div class="form ${rr >= FORM_RANK ? 'pick' : ''}" ${rr >= FORM_RANK ? `data-i="${actions.length - 1}"` : ''}><b>${forms[f].name}</b><small>${forms[f].desc}</small></div>`;
+            }
+            html += `</div>`;
+            if (rr < FORM_RANK) html += `<div class="sub">Форма выбирается на ранге «Серебро»</div>`;
+          }
+        }
+        html += `<div class="slots">`;
         for (let i = 0; i < cap; i++) {
           const p = props[i];
           html += p ? `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}">${p.name}</span>` : `<span class="slot">пусто</span>`;
@@ -668,7 +702,7 @@ export class Hud {
     if (html !== this.panelSig) {
       this.panelSig = html;
       this.panel.innerHTML = html;
-      this.panel.querySelectorAll<HTMLElement>('button[data-i], .item[data-i]').forEach((b) => {
+      this.panel.querySelectorAll<HTMLElement>('button[data-i], .item[data-i], .form[data-i]').forEach((b) => {
         b.addEventListener('click', () => { actions[Number(b.dataset.i)](); this.panelSig = ''; this.renderPanel(); });
       });
       this.panel.querySelector('.close')!.addEventListener('click', () => this.closeMenu());
@@ -752,7 +786,7 @@ export class Hud {
     this.devNum.textContent = String(s.devRunes);
     const kmax = g.keeperMaxHp();
     this.khpFill.style.width = `${(Math.max(0, s.keeper.hp) / kmax) * 100}%`;
-    this.khpText.textContent = s.keeper.alive ? `${Math.ceil(s.keeper.hp)}/${kmax}` : `пал · ${Math.ceil(s.keeper.respawn)}с`;
+    this.khpText.textContent = s.keeper.alive ? `${Math.ceil(s.keeper.hp)}/${kmax}` : Number.isFinite(s.keeper.respawn) ? `пал · ${Math.ceil(s.keeper.respawn)}с` : 'пал';
     (this.devNum.parentElement as HTMLElement).style.display = s.devRunes > 0 ? '' : 'none';
     this.lightFill.parentElement!.classList.toggle('near', g.lightRegenFactor() > 1.2);
     this.lightFill.parentElement!.classList.toggle('far', g.lightRegenFactor() < 0.6);
@@ -811,6 +845,7 @@ export class Hud {
     this.keeperBtn.classList.toggle('hot', canAscend || slotsFree || s.devRunes > 0);
     this.keeperBtn.title = `Ранг ${KEEPER_RANKS[s.keeper.rank].name}${slotsFree ? ' · можно купить Свойство' : ''}`;
 
+    this.renderRevive(g);
     if (this.menuTarget) this.renderRing();
     if (this.panelKind) this.renderPanel();
     this.renderChoice();
@@ -820,6 +855,27 @@ export class Hud {
     this.noticeTimer -= dt;
     if (this.noticeTimer <= 0) this.notice.classList.remove('show');
     this.updateTips(g);
+  }
+
+  private renderRevive(g: Game) {
+    const s = g.state;
+    const k = s.keeper;
+    const show = !k.alive && s.phase === 'night' && !g.over;
+    this.reviveBox.classList.toggle('show', show);
+    if (!show) { this.reviveSig = ''; return; }
+    const cost = g.reviveCost();
+    const t = g.sacrificeTarget();
+    const tdesc = t ? (t.kind === 'rank' ? `ранг руны «${KEEPER_RUNES[t.rune].name}» (${RUNE_RANKS[k.runeRank[t.rune]]} → ${RUNE_RANKS[k.runeRank[t.rune] - 1]})` : `Свойство из руны «${KEEPER_RUNES[t.rune].name}»`) : '';
+    const sig = `${cost}|${s.amber >= cost}|${tdesc}`;
+    if (sig === this.reviveSig) return;
+    this.reviveSig = sig;
+    this.reviveBox.innerHTML = `<h4>Восходящий пал</h4>
+      <div class="sub">Без него Круг держится до рассвета. Вернуть сейчас:</div>
+      <button class="btn gold" data-a="amber" ${s.amber >= cost ? '' : 'disabled'}>Воскрешение Древом <img class="icon" src="${icon('amber')}"> ${cost} <span class="k">[V]</span></button>
+      ${t ? `<button class="btn" data-a="sac">Жертва Вечности: ${tdesc} <span class="k">[G]</span></button>` : ''}
+      <div class="sub">…или ждать рассвета (бесплатно).</div>`;
+    this.reviveBox.querySelector('[data-a=amber]')?.addEventListener('click', () => { g.revive('amber'); });
+    this.reviveBox.querySelector('[data-a=sac]')?.addEventListener('click', () => { g.revive('sacrifice'); });
   }
 
   private bump(n: HTMLElement) {

@@ -674,11 +674,22 @@ export function drawProjectile(c: Ctx, p: Projectile) {
       rect(c, p.x - 1, p.y - 1, 2, 2, PAL.gold4);
       rect(c, p.x, p.y, 1, 1, PAL.white);
       break;
-    case 'meteor':
-      line(c, p.x - ux * 18, p.y - uy * 18, p.x, p.y, '#ff7a4a', 2);
-      line(c, p.x - ux * 8, p.y - uy * 8, p.x, p.y, PAL.gold4, 2);
-      disc(c, p.x, p.y, 2.5, PAL.white);
+    case 'meteor': {
+      const big = (p.radius ?? 34) > 50 ? 2.2 : 1;
+      line(c, p.x - ux * 18 * big, p.y - uy * 18 * big, p.x, p.y, '#ff7a4a', Math.round(2 * big));
+      line(c, p.x - ux * 8 * big, p.y - uy * 8 * big, p.x, p.y, PAL.gold4, Math.round(2 * big));
+      disc(c, p.x, p.y, 2.5 * big, PAL.white);
       break;
+    }
+    case 'wave': {
+      // a rolling crest of earth and light
+      for (let i = 0; i < 6; i++) {
+        const h = 10 - i * 1.5;
+        rect(c, p.x - Math.sign(p.vx) * i * 3, GY - h, 2, h, i < 2 ? PAL.gold4 : '#5a4a46');
+      }
+      rect(c, p.x, GY + 2, 2, 10, PAL.gold2);
+      break;
+    }
     default:
       break;
   }

@@ -128,7 +128,7 @@ export const ROOT_SLOT_REACH = 0.85;
 export const WORM_LIGHT_MULT = 2;
 
 export const KEEPER = {
-  hp: 100, speed: 92, regenLit: 6, respawn: 6,
+  hp: 100, speed: 92, regenLit: 6, respawn: 3,
   pickupRadius: 10, magnetRadius: 38, magnetSpeed: 170,
   maxLight: 100, startLight: 60,
   /** Light regen multiplier at the trunk and at/after the Circle edge */

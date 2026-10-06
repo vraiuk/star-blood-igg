@@ -344,3 +344,25 @@ body { display: grid; place-items: center; }
 .attr small { grid-column: 1 / span 2; font-family: var(--text); font-size: calc(5 * var(--u)); color: var(--ink-dim); }
 .attr .btn.tiny { grid-row: 1; margin-left: 0; }
 .btn .icon { width: calc(7 * var(--u)); height: calc(7 * var(--u)); vertical-align: -10%; }
+
+/* v3.3: rune ranks & forms */
+.rrank { font-size: calc(5.5 * var(--u)); color: var(--c); border: var(--u) solid var(--c); padding: 0 calc(2 * var(--u)); }
+.row.left { justify-content: flex-start; gap: calc(4 * var(--u)); margin-top: calc(2 * var(--u)); }
+.row.left .btn.tiny { margin-left: 0; }
+.row .hint { font-family: var(--text); font-size: calc(5 * var(--u)); color: var(--ink-dim); }
+.forms { display: grid; grid-template-columns: 1fr 1fr; gap: calc(2 * var(--u)); margin: calc(2 * var(--u)) 0; }
+.forms.locked { opacity: 0.5; }
+.form { border: var(--u) solid #3a4a80; padding: calc(2 * var(--u)) calc(3 * var(--u)); background: rgba(20, 40, 90, 0.25); }
+.form.pick { cursor: pointer; border-color: var(--azure); box-shadow: 0 0 calc(4 * var(--u)) rgba(111, 168, 255, 0.4); }
+.form.pick:hover { background: rgba(111, 168, 255, 0.15); }
+.form.on { border-color: var(--azure); margin: calc(2 * var(--u)) 0; }
+.form b { display: block; font-family: var(--serif); font-size: calc(7 * var(--u)); color: var(--azure-hi); }
+.form small { font-family: var(--text); font-size: calc(5 * var(--u)); color: var(--ink-dim); line-height: 1.25; }
+.form small i { color: #ffd68a; font-style: normal; }
+
+#revive { position: absolute; left: 50%; top: 32%; transform: translateX(-50%); width: calc(210 * var(--u)); padding: calc(6 * var(--u)) calc(8 * var(--u)); display: none; text-align: center; pointer-events: auto; border-color: #a04050; box-shadow: 0 0 calc(14 * var(--u)) rgba(200, 40, 70, 0.4); z-index: 6; }
+#revive.show { display: block; animation: pop2 0.2s ease-out; }
+#revive h4 { margin: 0; font-family: var(--serif); font-size: calc(12 * var(--u)); color: #ffb0b8; }
+#revive .sub { font-family: var(--text); font-size: calc(6 * var(--u)); color: var(--ink-dim); margin: calc(2 * var(--u)) 0; }
+#revive .btn { display: block; width: 100%; margin: calc(3 * var(--u)) 0; font-size: calc(6.5 * var(--u)); }
+#revive .btn .k { opacity: 0.6; }

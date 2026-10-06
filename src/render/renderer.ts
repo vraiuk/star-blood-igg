@@ -176,6 +176,7 @@ export class Renderer {
     }
     for (const d of s.drops) drawDrop(c, d, time);
     for (const p of s.projectiles) drawProjectile(c, p);
+    for (const t of s.tempLights) if (t.dps) this.drawDome(c, t.x, t.radius, t.life / t.maxLife, time);
     this.particles.draw(c, true);
     for (const e of s.enemies) drawEnemyHp(c, e);
     drawKeeperHp(c, s.keeper, game.keeperMaxHp());
@@ -214,6 +215,17 @@ export class Renderer {
       sc.fillStyle = `rgba(255,236,190,${this.flash * 0.6})`;
       sc.fillRect(0, 0, W, H);
     }
+  }
+
+  /** «Купол Сияния»: a shimmering dome. */
+  private drawDome(c: Ctx, x: number, r: number, k: number, time: number) {
+    const steps = Math.round(r * 2);
+    for (let i = 0; i <= steps; i += 2) {
+      const a = Math.PI + (i / steps) * Math.PI;
+      const y = WORLD.groundY + Math.sin(a) * r * 0.7;
+      if (Math.sin(time * 6 + i * 0.3) > -0.3) rect(c, x + Math.cos(a) * r, y, 1, 1, k > 0.3 ? PAL.gold4 : PAL.gold2);
+    }
+    if (Math.random() < 0.5) this.particles.emit(1, x + (Math.random() - 0.5) * r * 1.6, WORLD.groundY - 2, { speed: 14, max: 1, colors: [PAL.gold5, PAL.gold3], glow: true, gravity: -30, angle: -Math.PI / 2, spread: 0.3 });
   }
 
   /** «Полярии — золотистые медузы» drifting around the young tree. */
