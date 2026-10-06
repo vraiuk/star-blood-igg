@@ -483,6 +483,8 @@ export class Hud {
 
   /** The Keeper's Tablet freezes time so runes can be bought calmly in a crowded night. */
   get tabletOpen() { return this.panelKind === 'keeper'; }
+  /** A nest's / slot's ring menu is open: time stands while you decide on an upgrade. */
+  get ringOpen() { return this.menuTarget !== null && this.menuTarget.kind !== 'tree'; }
   get target() { return this.menuTarget; }
 
   openMenu(t: MenuTarget) {
@@ -653,7 +655,7 @@ export class Hud {
       const R = 30;
       // KR-style ring: options on an upper arc around the target
       const spread = n <= 1 ? 0 : Math.min(150, 50 * (n - 1));
-      let html = `<div class="ring-title">${data.title}</div><div class="ring-circle"></div>`;
+      let html = `<div class="ring-title">${data.title} <span style="opacity:.6">⏸</span></div><div class="ring-circle"></div>`;
       data.opts.forEach((o, i) => {
         const at = fixed ? o.pos! : i;
         const ang = (-90 - spread / 2 + (n <= 1 ? 0 : (spread / (n - 1)) * at)) * (Math.PI / 180);
@@ -792,12 +794,12 @@ export class Hud {
         html += `<div class="attr"><b>${a.name}</b><span class="pips">${'◆'.repeat(lv)}${'◇'.repeat(ATTR_MAX - lv)}</span><small>${a.desc}</small>`;
         if (lv < ATTR_MAX) {
           html += btn(`<img class="icon" src="${icon('star')}"> ${attrCost(lv)}`, s.star >= attrCost(lv), () => { g.raiseAttr(id); }, 'tiny');
-          if (s.devRunes > 0) html += btn('руной', true, () => { g.raiseAttr(id, true); }, 'tiny');
+          if (s.devRunes > 0) html += btn(`<img class="icon" src="${icon('rune')}"> 1`, true, () => { g.raiseAttr(id, true); }, 'tiny');
         }
         html += `</div>`;
       }
       html += `</div>`;
-      if (s.devRunes > 0) html += `<div class="sub hotline"><img class="icon" src="${icon('rune')}"> Малых Рун Развития: <b>${s.devRunes}</b> — нажми «+слот» у руны</div>`;
+      if (s.devRunes > 0) html += `<div class="sub hotline"><img class="icon" src="${icon('rune')}"> Малых Рун Развития: <b>${s.devRunes}</b> — открой ею 4-й слот руны («+слот») или подними атрибут (кнопка с этим значком)</div>`;
       html += `<div class="sub">Сокровищница Наблюдателя продаёт только Свойства. В руне 3 слота, 4-й открывает Малая Руна Развития.</div>`;
       for (const rid of RUNE_IDS) {
         const def = KEEPER_RUNES[rid];
@@ -808,7 +810,7 @@ export class Hud {
         const hasForms = rid === 'spear' || rid === 'hammer' || rid === 'starfall';
         html += `<div class="rblock ${unlocked ? '' : 'dim'}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b>
           <span class="rrank" style="--c:${runeColor(rr)}">${runeRankName(rr)} · ×${runeRankPower(rr).toFixed(2)}</span><span class="cap">${props.length}/${cap}</span>`;
-        if (s.devRunes > 0 && cap < DEV_SLOTS) html += btn('+слот', true, () => { g.developRune(rid); }, 'tiny');
+        if (s.devRunes > 0 && cap < DEV_SLOTS) html += btn(`+слот <img class="icon" src="${icon('rune')}"> 1`, true, () => { g.developRune(rid); }, 'tiny');
         html += `</div>`;
         if (unlocked) {
           const cost = runeRankCost(rr + 1);

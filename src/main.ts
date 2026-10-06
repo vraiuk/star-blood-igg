@@ -284,7 +284,7 @@ function frame(now: number) {
   last = now;
   time += dt;
   // choices (dawn rune, tree branch) pause the world
-  const frozen = !started || paused || game.over || !!game.choice || metaOpen || hud.tabletOpen || hud.deathPause;
+  const frozen = !started || paused || game.over || !!game.choice || metaOpen || hud.tabletOpen || hud.ringOpen || hud.deathPause;
   if (!frozen) {
     acc += dt * speed;
     while (acc >= STEP) {

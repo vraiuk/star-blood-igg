@@ -209,8 +209,10 @@ export class Game {
       starIncome: base.starIncome !== undefined ? base.starIncome * boost : undefined,
       soldierHp: base.soldierHp !== undefined ? Math.round(base.soldierHp * hpBoost) : undefined,
       soldiers: base.soldiers !== undefined ? base.soldiers + merge : undefined,
-      workers: base.workers !== undefined ? base.workers + merge : undefined,
-      carry: base.carry !== undefined ? base.carry + merge * 2 : undefined,
+      // caterpillars grow with every upgrade: merge stars and endless Возвышение add hands and loads
+      workers: base.workers !== undefined ? base.workers + merge + Math.floor(asc / 2) : undefined,
+      carry: base.carry !== undefined ? Math.round((base.carry + merge * 4) * (1 + 0.25 * asc)) : undefined,
+      speed: base.speed !== undefined ? base.speed * (1 + 0.05 * asc) : undefined,
       damage: base.damage * dmg,
       burn: base.burn !== undefined ? base.burn * dmg : undefined,
       poison: base.poison !== undefined ? base.poison * dmg : undefined,

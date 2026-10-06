@@ -262,24 +262,24 @@ export const NESTS: Record<Family, FamilyDef> = {
     name: 'Кокон гусениц', creature: 'гусеницы-сборщицы',
     desc: 'В кроне Древа: гусеницы собирают добычу по всему краю, во тьме — медленнее', underground: false, blocks: false,
     levels: [
-      { hp: 120, damage: 0, rate: 0, range: 240, workers: 2, speed: 50, carry: 3 },
-      { hp: 170, damage: 0, rate: 0, range: 300, workers: 3, speed: 58, carry: 4 },
+      { hp: 120, damage: 0, rate: 0, range: 240, workers: 2, speed: 50, carry: 4 },
+      { hp: 170, damage: 0, rate: 0, range: 300, workers: 3, speed: 58, carry: 7 },
     ],
     costs: [p(35), p(60)],
     specs: {
       A: {
-        name: 'Шелкопряды', desc: 'Больше гусениц, быстрее, собирают по всему краю', perk: '6 сборщиц, охват 320',
+        name: 'Шелкопряды', desc: 'Больше гусениц, быстрее, собирают по всему краю и таскают помногу', perk: '6 сборщиц по 12 капель',
         levels: [
-          { hp: 300, damage: 0, rate: 0, range: 340, workers: 6, speed: 80, carry: 8 },
-          { hp: 360, damage: 0, rate: 0, range: 460, workers: 8, speed: 94, carry: 10 },
+          { hp: 300, damage: 0, rate: 0, range: 340, workers: 6, speed: 80, carry: 12 },
+          { hp: 360, damage: 0, rate: 0, range: 460, workers: 8, speed: 94, carry: 18 },
         ],
         costs: [p(120, 5), p(100, 9)],
       },
       B: {
         name: 'Медовые гусеницы', desc: 'Перерабатывают добычу: всё принесённое ценнее', perk: '+35% к добыче',
         levels: [
-          { hp: 300, damage: 0, rate: 0, range: 260, workers: 4, speed: 68, bonus: 0.35, carry: 6 },
-          { hp: 360, damage: 0, rate: 0, range: 300, workers: 5, speed: 74, bonus: 0.6, carry: 8 },
+          { hp: 300, damage: 0, rate: 0, range: 260, workers: 4, speed: 68, bonus: 0.35, carry: 10 },
+          { hp: 360, damage: 0, rate: 0, range: 300, workers: 5, speed: 74, bonus: 0.6, carry: 14 },
         ],
         costs: [p(120, 5), p(100, 9)],
       },

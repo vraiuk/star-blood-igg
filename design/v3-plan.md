@@ -200,3 +200,9 @@
   underlined and explain themselves on hover with mechanics and numbers (Свет, Высвечивание,
   Туман Тьмы, Лаз, Панцирь, Броня, Оглушение, Созвучие, Перегрев, Грань, Огранка, Форма,
   Натиск, Круг, Игг-свет, Гиганты, Летуны…).
+
+## v0.5.x — гусеницы растут, пауза в меню гнезда
+- Caterpillar loads: 4 → 7, Шелкопряды 12/18, Медовые 10/14; each merge star +4; every
+  Возвышение level +25% load, +5% speed, +1 caterpillar per 2 levels.
+- A nest's/slot's ring menu pauses the game (⏸ in its title).
+- Tablet: development-rune purchases show the rune icon and «1» instead of the word «руной».
