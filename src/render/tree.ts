@@ -44,7 +44,7 @@ export interface TreeLook {
 const LOOKS: Record<TreeLook['path'], { leaves: string[]; speck: [string, string]; vein: [string, string, string] }> = {
   gold: { leaves: [PAL.gold0, PAL.gold1, PAL.gold2, PAL.gold3], speck: [PAL.gold4, PAL.gold5], vein: [PAL.gold3, PAL.gold4, PAL.gold5] },
   amber: { leaves: ['#8a400c', '#d06a1e', '#ff9234', '#ffc066'], speck: ['#ffc070', '#ffe0b0'], vein: ['#e06a20', '#ff9a3c', '#ffd08a'] },
-  light: { leaves: ['#7a6a3a', '#cdb870', '#f2e4a8', '#fff8dc'], speck: ['#ffffff', '#fffbe8'], vein: ['#f0e0a0', '#fff6cf', '#ffffff'] },
+  light: { leaves: ['#8a6224', '#e0b04a', '#ffe7a0', '#fff8dc'], speck: ['#ffffff', '#fffbe8'], vein: ['#f0e0a0', '#fff6cf', '#ffffff'] },
   root: { leaves: ['#183812', '#2e6a22', '#5aa03a', '#a8e070'], speck: ['#d8ff9a', '#f0ffd0'], vein: ['#5aa03a', '#8fd06a', '#d0ff9a'] },
   star: { leaves: ['#1a1e4a', '#3a46a0', '#6a86e0', '#b8ccff'], speck: ['#d8e8ff', '#ffffff'], vein: ['#6a86e0', '#8fb0ff', '#e0ecff'] },
 };

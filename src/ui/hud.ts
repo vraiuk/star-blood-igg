@@ -7,6 +7,7 @@ import {
 import { PATH_CAPSTONE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
 import type { Game } from '../sim/game';
 import { VERSION_LABEL } from '../version';
+import { gloss, installGlossary } from './glossary';
 import type { GameEvent } from '../sim/types';
 import { icon } from './icons';
 import { QUESTS } from './quests';
@@ -250,6 +251,7 @@ export class Hud {
     r.appendChild(this.reviveBox);
 
     this.modal = el('div', 'screen modal hidden');
+    installGlossary(r);
     this.modal.addEventListener('mousedown', (e) => e.stopPropagation());
     r.appendChild(this.modal);
 
@@ -877,7 +879,7 @@ export class Hud {
     html += `<button class="close">✕</button>`;
     if (html !== this.panelSig) {
       this.panelSig = html;
-      this.panel.innerHTML = html;
+      this.panel.innerHTML = gloss(html);
       this.panel.querySelectorAll<HTMLElement>('button[data-i], .item[data-i], .form[data-i]').forEach((b) => {
         b.addEventListener('click', (ev) => {
           ev.stopPropagation(); actions[Number(b.dataset.i)](); this.panelSig = ''; this.renderPanel(); });
@@ -917,9 +919,9 @@ export class Hud {
           const cat = p ? `${p.type} → ${KEEPER_RUNES[p.rune].name}` : b!.category;
           return `<div class="rcard" data-i="${i}" style="--c:${RUNE_RANK_COLORS[rank]}">
             <div class="rank">${RUNE_RANKS[rank]}</div><img src="${icon(ic)}"><div class="cat">${cat}</div>
-            <div class="nm">${p ? p.name : b!.name}</div><div class="ds">${p ? p.desc : b!.desc}</div><div class="hk">[${i + 1}]</div></div>`;
+            <div class="nm">${p ? p.name : b!.name}</div><div class="ds">${p ? p.desc : b!.desc}</div></div>`;
         }).join('')}</div>
-        <div class="row"><button class="btn reroll" ${g.state.star >= g.rerollCost() ? '' : 'disabled'}>Перебросить <img class="icon" src="${icon('star')}"> ${g.rerollCost()} [R]</button></div></div>`;
+        <div class="row"><button class="btn reroll" ${g.state.star >= g.rerollCost() ? '' : 'disabled'}>Перебросить <img class="icon" src="${icon('star')}"> ${g.rerollCost()}</button></div></div>`;
     } else if (c.kind === 'form') {
       const rune = KEEPER_RUNES[c.rune];
       const forms = RUNE_FORMS[c.rune as 'spear' | 'hammer' | 'starfall'];
@@ -927,7 +929,7 @@ export class Hud {
         <h3>«${rune.name}» достигла ранга «${runeRankName(c.rank)}»</h3>
         <div class="sub">Руна принимает Форму — она меняет сам способ применения. Все Свойства и Грани руны работают с любой Формой. На ранге «${runeRankName(APOTHEOSIS_RANK)}» Форма достигнет Апофеоза.</div>
         <div class="cards two">${(['A', 'B'] as FormId[]).map((f, i) => `<div class="rcard" data-i="${i}" style="--c:${runeColor(c.rank)}">
-          <div class="rank">Форма</div><img src="${icon(rune.icon)}"><div class="nm">${forms[f].name}</div><div class="ds">${forms[f].desc}<br><i style="opacity:.75">${forms[f].apo}</i></div><div class="hk">[${i + 1}]</div></div>`).join('')}</div></div>`;
+          <div class="rank">Форма</div><img src="${icon(rune.icon)}"><div class="nm">${forms[f].name}</div><div class="ds">${forms[f].desc}<br><i style="opacity:.75">${forms[f].apo}</i></div></div>`).join('')}</div></div>`;
     } else if (c.kind === 'facetUp') {
       const rune = KEEPER_RUNES[c.rune];
       html = `<div class="tablet big"><div class="who">Скрижаль · Огранка</div>
@@ -938,7 +940,7 @@ export class Hud {
           const lv = g.facetLv(id);
           return `<div class="rcard" data-i="${i}" style="--c:#8fd0ff">
             <div class="rank">${ROMAN[lv]} → ${ROMAN[lv + 1]}</div><img src="${icon(rune.icon)}">
-            <div class="nm">${f.name}</div><div class="ds">${f.desc}<br><i style="opacity:.75">Каждый уровень усиливает эффект</i></div><div class="hk">[${i + 1}]</div></div>`;
+            <div class="nm">${f.name}</div><div class="ds">${f.desc}<br><i style="opacity:.75">Каждый уровень усиливает эффект</i></div></div>`;
         }).join('')}</div></div>`;
     } else if (c.kind === 'facet') {
       const rune = KEEPER_RUNES[c.rune];
@@ -953,7 +955,7 @@ export class Hud {
           const req = f.requires ? propertyById(f.requires) : undefined;
           return `<div class="rcard" data-i="${i}" style="--c:${req ? '#b48cff' : runeColor(c.rank)}">
             <div class="rank">${req ? `Резонанс: ${req.name}` : 'Грань'}</div><img src="${icon(rune.icon)}">
-            <div class="nm">${f.name}</div><div class="ds">${f.desc}</div><div class="hk">[${i + 1}]</div></div>`;
+            <div class="nm">${f.name}</div><div class="ds">${f.desc}</div></div>`;
         }).join('')}</div></div>`;
     } else {
       const list = TREE_BRANCHES[c.stage];
@@ -967,10 +969,10 @@ export class Hud {
           return `<div class="rcard gold" data-i="${i}" style="--c:${p.color}">
           <div class="rank">${p.name} ${'●'.repeat(Math.min(n + 1, PATH_CAPSTONE))}${'○'.repeat(Math.max(0, PATH_CAPSTONE - n - 1))}</div>
           <img src="${icon('tree')}"><div class="nm">${b.name}</div><div class="ds">${b.desc}</div>
-          ${full ? `<div class="ds" style="color:${p.color}"><b>→ ${p.tree}:</b> ${p.capstone}</div>` : ''}<div class="hk">[${i + 1}]</div></div>`;
+          ${full ? `<div class="ds" style="color:${p.color}"><b>→ ${p.tree}:</b> ${p.capstone}</div>` : ''}</div>`;
         }).join('')}</div></div>`;
     }
-    this.modal.innerHTML = html;
+    this.modal.innerHTML = gloss(html);
     this.modal.classList.remove('hidden');
     this.modal.querySelector('.reroll')?.addEventListener('click', () => { if (g.rerollDawn()) { this.modalSig = ''; this.renderChoice(); } });
     this.modal.querySelectorAll<HTMLElement>('.rcard').forEach((n) => {
@@ -979,19 +981,12 @@ export class Hud {
   }
 
   /** Number keys while a choice is open. */
-  choiceKey(key: string): boolean {
-    if (!this.choiceOpen) return false;
-    if (key === 'r' && this.game().choice?.kind === 'dawn') {
-      if (this.game().rerollDawn()) { this.modalSig = ''; this.renderChoice(); }
-      return true;
-    }
-    const i = Number(key) - 1;
-    if (Number.isInteger(i) && i >= 0 && i < 4) {
-      this.game().choose(i);
-      this.modalSig = '';
-      this.renderChoice();
-    }
-    return true;
+  /**
+   * Keys while a choice is open: swallowed, never picking anything — a rune hotkey pressed
+   * as the window pops up must not choose a card by accident. Choices are made by clicking.
+   */
+  choiceKey(_key: string): boolean {
+    return this.choiceOpen;
   }
 
   // ───────────────────────────── per-frame ───────────────────────────

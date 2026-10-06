@@ -192,3 +192,11 @@
 - Time Stop base 4 s (was 7).
 - «Натиск»: the dawn gift is no longer paid up front (it all arrives at the next dawn); the
   bonus is 5 Amber per living creature and Star Blood scaled by how many still live.
+
+## v0.5.x — без выбора цифрами, словарь терминов
+- Choice windows can only be clicked: keys pressed while a window is open are swallowed
+  (a rune hotkey no longer picks a card by accident); the reroll has no hotkey either.
+- Glossary (Baldur's Gate style): terms in the Tablet, tree panel and choice windows are
+  underlined and explain themselves on hover with mechanics and numbers (Свет, Высвечивание,
+  Туман Тьмы, Лаз, Панцирь, Броня, Оглушение, Созвучие, Перегрев, Грань, Огранка, Форма,
+  Натиск, Круг, Игг-свет, Гиганты, Летуны…).

@@ -479,3 +479,13 @@ body { display: grid; place-items: center; }
 .pathc .pc span::before { content: '• '; color: var(--c); }
 .pathc.done .pc span { color: #f0e8d8; }
 .screen .ver { margin-top: calc(4 * var(--u)); font-size: calc(5.5 * var(--u)); opacity: 0.45; font-family: var(--pix); }
+
+/* v0.5.x: glossary terms (Baldur's Gate style) */
+.term { border-bottom: 1px dotted currentColor; cursor: help; text-decoration: none; }
+.term:hover { color: #ffe58a; }
+.gloss-tip { position: absolute; z-index: 40; max-width: calc(130 * var(--u)); pointer-events: none;
+  background: linear-gradient(180deg, rgba(30, 22, 48, 0.98), rgba(14, 10, 24, 0.98)); border: 1px solid #c9a24a88;
+  box-shadow: 0 6px 18px #000c; border-radius: 4px; padding: calc(4 * var(--u)) calc(5 * var(--u));
+  font-family: Philosopher, serif; font-size: calc(6 * var(--u)); line-height: 1.35; color: #e8dcc4; text-align: left; }
+.gloss-tip b { display: block; color: #ffe58a; font-size: calc(7 * var(--u)); margin-bottom: calc(1.5 * var(--u)); }
+.gloss-tip.hidden { display: none; }
