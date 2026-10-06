@@ -102,7 +102,7 @@ export class Game {
         cooldowns: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0, timestop: 0 },
         cdMax: { spear: 1, hammer: 1, starfall: 1, radiance: 1, swarm: 1, timestop: 1 }, charge: 0, rank: 0,
         timeStopT: 0, timeStopMax: 0, timeStopNights: 0, chord: 0, chordT: 0, lastCast: null, heat: 0, heatT: 0,
-        leapT: 0, leapDur: 0, leapFrom: 0, leapTo: 0, leapMult: 1,
+        leapT: 0, leapDur: 0, leapFrom: 0, leapTo: 0, leapMult: 1, echo: 0, coldT: 0,
         radianceT: 0, swarmT: 0, swarmX: 0, channel: 0, channelDir: 1, channelDps: 0,
         props: { spear: [], hammer: [], starfall: [], radiance: [], swarm: [], timestop: [], light: [] },
         slots: { spear: BASE_SLOTS, hammer: BASE_SLOTS, starfall: BASE_SLOTS, radiance: BASE_SLOTS, swarm: BASE_SLOTS, timestop: BASE_SLOTS, light: BASE_SLOTS }, boons: [],
@@ -139,7 +139,7 @@ export class Game {
     return this.stageDef.radius * (1 + this.mods.lightRadius + flare);
   }
   keeperMaxHp() { return Math.round((KEEPER_RANKS[this.state.keeper.rank].hp + this.mods.keeperHp) * (1 + 0.1 * this.state.keeper.attrs.body)); }
-  maxLight() { return KEEPER_RANKS[this.state.keeper.rank].maxLight + this.mods.lightMax + 6 * this.state.keeper.attrs.spirit; }
+  maxLight() { return KEEPER_RANKS[this.state.keeper.rank].maxLight + this.mods.lightMax + 6 * this.state.keeper.attrs.spirit + (this.facet('lt-deep') ? 50 : 0); }
   /** Share of incoming damage the Ascended shrugs off. */
   keeperGuard() { return Math.min(0.8, KEEPER_RANKS[this.state.keeper.rank].guard + 0.04 * this.state.keeper.attrs.body); }
   /** Radiance dps burning creatures that touch the Ascended. */
@@ -269,7 +269,8 @@ export class Game {
     return (1 + ABILITY_STAGE_SCALING * this.state.tree.stage + this.mods.abilityDamage + own)
       * KEEPER_RANKS[this.state.keeper.rank].power * (1 + 0.08 * this.state.keeper.attrs.might)
       * runeRankPower(this.state.keeper.runeRank[id])
-      * (this.state.keeper.chordT > 0 ? 1 + CHORD.power * this.state.keeper.chord : 1);
+      * (this.state.keeper.chordT > 0 ? 1 + CHORD.power * this.state.keeper.chord : 1)
+      * (this.facet('lt-over') && this.state.keeper.light >= this.maxLight() * 0.95 ? 1.25 : 1);
   }
 
   /** Keeper Light regen factor by distance from the trunk: ×1.8 at the trunk → ×0.3 at the Circle edge. */
@@ -316,9 +317,7 @@ export class Game {
     return def.growCost === 0 ? 0 : def.growCost - this.state.tree.growth;
   }
 
-  get over(): boolean { return this.state.phase === 'lost' || this.state.phase === 'won'; }
-  /** Retired into Eternity after a feat (banked the run). */
-  get retired(): boolean { return this.state.phase === 'won'; }
+  get over(): boolean { return this.state.phase === 'lost'; }
 
   /** Night definition by index (campaign, then endless generator). */
   night(n: number): NightDef {
@@ -592,16 +591,6 @@ export class Game {
     const s = this.state;
     const c = this.choice;
     if (!c) return false;
-    if (c.kind === 'feat') {
-      if (index === 1) {
-        s.choices = [];
-        s.phase = 'won';
-        this.emit({ type: 'won' });
-        return true;
-      }
-      s.choices.shift();
-      return true;
-    }
     if (c.kind === 'facet') {
       const id = c.offers[index];
       if (!id) return false;
@@ -754,7 +743,10 @@ export class Game {
     } else {
       // the piercing beam costs twice the Light
       const cost = this.abilityCost(id) * (id === 'spear' && form === 'B' ? 2 : 1);
-      if (k.freeCast <= 0) {
+      // Эхо Света: every 5th cast costs nothing
+      const echoFree = this.facet('lt-echo') && (k.echo + 1) % 5 === 0;
+      if (this.facet('lt-echo')) k.echo++;
+      if (k.freeCast <= 0 && !echoFree) {
         if (k.light < cost) return this.deny('Мало Света');
         k.light -= cost;
       }
@@ -819,7 +811,7 @@ export class Game {
   private castTimeStop() {
     const k = this.state.keeper;
     const def = ABILITIES.timestop;
-    k.timeStopMax = k.timeStopT = def.duration * this.runeArea('timestop') * (1 + 0.25 * this.propCount('timestop', 'ts-long'));
+    k.timeStopMax = k.timeStopT = def.duration * this.runeArea('timestop') * (1 + 0.25 * this.propCount('timestop', 'ts-long')) + (this.facet('ts-eternal') ? 3 : 0);
     k.timeStopNights = Math.max(1, def.nights - this.propCount('timestop', 'ts-quick'));
   }
   /** Is this creature held by frozen time? (bosses break free at half time) */
@@ -1070,6 +1062,16 @@ export class Game {
     this.killsAtNight = s.stats.kills;
   }
 
+  /**
+   * How thick the «Туман Тьмы» around a creature is: 1 = full shroud, 0.5 = thinned by one
+   * source (Светоносное Древо or «Рассеять Туман» under Сияние), 0 = both or no fog.
+   */
+  fogLevel(e: Enemy): number {
+    if (!e.fogged) return 0;
+    const thin = (this.mods.fogPierce ? 1 : 0) + (this.state.keeper.radianceT > 0 && this.facet('rd-fog') ? 1 : 0);
+    return thin >= 2 ? 0 : thin === 1 ? 0.5 : 1;
+  }
+
   /** Delayed sim actions (e.g. the Hammer's echo). */
   private timers: Array<{ t: number; fn: () => void }> = [];
   private later(t: number, fn: () => void) { this.timers.push({ t, fn }); }
@@ -1131,8 +1133,14 @@ export class Game {
     else this.updateSpawns();
 
     this.updateTimers(dt);
+    s.keeper.coldT = Math.max(0, s.keeper.coldT - dt);
     if (s.keeper.timeStopT > 0) {
       s.keeper.timeStopT = Math.max(0, s.keeper.timeStopT - dt);
+      if (s.keeper.timeStopT <= 0 && this.facet('ts-cold')) s.keeper.coldT = 4;
+      if (this.facet('ts-mend')) {
+        s.tree.hp = Math.min(this.treeMaxHp(), s.tree.hp + this.treeMaxHp() * 0.03 * dt);
+        for (const st of s.structures) st.hp = Math.min(st.maxHp, st.hp + st.maxHp * 0.03 * dt);
+      }
       // the darkness can't send anyone while time stands
       for (const p of s.pending) p.at += dt;
       this.nightDeadline += dt;
@@ -1389,12 +1397,13 @@ export class Game {
     if (k.rhythmT <= 0) k.rhythm = 0;
     k.freeCast = Math.max(0, k.freeCast - dt);
     k.lastLightCd = Math.max(0, k.lastLightCd - dt);
-    for (const id of Object.keys(k.cooldowns) as AbilityId[]) k.cooldowns[id] = Math.max(0, k.cooldowns[id] - dt);
+    const hurry = k.timeStopT > 0 && this.facet('ts-hurry') ? 3 : 1;
+    for (const id of Object.keys(k.cooldowns) as AbilityId[]) k.cooldowns[id] = Math.max(0, k.cooldowns[id] - dt * hurry);
     const maxL = this.maxLight();
-    k.light = Math.min(maxL, k.light + this.stageDef.lightRegen * (1 + this.mods.lightRegen + 0.08 * k.attrs.spirit) * this.lightRegenFactor() * dt);
+    k.light = Math.min(maxL, k.light + this.stageDef.lightRegen * (1 + this.mods.lightRegen + 0.08 * k.attrs.spirit + (this.facet('lt-flow') ? 0.25 : 0)) * this.lightRegenFactor() * dt);
     if (this.mods.lastLight && k.light < 20 && k.lastLightCd <= 0 && s.phase === 'night') {
       k.freeCast = 3;
-      k.lastLightCd = 45;
+      k.lastLightCd = this.facet('lt-last2') ? 25 : 45;
     }
 
     if (!k.alive) {
@@ -1444,12 +1453,13 @@ export class Game {
       k.walkT = 0;
     } else if (k.move !== 0) {
       k.dir = k.move;
-      k.x = Math.max(8, Math.min(WORLD.width - 8, k.x + k.move * KEEPER.speed * (1 + this.mods.keeperSpeed) * dt));
+      k.x = Math.max(8, Math.min(WORLD.width - 8, k.x + k.move * KEEPER.speed * (1 + this.mods.keeperSpeed + (this.facet('lt-dash') ? 0.2 : 0)) * dt));
       k.walkT += dt;
     } else {
       k.walkT = 0;
     }
     if (this.isLit(k.x, false)) k.hp = Math.min(this.keeperMaxHp(), k.hp + KEEPER.regenLit * (1 + k.rank) * dt);
+    if (this.facet('lt-tree') && Math.abs(k.x - WORLD.treeX) <= 80) k.hp = Math.min(this.keeperMaxHp(), k.hp + 8 * dt);
     // radiance: the Ascended burns creatures pressing against him
     this.src = 'keeper';
     const aura = this.keeperAura();
@@ -1463,7 +1473,8 @@ export class Game {
     const s0 = this.state;
     const k = s0.keeper;
     if (!k.alive || k.leapT > 0) return;
-    k.hp -= amount * (1 - this.keeperGuard());
+    const shield = this.facet('lt-guard') && k.light >= this.maxLight() * 0.7 ? 0.75 : 1;
+    k.hp -= amount * (1 - this.keeperGuard()) * shield;
     k.hitFlash = 0.15;
     this.emit({ type: 'keeperHit' });
     if (k.hp <= 0) {
@@ -1496,12 +1507,13 @@ export class Game {
   damageEnemy(e: Enemy, amount: number, lightMult = true, fromNest = false, pierceArmor = false): number {
     if (e.dead) return 0;
     const def = ENEMIES[e.kind];
-    const worm = lightMult && def.worm && !e.fogged && this.isLit(e.x, e.layer === 'under');
+    const fog = this.fogLevel(e);
+    const worm = lightMult && def.worm && fog < 1 && this.isLit(e.x, e.layer === 'under');
     const k0 = this.state.keeper;
     const fury = fromNest && k0.swarmT > 0 && this.propCount('swarm', 'sw-fury') > 0 ? (k0.facets.includes('sw-frenzy') ? 1.7 : 1.4) : 1;
     const mark = (fromNest && e.marked > 0 ? (k0.facets.includes('sp-mark') ? 1.45 : 1.25) : 1) * fury
       * (fromNest && k0.radianceT > 0 && k0.facets.includes('rd-nests') ? 1.25 : 1);
-    const raw = amount * (worm ? WORM_LIGHT_MULT : 1) * mark * (1 + e.vuln);
+    const raw = amount * (worm ? WORM_LIGHT_MULT - (WORM_LIGHT_MULT - 1) * fog : 1) * mark * (1 + e.vuln);
     const armor = e.armorBreak > 0 || pierceArmor ? 0 : def.armor + (e.affix === 'armored' ? ELITE.armor : 0) + (def.armor > 0 && HEAVY.has(e.kind) ? ENDLESS.heavyArmor(this.state.night) : 0);
     const dmg = Math.max(raw * ARMOR_FLOOR, raw - armor);
     this.logDmg(Math.min(dmg, Math.max(0, e.hp)));
@@ -1572,7 +1584,7 @@ export class Game {
     // «Туман Тьмы»: big worms shroud everything around them
     const fogs = s.night >= FOG.fromNight ? s.enemies.filter((e) => !e.dead && ENEMIES[e.kind].fog) : [];
     for (const e of s.enemies) {
-      e.fogged = !this.mods.fogPierce && !(s.keeper.radianceT > 0 && this.facet('rd-fog')) && fogs.some((f) => f.layer === e.layer && Math.abs(f.x - e.x) <= ENEMIES[f.kind].fog!);
+      e.fogged = fogs.some((f) => f.layer === e.layer && Math.abs(f.x - e.x) <= ENEMIES[f.kind].fog!);
     }
     for (const e of s.enemies) {
       if (e.dead) continue;
@@ -1598,10 +1610,11 @@ export class Game {
       e.vuln = this.vulnAt(e);
       e.attackCd -= dt;
       this.src = 'tree';
-      if (def.worm && e.lit && !e.fogged) {
-        // Igg-light burns worms: «личинка сгорает за одну-две секунды»
+      const fog = this.fogLevel(e);
+      if (def.worm && e.lit && fog < 1) {
+        // Igg-light burns worms: «личинка сгорает за одну-две секунды» (the shroud dims it)
         const flare = s.keeper.radianceT > 0 ? ABILITIES.radiance.burn : 1;
-        e.hp -= this.stageDef.wormBurn * (1 + this.mods.wormBurn) * flare * (def.boss ? 0.5 : 1) * dt;
+        e.hp -= this.stageDef.wormBurn * (1 + this.mods.wormBurn) * flare * (def.boss ? 0.5 : 1) * (1 - fog) * dt;
         if (e.hp <= 0) { this.killEnemy(e); continue; }
       }
       this.src = 'spider';
@@ -1880,6 +1893,7 @@ export class Game {
       if (t.slow && e.layer !== 'under' && Math.abs(e.x - t.x) <= t.radius) slow = Math.max(slow, t.slow);
     }
     if (e.web > 0) slow = Math.max(slow, 0.35);
+    if (this.state.keeper.coldT > 0) slow = Math.max(slow, 0.4);
     if (e.lit && this.state.keeper.radianceT > 0 && this.facet('rd-dawn')) slow = Math.max(slow, 0.3);
     return Math.min(0.7, slow * (e.kind === 'mother' ? 0.5 : 1));
   }
@@ -1908,7 +1922,7 @@ export class Game {
 
   /** «Высвечивание»: the strongest dragonfly light covering this enemy. */
   private vulnAt(e: Enemy): number {
-    const shatter = this.frozen(e) && this.propCount('timestop', 'ts-shatter') ? 0.35 : 0;
+    const shatter = this.frozen(e) && this.propCount('timestop', 'ts-shatter') ? (this.facet('ts-crack') ? 0.7 : 0.35) : 0;
     if ((e.layer === 'under')) return shatter;
     let v = shatter + this.state.keeper.radianceT > 0 && e.lit ? ABILITIES.radiance.vuln * runeRankPower(this.state.keeper.runeRank.radiance) ** 0.5 : 0;
     for (const st of this.state.structures) {
@@ -2007,6 +2021,7 @@ export class Game {
 
   private hasteMult(st: Structure): number {
     let m = st.haste > 0 ? 1.3 : 1;
+    if (this.state.keeper.timeStopT > 0 && this.facet('ts-hush')) m *= 1.5;
     for (const t of this.state.tempLights) if (t.haste && Math.abs(st.x - t.x) <= t.radius) { m *= 1 + t.haste; break; }
     const k = this.state.keeper;
     if (k.swarmT > 0 && Math.abs(st.x - k.swarmX) <= this.swarmReach()) m *= 1 + ABILITIES.swarm.haste * runeRankPower(k.runeRank.swarm) ** 0.5;
@@ -2238,7 +2253,9 @@ export class Game {
   private damageQuiet(e: Enemy, amount: number, aura = true) {
     if (e.dead) return;
     const def = ENEMIES[e.kind];
-    const mult = e.fogged ? (aura ? FOG.aura : 1) : def.worm && this.isLit(e.x, e.layer === 'under') ? WORM_LIGHT_MULT : 1;
+    const fog = this.fogLevel(e);
+    const lit = def.worm && this.isLit(e.x, e.layer === 'under') ? WORM_LIGHT_MULT - (WORM_LIGHT_MULT - 1) * fog : 1;
+    const mult = aura ? lit * (1 - (1 - FOG.aura) * fog) : lit;
     this.logDmg(Math.min(amount * mult, Math.max(0, e.hp)));
     e.hp -= amount * mult;
     if (e.hp <= 0) this.killEnemy(e);

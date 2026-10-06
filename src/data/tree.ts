@@ -82,7 +82,7 @@ export const TREE = {
 export type TreePath = 'amber' | 'light' | 'root' | 'star';
 export const TREE_PATHS: Record<TreePath, { name: string; tree: string; color: string; capstone: string; mods: ModPatch }> = {
   amber: { name: 'Янтарный', tree: 'Янтарное Древо', color: '#ff9a3c', capstone: 'Янтарь с тварей +25%, Звёздной Крови +20%, рассветный дар +50%', mods: { amberGain: 0.25, starGain: 0.2, dawnGift: 0.5 } },
-  light: { name: 'Светоносный', tree: 'Светоносное Древо', color: '#ffe58a', capstone: 'Игг-свет прожигает Туман Тьмы, Круг +10%, Высвечивание +20%', mods: { fogPierce: true, lightRadius: 0.1, vuln: 0.2 } },
+  light: { name: 'Светоносный', tree: 'Светоносное Древо', color: '#ffe58a', capstone: 'Игг-свет истончает Туман Тьмы вдвое, Круг +10%, Высвечивание +20%', mods: { fogPierce: true, lightRadius: 0.1, vuln: 0.2 } },
   root: { name: 'Корневой', tree: 'Корневое Древо', color: '#8fd06a', capstone: 'Корни сами засыпают Лазы, гнёзда +20% прочности, Древо +20% здоровья', mods: { rootSeal: true, famHp: { hive: 0.2, beetle: 0.2, dragonfly: 0.2, spider: 0.2, termite: 0.2 }, treeHp: 0.2 } },
   star: { name: 'Звёздный', tree: 'Звёздное Древо', color: '#8fd0ff', capstone: 'Умения Хранителя перезаряжаются на 25% быстрее и бьют на 20% сильнее', mods: { abilityCd: -0.25, abilityDamage: 0.2 } },
 };

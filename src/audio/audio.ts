@@ -225,7 +225,6 @@ export class Audio {
         case 'denied':
           if (this.ok('deny', 0.2)) this.tone(110, 0.12, 'square', 0.06);
           break;
-        case 'won':
         case 'milestone':
           [392, 523.3, 659.3, 784, 1046.5, 1318.5].forEach((f, i) => this.tone(f, 2.5, 'sine', 0.12, undefined, i * 0.12));
           break;

@@ -42,6 +42,25 @@ describe('rush (Натиск)', () => {
   });
 });
 
+describe('facets for every rune', () => {
+  it('the Light rune and Time Stop offer facets, resonances follow installed properties', () => {
+    const g = new Game();
+    while (g.choice) g.choose(0);
+    g.state.star = 999;
+    expect(g.promoteRune('light')).toBe(true);
+    const c = g.choice;
+    expect(c?.kind).toBe('facet');
+    if (c?.kind === 'facet') expect(c.offers).toEqual(['lt-flow', 'lt-guard']);
+    g.choose(0);
+    const regen0 = g.state.keeper.facets.includes('lt-flow');
+    expect(regen0).toBe(true);
+    g.state.keeper.learned.timestop = true;
+    expect(g.promoteRune('timestop')).toBe(true);
+    g.buyProperty('ts-cheap');
+    expect(g.facetOffers('timestop', 1)).toEqual(['ts-hush', 'ts-cold']);
+  });
+});
+
 describe('time stop', () => {
   it('freezes creatures and the night, then recovers over nights, not seconds', () => {
     const g = new Game();

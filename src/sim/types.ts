@@ -230,6 +230,9 @@ export interface Keeper {
   leapFrom: number;
   leapTo: number;
   leapMult: number;
+  /** Эхо Света: casts counted toward the free one; Стужа: seconds of post-freeze chill */
+  echo: number;
+  coldT: number;
   /** Созвучие stacks, time left on the window, and the last rune cast */
   chord: number;
   chordT: number;
@@ -306,14 +309,13 @@ export interface Worker {
   fromY: number;
 }
 
-export type Phase = 'day' | 'night' | 'won' | 'lost';
+export type Phase = 'day' | 'night' | 'lost';
 
 /** A pending choice that pauses the day timer until resolved. */
 export type Choice =
   | { kind: 'dawn'; offers: string[]; start?: boolean }
   | { kind: 'branch'; stage: number }
-  | { kind: 'facet'; rune: KeeperRuneId; rank: number; offers: string[] }
-  | { kind: 'feat'; night: number };
+  | { kind: 'facet'; rune: KeeperRuneId; rank: number; offers: string[] };
 
 export type GameEvent =
   | { type: 'hit'; x: number; y: number; amount: number; crit: boolean }
@@ -359,7 +361,6 @@ export type GameEvent =
   | { type: 'rush'; night: number; amber: number; star: number }
   | { type: 'dawn'; night: number; gift: number }
   | { type: 'brood'; x: number }
-  | { type: 'won' }
   | { type: 'milestone'; stars: number }
   | { type: 'lost' }
   | { type: 'denied'; reason: string };

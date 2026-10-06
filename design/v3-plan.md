@@ -142,3 +142,12 @@
   to let go; damage falls off with distance (full to 120 px, 25% at ~620 px).
 - Keeper death pauses the game until the player picks revive / «держать Круг без него».
 - NaN fixed in nest cards for families without damage.
+
+## v4.6 — Грани Света и Времени, туман истончается
+- Facets for the Light rune (Поток Света, Светлый щит, Глубокий сосуд*, Ветер в спину*,
+  Переполнение, Эхо Света, Сок Древа*, Вечный свет*) and Time Stop (Тишина, Стужа,
+  Трещины*, Застывший миг, Вне времени, Вечный миг*); * = resonance.
+- «Туман Тьмы» is thinned, not removed: one source (Светоносное Древо or «Рассеять Туман»)
+  halves it, both clear it; drawn fainter accordingly.
+- Tunnel crawlers visible above the darkness (dotted passage, warm outline, trembling soil).
+- Keeper HP bar follows the Hammer leap; leftovers of the removed Feat (phase 'won') gone.

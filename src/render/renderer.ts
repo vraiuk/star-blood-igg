@@ -164,7 +164,6 @@ export class Renderer {
         case 'brood': p.acid(e.x, WORLD.groundY - 10); break;
         case 'keeperDown': p.goldBurst(game.state.keeper.x, WORLD.groundY - 10, 20); break;
         case 'keeperBack': p.goldBurst(WORLD.treeX, WORLD.groundY - 10, 20); break;
-        case 'won':
         case 'milestone': p.goldBurst(WORLD.treeX, WORLD.groundY - 80, 160); break;
         default: break;
       }
@@ -204,7 +203,7 @@ export class Renderer {
 
     this.drawNestsOutlined(c, s.structures.filter((x) => x.underground), time);
     for (const tn of s.tunnels) drawTunnel(c, tn, time);
-    for (const e of s.enemies) if (e.layer === 'under') drawFog(c, e, time, s.night);
+    for (const e of s.enemies) if (e.layer === 'under') drawFog(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
     for (const e of s.enemies) if (e.layer === 'under') drawEnemy(c, e, time);
     const tsc = treeScale(s.tree.rings);
     c.save();
@@ -229,7 +228,7 @@ export class Renderer {
     if (view.hoverTree && !game.over) this.treeOutline(c, time);
     this.drawNestsOutlined(c, s.structures.filter((x) => !x.underground && !x.crown), time);
     for (const tn of s.tunnels) if (tn.open) drawTunnelMouths(c, tn, time);
-    for (const e of s.enemies) if (e.layer !== 'under') drawFog(c, e, time, s.night);
+    for (const e of s.enemies) if (e.layer !== 'under') drawFog(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
     for (const e of s.enemies) if (e.layer !== 'under') drawEnemy(c, e, time);
     // Прыжок Молота: the Ascended arcs through the air
     const lp = game.leapProgress();
@@ -254,7 +253,7 @@ export class Renderer {
 
     // ── above darkness: eyes, light, drops, projectiles
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
-    for (const e of s.enemies) drawFogEdge(c, e, time, s.night);
+    for (const e of s.enemies) drawFogEdge(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
     // Остановка Времени: a pale-blue hush over the world, frost glints on the frozen
     const ts = s.keeper.timeStopT;
     if (ts > 0) {
@@ -274,6 +273,25 @@ export class Renderer {
       line(c, WORLD.treeX, cy, WORLD.treeX + Math.cos(a) * 11, cy + Math.sin(a) * 11, '#e8f6ff');
     }
     this.drawDragonflies(c, game, time, dt);
+    // Лазы above the darkness: the open passage and whoever crawls in it
+    for (const tn of s.tunnels) {
+      if (!tn.open || Number.isNaN(tn.entryX)) continue;
+      const ty = WORLD.wormLaneY - 14;
+      const a0 = Math.min(tn.entryX, tn.headX), a1 = Math.max(tn.entryX, tn.headX);
+      for (let x = a0; x <= a1; x += 6) if (((x + time * 30) | 0) % 12 < 6) rect(c, x, ty + Math.sin(x * 0.21 + tn.id) * 1.5, 3, 1, 'rgba(200,130,70,0.45)');
+    }
+    for (const e of s.enemies) {
+      if (e.dead || e.layer !== 'under' || ENEMIES[e.kind].underground) continue;
+      const r = Math.max(5, Math.min(10, ENEMIES[e.kind].radius)) + 2;
+      const pulse = 0.45 + 0.25 * Math.sin(time * 6 + e.id);
+      for (let i = 0; i < 14; i++) {
+        const ang = (i / 14) * Math.PI * 2;
+        rect(c, e.x + Math.cos(ang) * (r + 1), e.y + Math.sin(ang) * r * 0.6, 1, 1, `rgba(255,150,80,${pulse})`);
+      }
+      // the ground trembles above the crawler
+      if (Math.sin(time * 14 + e.id) > 0.2) rect(c, e.x + ((e.id * 7 + Math.floor(time * 10)) % 9) - 4, WORLD.groundY - 2, 1, 1, '#b08060');
+      if (Math.sin(time * 11 + e.id * 3) > 0.4) rect(c, e.x - e.dir * 5, WORLD.groundY - 3, 2, 1, '#8a6040');
+    }
     // lasting Igg-Beams of the hives
     for (const st of s.structures) {
       if (!st.beamT || st.beamT <= 0) continue;
@@ -310,7 +328,11 @@ export class Renderer {
     for (const e of s.enemies) drawEnemyHp(c, e);
     for (const e of s.enemies) drawAffix(c, e, time);
     for (const e of s.enemies) drawWeb(c, e);
+    // the HP bar rides along with the Hammer's leap
+    const lpHp = game.leapProgress();
+    if (lpHp >= 0) { c.save(); c.translate(0, -Math.round(Math.sin(lpHp * Math.PI) * 46)); }
     drawKeeperHp(c, s.keeper, game.keeperMaxHp());
+    if (lpHp >= 0) c.restore();
     if (view.aiming) this.drawAim(c, game, view, time);
     if (view.preview) this.drawRangeRaw(c, view.preview.x, view.preview.r, view.preview.underground, true, view.preview.y);
     else if (view.selectedSlot) {

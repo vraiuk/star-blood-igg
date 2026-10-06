@@ -259,7 +259,7 @@ function finishRun() {
   const s = game.state;
   if (!logged) { logged = true; saveRunLog(buildRunLog(game, 'lost')); }
   const stars = game.stars();
-  const coins = Math.round(coinsForRun(s.night, stars, game.path + 1) * (game.retired ? 1.5 : 1));
+  const coins = coinsForRun(s.night, stars, game.path + 1);
   const prevBest = save.bestNight[game.path] ?? 0;
   save.bestNight[game.path] = Math.max(prevBest, s.night);
   lastRecord = s.night > prevBest;
@@ -306,7 +306,7 @@ function frame(now: number) {
     endShown = true;
     hud.closeMenu();
     const coins = finishRun();
-    setTimeout(() => hud.showEnd(coins, save.bestNight[game.path] ?? 0, lastRecord), game.retired ? 300 : 1400);
+    setTimeout(() => hud.showEnd(coins, save.bestNight[game.path] ?? 0, lastRecord), 1400);
   }
   renderer.render(game, view, time, frozen && started ? dt * 0.15 : dt);
   hud.update(dt);

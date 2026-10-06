@@ -85,9 +85,11 @@ function bomber(c: Ctx, e: Enemy, t: number, flash: boolean, body: string, rim: 
 }
 
 /** «Туман Тьмы»: a dithered shroud of darkness around a big worm. */
-export function drawFog(c: Ctx, e: Enemy, time: number, night: number) {
+export function drawFog(c: Ctx, e: Enemy, time: number, night: number, level = 1) {
   const r = ENEMIES[e.kind].fog;
   if (!r || e.dead || night < FOG.fromNight) return;
+  // a thinned shroud (Светоносное Древо, «Рассеять Туман») is drawn fainter
+  c.globalAlpha = 0.2 + 0.8 * level;
   const cy = e.layer === 'ground' && !ENEMIES[e.kind].underground ? GY - ENEMIES[e.kind].height * 0.5 : e.y;
   const ry = r * 0.45;
   const x0 = Math.round(e.x), y0 = Math.round(cy);
@@ -101,12 +103,14 @@ export function drawFog(c: Ctx, e: Enemy, time: number, night: number) {
       rect(c, x0 + x, y0 + y, 2, 2, h % 3 === 0 ? 'rgba(80,40,120,0.7)' : 'rgba(8,5,18,0.78)');
     }
   }
+  c.globalAlpha = 1;
 }
 
 /** Violet edge and drifting wisps of the shroud — drawn above the darkness so it reads at night. */
-export function drawFogEdge(c: Ctx, e: Enemy, time: number, night: number) {
+export function drawFogEdge(c: Ctx, e: Enemy, time: number, night: number, level = 1) {
   const r = ENEMIES[e.kind].fog;
   if (!r || e.dead || night < FOG.fromNight) return;
+  c.globalAlpha = 0.2 + 0.8 * level;
   const cy = e.layer === 'ground' && !ENEMIES[e.kind].underground ? GY - ENEMIES[e.kind].height * 0.5 : e.y;
   const ry = r * 0.45;
   const x0 = Math.round(e.x), y0 = Math.round(cy);
@@ -119,6 +123,7 @@ export function drawFogEdge(c: Ctx, e: Enemy, time: number, night: number) {
     const t = (time * 0.4 + i / 5) % 1;
     rect(c, x0 + Math.sin(i * 2.3 + time) * r * 0.7, y0 - ry * 0.3 - t * 18, 2, 1, `rgba(150,100,220,${(1 - t) * 0.6})`);
   }
+  c.globalAlpha = 1;
 }
 
 /** A tunnel under the ground (dark burrow at the worm lane). */

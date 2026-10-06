@@ -306,7 +306,7 @@ export class Hud {
     const st = Array.from({ length: 3 }, (_, i) => `<span class="${i < stars ? 'on' : 'off'}">★</span>`).join('');
     this.end.innerHTML = `
       <div class="box">
-        <h1>${g.retired ? 'Ушёл в Вечность' : 'Древо угасло'}</h1>
+        <h1>Древо угасло</h1>
         <h2>${record ? 'НОВЫЙ РЕКОРД · ' : ''}ПЕРЕЖИТО НОЧЕЙ: ${s.night} · РЕКОРД: ${best}</h2>
         ${won ? `<div class="stars">${st}</div><p class="stat">Звёзды за 10-ю ночь (Тот-Кто-Посадил-новое-Древо)</p>` : '<p>Тьма сомкнулась над Кругом до 10-й ночи.</p>'}
         <div class="tablet inline">Восходящий! Тот-Кто-Наблюдает награждает тебя: <b>+${coins} Монет</b>.</div>
@@ -788,7 +788,7 @@ export class Hud {
         if (unlocked) {
           const cost = runeRankCost(rr + 1);
           html += `<div class="row left">${btn(`Повышение → ${runeRankName(rr + 1)} (<img class="icon" src="${icon('star')}"> ${cost})`, s.star >= cost, () => { g.promoteRune(rid); }, 'tiny')}
-            <span class="hint">${rr + 1 === FORM_RANK && hasForms ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && hasForms ? 'Апофеоз Формы' : FACET_RANKS.includes(rr + 1) && rid !== 'light' ? 'откроет выбор Грани' : 'сила и площадь ↑'} · откат +${Math.round((runeRankCd(rr + 1) / runeRankCd(rr) - 1) * 100)}%${rid !== 'light' && rid !== 'starfall' ? ` · Свет +${Math.round((runeRankLight(rr + 1) / runeRankLight(rr) - 1) * 100)}%` : ''}</span></div>`;
+            <span class="hint">${rr + 1 === FORM_RANK && hasForms ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && hasForms ? 'Апофеоз Формы' : FACET_RANKS.includes(rr + 1) ? 'откроет выбор Грани' : 'сила и площадь ↑'} · ${rid === 'light' ? 'Свойства высших рангов' : `откат +${Math.round((runeRankCd(rr + 1) / runeRankCd(rr) - 1) * 100)}%`}${rid !== 'light' && rid !== 'starfall' ? ` · Свет +${Math.round((runeRankLight(rr + 1) / runeRankLight(rr) - 1) * 100)}%` : ''}</span></div>`;
         }
         if ((rid === 'spear' || rid === 'hammer' || rid === 'starfall') && unlocked) {
           const forms = RUNE_FORMS[rid];
@@ -805,7 +805,7 @@ export class Hud {
             if (rr < FORM_RANK) html += `<div class="sub">Форма выбирается на ранге «Серебро»</div>`;
           }
         }
-        if (rid !== 'light' && unlocked) {
+        if (unlocked) {
           const mine = k.facets.map((id) => facetById(id)).filter((f) => f && f.rune === rid);
           const next = FACET_RANKS.find((r) => r > rr);
           const opts = next !== undefined ? FACETS.filter((f) => f.rune === rid && f.rank === next) : [];
@@ -902,14 +902,6 @@ export class Hud {
             <div class="nm">${p ? p.name : b!.name}</div><div class="ds">${p ? p.desc : b!.desc}</div><div class="hk">[${i + 1}]</div></div>`;
         }).join('')}</div>
         <div class="row"><button class="btn reroll" ${g.state.star >= g.rerollCost() ? '' : 'disabled'}>Перебросить <img class="icon" src="${icon('star')}"> ${g.rerollCost()} [R]</button></div></div>`;
-    } else if (c.kind === 'feat') {
-      html = `<div class="tablet big"><div class="who">Скрижаль · Подвиг</div>
-        <h3>Восходящий! Подвиг совершён: ${c.night} ночей.</h3>
-        <div class="sub">Тот-Кто-Наблюдает предлагает уйти в Вечность с наградой — или держать Круг дальше за рекордом.</div>
-        <div class="cards two">
-          <div class="rcard" data-i="0" style="--c:#8fd0ff"><img src="${icon('tree')}"><div class="nm">Держать Круг</div><div class="ds">Ночи станут тяжелее. Гибель Древа — меньше Монет.</div><div class="hk">[1]</div></div>
-          <div class="rcard" data-i="1" style="--c:#ffd24a"><img src="${icon('star')}"><div class="nm">Уйти в Вечность</div><div class="ds">Завершить забег: Монеты Наблюдателя ×1.5</div><div class="hk">[2]</div></div>
-        </div></div>`;
     } else if (c.kind === 'facet') {
       const rune = KEEPER_RUNES[c.rune];
       html = `<div class="tablet big"><div class="who">Скрижаль · Грань руны</div>

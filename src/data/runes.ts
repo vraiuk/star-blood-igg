@@ -191,7 +191,7 @@ export const RUNE_FORMS: Record<'spear' | 'hammer' | 'starfall', Record<FormId, 
  */
 export interface FacetDef {
   id: string;
-  rune: 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm';
+  rune: 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm' | 'timestop' | 'light';
   rank: number;
   name: string;
   desc: string;
@@ -226,7 +226,7 @@ export const FACETS: FacetDef[] = [
   F({ id: 'sf-refund', rune: 'starfall', rank: 3, name: 'Возврат звезды', desc: 'Каждая тварь, убитая звездой, возвращает 4 заряда' }),
   F({ id: 'sf-storm', rune: 'starfall', rank: 3, name: 'Звёздная буря', desc: 'Звёзд больше: +4 (ливень +8)', requires: 'sf-rain' }),
   // Сияние
-  F({ id: 'rd-fog', rune: 'radiance', rank: 1, name: 'Рассеять Туман', desc: 'Пока горит Сияние, Туман Тьмы не защищает Червей' }),
+  F({ id: 'rd-fog', rune: 'radiance', rank: 1, name: 'Рассеять Туман', desc: 'Пока горит Сияние, Туман Тьмы истончается вдвое (вместе со Светоносным Древом — рассеивается)' }),
   F({ id: 'rd-nests', rune: 'radiance', rank: 1, name: 'Свет гнёздам', desc: 'Пока горит Сияние, гнёзда наносят +25% урона' }),
   F({ id: 'rd-bloom', rune: 'radiance', rank: 1, name: 'Цветение', desc: 'Целящий свет вдвое сильнее и лечит гнёзда 10 HP/с', requires: 'rd-heal' }),
   F({ id: 'rd-sun', rune: 'radiance', rank: 3, name: 'Второе солнце', desc: 'Сияние на 50% дольше, Круг шире ещё на 10%' }),
@@ -239,5 +239,21 @@ export const FACETS: FacetDef[] = [
   F({ id: 'sw-sky', rune: 'swarm', rank: 3, name: 'Стрекозиный вихрь', desc: 'Под Зовом из гнёзд вылетает вдвое больше стрекоз' }),
   F({ id: 'sw-long2', rune: 'swarm', rank: 3, name: 'Долгий гул', desc: 'Зов Роя длится на 60% дольше' }),
   F({ id: 'sw-carapace', rune: 'swarm', rank: 3, name: 'Панцирь', desc: 'Гнёзда под Зовом получают на 50% меньше урона', requires: 'sw-shield' }),
+  // Остановка Времени
+  F({ id: 'ts-hush', rune: 'timestop', rank: 1, name: 'Тишина', desc: 'Пока время стоит, гнёзда атакуют на 50% быстрее' }),
+  F({ id: 'ts-cold', rune: 'timestop', rank: 1, name: 'Стужа', desc: 'Когда время снова идёт, твари 4 с замедлены на 40%' }),
+  F({ id: 'ts-crack', rune: 'timestop', rank: 1, name: 'Трещины', desc: 'Хрупкий лёд: замершие получают +70% урона вместо +35%', requires: 'ts-shatter' }),
+  F({ id: 'ts-mend', rune: 'timestop', rank: 3, name: 'Застывший миг', desc: 'Пока время стоит, Древо и гнёзда лечатся на 3% в секунду' }),
+  F({ id: 'ts-hurry', rune: 'timestop', rank: 3, name: 'Вне времени', desc: 'Пока время стоит, откаты рун Хранителя идут втрое быстрее' }),
+  F({ id: 'ts-eternal', rune: 'timestop', rank: 3, name: 'Вечный миг', desc: 'Время стоит на 3 с дольше', requires: 'ts-long' }),
+  // Руна Света
+  F({ id: 'lt-flow', rune: 'light', rank: 1, name: 'Поток Света', desc: '+25% регенерации Света' }),
+  F({ id: 'lt-guard', rune: 'light', rank: 1, name: 'Светлый щит', desc: 'Пока Света не меньше 70%, Хранитель получает на 25% меньше урона' }),
+  F({ id: 'lt-deep', rune: 'light', rank: 1, name: 'Глубокий сосуд', desc: '+50 к запасу Света', requires: 'lt-vessel' }),
+  F({ id: 'lt-dash', rune: 'light', rank: 1, name: 'Ветер в спину', desc: '+20% скорости Хранителя', requires: 'lt-step' }),
+  F({ id: 'lt-over', rune: 'light', rank: 3, name: 'Переполнение', desc: 'При полном Свете руны бьют на 25% сильнее' }),
+  F({ id: 'lt-echo', rune: 'light', rank: 3, name: 'Эхо Света', desc: 'Каждое 5-е применение руны — бесплатно' }),
+  F({ id: 'lt-tree', rune: 'light', rank: 3, name: 'Сок Древа', desc: 'У ствола Древа Хранитель лечится 8 HP/с', requires: 'lt-root' }),
+  F({ id: 'lt-last2', rune: 'light', rank: 3, name: 'Вечный свет', desc: 'Последний свет возвращается за 25 с вместо 45', requires: 'lt-last' }),
 ];
 export function facetById(id: string) { return FACETS.find((f) => f.id === id); }
