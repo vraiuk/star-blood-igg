@@ -1,4 +1,4 @@
-import Peer, { type DataConnection } from 'peerjs';
+import Peer, { type DataConnection, type PeerOptions } from 'peerjs';
 import type { ModPatch } from '../data/mods';
 import { Game, MAX_KEEPERS } from '../sim/game';
 import { VERSION } from '../version';
@@ -34,6 +34,16 @@ const isNetError = (t: string) => t === 'network' || t === 'server-error' || t =
  * with it only the WebSocket is needed, same as for the host.
  */
 const guestId = () => `igg-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)}`;
+/**
+ * Signalling servers, tried in order: ours on nl-vmpico (Netherlands — TCP to it gets through
+ * from Russian home ISPs, where 0.peerjs.com may not), then the public PeerJS cloud as a
+ * fallback. Peers on different servers can't see each other, so everyone lands on the first
+ * one that answers.
+ */
+const SERVERS: PeerOptions[] = [
+  { host: '5-39-217-211.sslip.io', port: 8443, path: '/', secure: true, key: 'peerjs' },
+  {},
+];
 /** What went wrong, for the lobby line (the type alone says little). */
 const why = (err: { type: string; message?: string }) => `${err.type}${err.message ? `: ${err.message}` : ''}`;
 
@@ -116,6 +126,9 @@ export class Coop {
   // ───────────────────────────── lobby ─────────────────────────────
 
   private retries = 0;
+  /** index into SERVERS */
+  private server = 0;
+  private get opts(): PeerOptions { return { ...SERVERS[this.server], debug: 1 }; }
 
   /** Retry a flaky signalling step a few times before falling back to solo play. */
   private retryOr(err: { type: string; message?: string }, again: () => void) {
@@ -125,6 +138,14 @@ export class Coop {
       setTimeout(again, 400 * this.retries + Math.random() * 300);
       return;
     }
+    if (isNetError(err.type) && this.server < SERVERS.length - 1) {
+      // our server is out of reach: the public cloud
+      this.server++;
+      this.retries = 0;
+      this.setNote('connecting', 'Свой сервер недоступен, пробуем резервный…');
+      setTimeout(() => this.connect(), 300);
+      return;
+    }
     this.offline(`Сеть недоступна (${why(err)}). Проверь блокировщик рекламы для 0.peerjs.com. Можно играть одному.`);
   }
 
@@ -132,7 +153,7 @@ export class Coop {
   connect() {
     this.reset();
     this.setNote('connecting', 'Ищем лобби…');
-    const me = new Peer(guestId(), { debug: 1 });
+    const me = new Peer(guestId(), this.opts);
     this.peer = me;
     let settled = false;
     const timer = setTimeout(() => {
@@ -173,7 +194,7 @@ export class Coop {
   }
 
   private becomeHost() {
-    const p = new Peer(LOBBY_ID, { debug: 1 });
+    const p = new Peer(LOBBY_ID, this.opts);
     this.peer = p;
     p.on('open', () => {
       this.role = 'host';
