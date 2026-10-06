@@ -48,9 +48,9 @@ describe('facets for every rune', () => {
     while (g.choice) g.choose(0);
     g.state.star = 999;
     expect(g.promoteRune('light')).toBe(true);
-    const c = g.choice;
+    const c = g.choice as { kind: string; offers?: string[] } | null;
     expect(c?.kind).toBe('facet');
-    if (c?.kind === 'facet') expect(c.offers).toEqual(['lt-flow', 'lt-guard']);
+    expect(c?.offers).toEqual(['lt-flow', 'lt-guard']);
     g.choose(0);
     const regen0 = g.state.keeper.facets.includes('lt-flow');
     expect(regen0).toBe(true);
