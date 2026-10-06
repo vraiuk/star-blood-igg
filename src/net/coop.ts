@@ -31,6 +31,8 @@ const PING_EVERY = 2000;
 const HOST_SILENT = 7000;
 /** Give up on a host that doesn't answer (a TURN relay over TCP/TLS takes a few seconds more). */
 const CONNECT_TIMEOUT = 16000;
+/** A signalling socket that hasn't opened by now is cut by the network (it hangs, no error). */
+const OPEN_TIMEOUT = 6000;
 /** The signalling server drops a socket now and then (often right after another one closed): retry. */
 const NET_RETRIES = 4;
 const isNetError = (t: string) => t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed';
@@ -73,8 +75,27 @@ async function loadIce(): Promise<RTCIceServer[]> {
     clearTimeout(t);
   }
 }
-/** What went wrong, for the lobby line (the type alone says little). */
-const why = (err: { type: string; message?: string }) => `${err.type}${err.message ? `: ${err.message}` : ''}`;
+/** Can this browser reach `url` (DNS, port, TLS, CORS all included)? */
+async function probe(url: string): Promise<string> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 5000);
+  try {
+    const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
+    return r.ok ? 'да' : `HTTP ${r.status}`;
+  } catch (e) {
+    return (e as Error).name === 'AbortError' ? 'нет (таймаут)' : 'нет';
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** One line on what this computer reaches: our server, its relay, the public PeerJS cloud. */
+async function diagnose(): Promise<string> {
+  const [ours, relay, cloud] = await Promise.all([
+    probe('https://5-39-217-211.sslip.io:8443/peerjs/id'), probe(TURN_CRED_URL), probe('https://0.peerjs.com/peerjs/id'),
+  ]);
+  return `наш сервер — ${ours}, реле — ${relay}, peerjs.com — ${cloud}`;
+}
 
 /** What a run is started with — the same on every peer. */
 export interface StartInfo {
@@ -171,81 +192,84 @@ export class Coop {
   private retries = 0;
   /** searches that found a lobby whose host never answered */
   private silentHosts = 0;
-  /** index into SERVERS */
-  private server = 0;
   /** ICE servers of this session (STUN + our TURN when its credentials came) */
   private ice: RTCIceServer[] = [STUN];
   private get relay() { return this.ice.length > 1; }
-  private get opts(): PeerOptions {
-    return { ...SERVERS[this.server], debug: 1, config: { iceServers: this.ice, iceTransportPolicy: FORCE_RELAY ? 'relay' : 'all' } };
+  private opts(server: number): PeerOptions {
+    return { ...SERVERS[server], debug: 1, config: { iceServers: this.ice, iceTransportPolicy: FORCE_RELAY ? 'relay' : 'all' } };
   }
-
-  /** Retry a flaky signalling step a few times before falling back to solo play. */
-  private retryOr(err: { type: string; message?: string }, again: () => void) {
-    if (isNetError(err.type) && this.retries < NET_RETRIES) {
-      this.retries++;
-      this.setNote('connecting', `Сигнальный сервер не отвечает, пробуем ещё раз (${this.retries}/${NET_RETRIES})…`);
-      setTimeout(again, 400 * this.retries + Math.random() * 300);
-      return;
-    }
-    if (isNetError(err.type) && this.server < SERVERS.length - 1) {
-      // our server is out of reach: the public cloud
-      this.server++;
-      this.retries = 0;
-      this.setNote('connecting', 'Свой сервер недоступен, пробуем резервный…');
-      setTimeout(() => this.connect(), 300);
-      return;
-    }
-    this.offline(`Сеть недоступна (${why(err)}). Проверь блокировщик рекламы для 0.peerjs.com. Можно играть одному.`);
-  }
+  /** host: the lobby id held on every signalling server that answered */
+  private hostPeers: Peer[] = [];
 
   /** Find the shared lobby: join its host or become it. */
   async connect() {
     this.reset();
     this.setNote('connecting', 'Ищем лобби…');
     if (!this.relay) this.ice = await loadIce();
-    const me = new Peer(guestId(), this.opts);
+    this.search(0);
+  }
+
+  /**
+   * Look for the lobby on signalling server `i`; a server this network can't reach (often it
+   * just hangs, no error) passes the search on to the next one.
+   */
+  private search(i: number) {
+    if (i >= SERVERS.length) { void this.giveUp('Ни один сигнальный сервер не отвечает'); return; }
+    const me = new Peer(guestId(), this.opts(i));
     this.peer = me;
     let settled = false;
     let conn: DataConnection | null = null;
+    const stop = () => { settled = true; clearTimeout(openTimer); clearTimeout(timer); };
+    const openTimer = setTimeout(() => {
+      if (settled || me.open) return;
+      stop();
+      me.destroy();
+      this.retries = 0;
+      this.search(i + 1);
+    }, OPEN_TIMEOUT);
     const timer = setTimeout(() => {
       if (settled) return;
-      settled = true;
+      stop();
       // what the browser saw, so a failure can be told apart (no route / no relay / no answer)
       const pc = conn?.peerConnection;
-      const ice = pc ? `ICE: ${pc.iceConnectionState}, ${pc.iceGatheringState}` : 'нет ответа хоста';
+      const ice = pc ? `ICE: ${pc.iceConnectionState}` : 'нет ответа хоста';
       me.destroy();
       // a host that just left (refresh, lost network) holds the lobby id for a moment: look again
-      if (this.silentHosts++ < 1) { this.connect(); return; }
-      this.offline(`Хост не отвечает (${ice}; реле ${this.relay ? 'есть' : 'недоступно'}). Можно играть одному или обновить страницу.`);
+      if (this.silentHosts++ < 1) { void this.connect(); return; }
+      void this.giveUp(`Хост не отвечает (${ice}; реле ${this.relay ? 'есть' : 'недоступно'})`);
     }, CONNECT_TIMEOUT);
     me.on('error', (err) => {
       if (settled) return;
       if (err.type === 'peer-unavailable') {
         // nobody holds the lobby: take it
-        settled = true;
-        clearTimeout(timer);
+        stop();
         me.destroy();
         setTimeout(() => this.becomeHost(), 250);
         return;
       }
-      settled = true;
-      clearTimeout(timer);
+      stop();
       me.destroy();
-      this.retryOr(err, () => this.connect());
+      if (isNetError(err.type) && this.retries < NET_RETRIES) {
+        this.retries++;
+        this.setNote('connecting', `Сигнальный сервер не отвечает, пробуем ещё раз (${this.retries}/${NET_RETRIES})…`);
+        setTimeout(() => this.search(i), 400 * this.retries + Math.random() * 300);
+        return;
+      }
+      this.retries = 0;
+      this.search(i + 1);
     });
     let asked = false;
     me.on('open', () => {
       // one link to the host per search, even if the signalling socket reopens
-      if (asked) return;
+      if (asked || settled) return;
       asked = true;
+      clearTimeout(openTimer);
       const c = me.connect(LOBBY_ID, { reliable: true, serialization: 'json' });
       conn = c;
       this.setNote('connecting', 'Лобби найдено, соединяемся с хостом…');
       c.on('open', () => {
         if (settled) { c.close(); return; }
-        settled = true;
-        clearTimeout(timer);
+        stop();
         this.host = c;
         this.heard = performance.now();
         this.retries = 0;
@@ -259,60 +283,108 @@ export class Coop {
     });
   }
 
+  /**
+   * Claim the lobby id on every signalling server at once, so players who reach only one of
+   * them still find this host. If another host already holds it somewhere, join that one.
+   */
   private becomeHost() {
-    const p = new Peer(LOBBY_ID, this.opts);
-    this.peer = p;
-    p.on('open', () => {
-      this.role = 'host';
-      this.retries = 0;
-      this.lobbyIds = [p.id];
-      this.you = 0;
-      this.setNote('host', 'Ты хост лобби. Остальные подключатся, открыв эту же страницу.');
-    });
-    p.on('error', (err) => {
-      if (err.type === 'unavailable-id' && this.role === 'connecting') {
-        // someone else claimed the lobby a moment earlier: join them instead
-        p.destroy();
-        setTimeout(() => this.connect(), 300 + Math.random() * 700);
-        return;
-      }
-      if (this.role === 'connecting') { p.destroy(); this.retryOr(err, () => this.becomeHost()); }
-    });
-    p.on('disconnected', () => { if (!p.destroyed) p.reconnect(); });
-    p.on('connection', (conn) => {
-      conn.on('open', () => {
-        // PeerJS may fire 'open' twice for one link (seen over a TURN relay): count it once
-        if (this.guests.includes(conn)) return;
-        // the same player reconnecting: the new link replaces the old one, seat and all
-        const old = this.guests.find((c) => c.peer === conn.peer);
-        if (old) {
-          this.guests[this.guests.indexOf(old)] = conn;
-          const seat = this.seats.get(old);
-          this.seats.delete(old);
-          if (seat !== undefined) this.seats.set(conn, seat);
-          old.close();
-          this.broadcastLobby();
-          return;
+    for (const p of this.hostPeers) p.destroy();
+    this.hostPeers = [];
+    let pending = SERVERS.length;
+    let taken = -1;
+    const settle = () => {
+      if (--pending > 0) return;
+      if (this.role === 'host') return;
+      if (taken >= 0) { this.reset(); this.search(taken); return; }
+      void this.giveUp('Не удалось открыть лобби');
+    };
+    const claim = (i: number, attempt: number) => {
+      const p = new Peer(LOBBY_ID, this.opts(i));
+      this.hostPeers.push(p);
+      let settled = false;
+      const t = setTimeout(() => { if (!settled && !p.open) { settled = true; p.destroy(); settle(); } }, OPEN_TIMEOUT);
+      p.on('open', () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(t);
+        // another host already holds the lobby on some server: we'll join them there instead
+        if (taken >= 0) { p.destroy(); settle(); return; }
+        if (this.role !== 'host') {
+          this.role = 'host';
+          this.retries = 0;
+          this.lobbyIds = [LOBBY_ID];
+          this.you = 0;
+          this.setNote('host', 'Ты хост лобби. Остальные подключатся, открыв эту же страницу.');
         }
-        if (this.guests.length >= MAX_KEEPERS - 1) {
-          conn.send({ t: 'full' } satisfies Msg);
-          setTimeout(() => conn.close(), 500);
-          return;
-        }
-        this.guests.push(conn);
-        this.retries = 0;
-        this.broadcastLobby();
+        settle();
       });
-      conn.on('data', (d) => this.fromGuest(conn, d as Msg));
-      const gone = () => this.guestLeft(conn);
-      conn.on('close', gone);
-      conn.on('error', gone);
-    });
+      p.on('error', (err) => {
+        if (err.type === 'unavailable-id') {
+          if (settled) return;
+          settled = true;
+          clearTimeout(t);
+          p.destroy();
+          // someone already hosts on this server: join them, unless players have already come here
+          if (this.role !== 'host' || this.guests.length === 0) { taken = i; if (this.role === 'host') this.role = 'connecting'; }
+          settle();
+          return;
+        }
+        if (settled) return;
+        settled = true;
+        clearTimeout(t);
+        p.destroy();
+        // the server drops a socket now and then right after another closed: try once more
+        if (isNetError(err.type) && attempt < 2) { setTimeout(() => claim(i, attempt + 1), 500 + Math.random() * 500); return; }
+        settle();
+      });
+      p.on('disconnected', () => { if (!p.destroyed) p.reconnect(); });
+      p.on('connection', (conn) => this.guestConnected(conn));
+    };
+    SERVERS.forEach((_, i) => claim(i, 0));
   }
 
+  private guestConnected(conn: DataConnection) {
+    conn.on('open', () => {
+      // PeerJS may fire 'open' twice for one link (seen over a TURN relay): count it once
+      if (this.guests.includes(conn)) return;
+      // the same player reconnecting: the new link replaces the old one, seat and all
+      const old = this.guests.find((c) => c.peer === conn.peer);
+      if (old) {
+        this.guests[this.guests.indexOf(old)] = conn;
+        const seat = this.seats.get(old);
+        this.seats.delete(old);
+        if (seat !== undefined) this.seats.set(conn, seat);
+        old.close();
+        this.broadcastLobby();
+        return;
+      }
+      if (this.guests.length >= MAX_KEEPERS - 1) {
+        conn.send({ t: 'full' } satisfies Msg);
+        setTimeout(() => conn.close(), 500);
+        return;
+      }
+      this.guests.push(conn);
+      this.retries = 0;
+      this.broadcastLobby();
+    });
+    conn.on('data', (d) => this.fromGuest(conn, d as Msg));
+    const gone = () => this.guestLeft(conn);
+    conn.on('close', gone);
+    conn.on('error', gone);
+  }
+
+  /** Give up on the network: say what this computer can and can't reach, then solo play. */
+  private async giveUp(reason: string) {
+    this.setNote('connecting', `${reason}. Проверяем связь…`);
+    const diag = await diagnose();
+    this.offline(`${reason}. Связь: ${diag}. Можно играть одному или обновить страницу.`);
+  }
+
+  /** Reachability of every server the co-op uses, as seen from this browser. */
+  diagnose() { return diagnose(); }
+
   private offline(note: string) {
-    this.peer?.destroy();
-    this.peer = null;
+    this.reset();
     this.role = 'offline';
     this.lobbyIds = ['solo'];
     this.you = 0;
@@ -342,7 +414,7 @@ export class Coop {
 
   private broadcastLobby() {
     if (this.role !== 'host') return;
-    this.lobbyIds = [this.peer?.id ?? 'host', ...this.guests.map((c) => c.peer)];
+    this.lobbyIds = [LOBBY_ID, ...this.guests.map((c) => c.peer)];
     for (const c of this.guests) {
       const seat = this.running ? this.seats.get(c) ?? -1 : this.guests.indexOf(c) + 1;
       c.send({ t: 'lobby', ids: this.lobbyIds, you: seat, running: this.running } satisfies Msg);
@@ -522,6 +594,8 @@ export class Coop {
   private reset() {
     this.peer?.destroy();
     this.peer = null;
+    for (const p of this.hostPeers) p.destroy();
+    this.hostPeers = [];
     this.guests = [];
     this.host = null;
     this.seats.clear();
