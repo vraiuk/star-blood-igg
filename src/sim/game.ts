@@ -5,14 +5,14 @@ import {
 } from '../data/balance';
 import { PATHS } from '../data/meta';
 import { type ModPatch, type Mods, combine } from '../data/mods';
-import { BASE_TIERS, NESTS, SELL_REFUND, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
+import { ASCEND, BASE_TIERS, MAX_TIER, MERGE, NESTS, SELL_REFUND, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 
 /** Families that live in the Tree's crown (the crown also accepts a firefly hive). */
 const CROWN_FAMILIES = new Set<Family>(['caterpillar', 'honeycomb', 'mender']);
 import { ENDLESS, nightDef, type NightDef } from '../data/nights';
 import {
-  APOTHEOSIS_RANK, BASE_SLOTS, BOONS, FORM_RANK, MAX_SLOTS, PROPERTIES, RUNE_RANK_AREA, RUNE_RANK_CD, RUNE_RANK_COST,
-  RUNE_RANK_POWER, boonById, maxRankForNight, propertyById,
+  APOTHEOSIS_RANK, BASE_SLOTS, BOONS, FORM_RANK, MAX_SLOTS, PROPERTIES, runeRankArea, runeRankCd, runeRankCost,
+  runeRankPower, boonById, maxRankForNight, propertyById,
   type FormId, type KeeperRuneId, type PropertyDef,
 } from '../data/runes';
 import { TREE, TREE_BRANCHES, TREE_STAGES } from '../data/tree';
@@ -22,6 +22,10 @@ import type { Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Project
 /** Seconds after the last spawn before dawn burns remaining creatures. */
 export const NIGHT_GRACE = 60;
 
+
+/** Piercing Beam channel time (seconds) and damage tick. */
+export const BEAM_CHANNEL = 1.6;
+const BEAM_TICK = 0.2;
 
 /** Fixed simulation step in seconds. */
 export const STEP = 1 / 60;
@@ -74,8 +78,9 @@ export class Game {
       enemies: [], structures: [], projectiles: [], drops: [], workers: [], soldiers: [], tempLights: [], burns: [],
       keeper: {
         x: WORLD.treeX - 28, dir: 1, hp: KEEPER.hp, alive: true, respawn: 0, light: KEEPER.startLight, move: 0,
-        cooldowns: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0 }, charge: 0, rank: 0,
-        radianceT: 0, swarmT: 0, swarmX: 0,
+        cooldowns: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0 },
+        cdMax: { spear: 1, hammer: 1, starfall: 1, radiance: 1, swarm: 1 }, charge: 0, rank: 0,
+        radianceT: 0, swarmT: 0, swarmX: 0, channel: 0, channelDir: 1, channelDps: 0,
         props: { spear: [], hammer: [], starfall: [], radiance: [], swarm: [], light: [] },
         slots: { spear: BASE_SLOTS, hammer: BASE_SLOTS, starfall: BASE_SLOTS, radiance: BASE_SLOTS, swarm: BASE_SLOTS, light: BASE_SLOTS }, boons: [],
         attrs: { might: 0, spirit: 0, body: 0 },
@@ -140,15 +145,26 @@ export class Game {
   }
 
   /** Effective stats of a nest including specialization, stage power and mods. */
-  nestStats(st: Pick<Structure, 'family' | 'tier' | 'spec'>): NestStats {
+  nestStats(st: Pick<Structure, 'family' | 'tier' | 'spec'> & Partial<Pick<Structure, 'merge' | 'ascend'>>): NestStats {
     const fam = NESTS[st.family];
     const base = st.tier < BASE_TIERS ? fam.levels[st.tier] : fam.specs[st.spec!].levels[st.tier - BASE_TIERS];
     const m = this.mods;
-    const dmg = (1 + m.famDamage[st.family]) * this.treePower();
-    const rng = 1 + m.famRange[st.family];
+    const merge = st.merge ?? 0, asc = st.ascend ?? 0;
+    const boost = (1 + MERGE.power * merge) * (1 + ASCEND.power * asc);
+    const dmg = (1 + m.famDamage[st.family]) * this.treePower() * boost;
+    const rng = (1 + m.famRange[st.family]) * (1 + MERGE.range * merge);
+    const hpBoost = (1 + MERGE.hp * merge) * (1 + ASCEND.power * asc);
     return {
       ...base,
-      hp: Math.round(base.hp * (1 + m.famHp[st.family])),
+      hp: Math.round(base.hp * (1 + m.famHp[st.family]) * hpBoost),
+      heal: base.heal !== undefined ? base.heal * boost : undefined,
+      healTree: base.healTree !== undefined ? base.healTree * boost : undefined,
+      income: base.income !== undefined ? base.income * boost : undefined,
+      starIncome: base.starIncome !== undefined ? base.starIncome * boost : undefined,
+      soldierHp: base.soldierHp !== undefined ? Math.round(base.soldierHp * hpBoost) : undefined,
+      soldiers: base.soldiers !== undefined ? base.soldiers + merge : undefined,
+      workers: base.workers !== undefined ? base.workers + merge : undefined,
+      carry: base.carry !== undefined ? base.carry + merge * 2 : undefined,
       damage: base.damage * dmg,
       burn: base.burn !== undefined ? base.burn * dmg : undefined,
       poison: base.poison !== undefined ? base.poison * dmg : undefined,
@@ -188,7 +204,7 @@ export class Game {
     const own = id === 'spear' ? this.mods.spearDamage : id === 'hammer' ? this.mods.hammerDamage : id === 'starfall' ? this.mods.starfallDamage : 0;
     return (1 + ABILITY_STAGE_SCALING * this.state.tree.stage + this.mods.abilityDamage + own)
       * KEEPER_RANKS[this.state.keeper.rank].power * (1 + 0.08 * this.state.keeper.attrs.might)
-      * RUNE_RANK_POWER[this.state.keeper.runeRank[id]];
+      * runeRankPower(this.state.keeper.runeRank[id]);
   }
 
   /** Keeper Light regen factor by distance from the trunk: ×1.8 at the trunk → ×0.3 at the Circle edge. */
@@ -260,6 +276,8 @@ export class Game {
   // ───────────────────────────── commands ────────────────────────────
 
   setMove(dir: -1 | 0 | 1) { this.state.keeper.move = dir; }
+  /** Is the Ascended channelling the Piercing Beam (rooted in place)? */
+  channelling() { return this.state.keeper.channel > 0; }
   /** Turn the Ascended without moving (the spear flies where he faces). */
   face(dir: -1 | 1) { this.state.keeper.dir = dir; }
 
@@ -277,7 +295,7 @@ export class Game {
     const st: Structure = {
       id: s.nextId++, family, slotId, x: slot.x, y: slot.y, underground: slot.underground, crown: !!slot.crown, tier: 0, spec: null,
       hp: 0, maxHp: 0, cd: 0.4, spentAmber: price.amber, spentStar: price.star, hitFlash: 0, age: 0,
-      aim: slot.x < WORLD.treeX ? -1 : 1, haste: 0, intercept: 0,
+      aim: slot.x < WORLD.treeX ? -1 : 1, haste: 0, intercept: 0, merge: 0, ascend: 0,
     };
     if (st.crown) {
       const p = crownPos(s.tree.stage, Number(slotId.slice(1)));
@@ -320,6 +338,51 @@ export class Game {
     st.hp += hp - st.maxHp;
     st.maxHp = hp;
     this.emit({ type: 'built', family: st.family, x: st.x, y: st.y, underground: st.underground, tier });
+  }
+
+  /** Two other nests of the same family and merge rank (lowest level first), or null. */
+  mergePartners(st: Structure): Structure[] | null {
+    const others = this.state.structures
+      .filter((o) => o !== st && o.family === st.family && o.merge === st.merge && o.crown === st.crown)
+      .sort((a, b) => a.tier - b.tier || a.ascend - b.ascend);
+    return others.length >= 2 ? others.slice(0, 2) : null;
+  }
+
+  /** «Слияние»: fuse two same nests into this one — frees two slots, adds a merge star. */
+  mergeNests(structureId: number): boolean {
+    const s = this.state;
+    const st = s.structures.find((x) => x.id === structureId);
+    if (!st || this.over) return false;
+    const partners = this.mergePartners(st);
+    if (!partners) return this.deny('Нужно ещё 2 таких же гнезда того же ранга слияния');
+    s.structures = s.structures.filter((x) => !partners.includes(x));
+    st.merge++;
+    st.spentAmber += partners.reduce((a, p) => a + p.spentAmber, 0);
+    st.spentStar += partners.reduce((a, p) => a + p.spentStar, 0);
+    const hp = this.nestStats(st).hp;
+    st.maxHp = hp;
+    st.hp = hp;
+    this.emit({ type: 'merge', x: st.x, y: st.underground || st.crown ? st.y : WORLD.groundY - 14, from: partners.map((p) => [p.x, p.underground || p.crown ? p.y : WORLD.groundY - 10]) });
+    return true;
+  }
+
+  /** «Возвышение»: endless levels after mastery, exponentially priced in Amber. */
+  ascendCost(st: Structure) { return ASCEND.cost(st.ascend); }
+  ascendNest(structureId: number): boolean {
+    const s = this.state;
+    const st = s.structures.find((x) => x.id === structureId);
+    if (!st || this.over) return false;
+    if (st.tier < MAX_TIER - 1) return this.deny('Сначала мастерство специализации');
+    const c = this.ascendCost(st);
+    if (s.amber < c) return this.deny('Не хватает Янтаря');
+    s.amber -= c;
+    st.spentAmber += c;
+    st.ascend++;
+    const hp = this.nestStats(st).hp;
+    st.hp += hp - st.maxHp;
+    st.maxHp = hp;
+    this.emit({ type: 'built', family: st.family, x: st.x, y: st.y, underground: st.underground, tier: st.tier });
+    return true;
   }
 
   sellValue(st: Structure): Price {
@@ -544,11 +607,12 @@ export class Game {
         k.light -= cost;
       }
     }
-    let cd = def.cooldown * (id === 'hammer' && this.mods.hammerCost < 0 ? 0.75 : 1) * RUNE_RANK_CD[k.runeRank[id]];
+    let cd = def.cooldown * (id === 'hammer' && this.mods.hammerCost < 0 ? 0.75 : 1) * runeRankCd(k.runeRank[id]);
     void form;
-    if (id === 'spear' && k.forms.spear === 'B') cd = Math.max(cd, 2.2 * RUNE_RANK_CD[k.runeRank[id]]);
-    if (id === 'spear' && k.forms.spear === 'A') cd = Math.max(cd, 1.1 * RUNE_RANK_CD[k.runeRank[id]]);
+    if (id === 'spear' && k.forms.spear === 'B') cd = Math.max(cd, 2.2 * runeRankCd(k.runeRank[id]));
+    if (id === 'spear' && k.forms.spear === 'A') cd = Math.max(cd, 1.1 * runeRankCd(k.runeRank[id]));
     k.cooldowns[id] = cd;
+    k.cdMax[id] = cd;
     k.castAnim = 0;
     if (id === 'spear') this.castSpear(tx, this.abilityMult('spear'));
     else if (id === 'hammer') this.castHammer(this.abilityMult('hammer'));
@@ -579,7 +643,7 @@ export class Game {
     const reach = this.swarmReach();
     for (const st of s.structures) {
       if (st.crown || Math.abs(st.x - k.x) > reach) continue;
-      const h = st.maxHp * def.heal * RUNE_RANK_POWER[k.runeRank.swarm] ** 0.5;
+      const h = st.maxHp * def.heal * runeRankPower(k.runeRank.swarm) ** 0.5;
       st.hp = Math.min(st.maxHp, st.hp + h);
       this.healFx(st.id, st.x, st.underground ? st.y : WORLD.groundY - 20, 99);
     }
@@ -587,7 +651,7 @@ export class Game {
   swarmReach() { return ABILITIES.swarm.reach * this.runeArea('swarm') * (1 + 0.4 * this.propCount('swarm', 'sw-wide')); }
 
   /** Rune area multiplier (rank). */
-  runeArea(rid: KeeperRuneId) { return RUNE_RANK_AREA[this.state.keeper.runeRank[rid]]; }
+  runeArea(rid: KeeperRuneId) { return runeRankArea(this.state.keeper.runeRank[rid]); }
   private apotheosis(rid: KeeperRuneId) { return this.state.keeper.runeRank[rid] >= APOTHEOSIS_RANK; }
 
   private castSpear(tx: number, mult: number) {
@@ -600,17 +664,11 @@ export class Game {
     const form = k.forms.spear;
     const range = def.range * this.runeArea('spear');
     if (form === 'B') {
-      // Пронзающий луч: instant beam to the edge of the world, hits everything on the line
-      const edge = dir > 0 ? WORLD.width : 0;
-      for (const e of s.enemies) {
-        if (e.dead || ENEMIES[e.kind].underground || (e.x - k.x) * dir < 0) continue;
-        this.damageEnemy(e, def.damage * 1.5 * mult);
-        if (this.apotheosis('spear')) e.marked = 6;
-      }
-      if (this.apotheosis('spear')) {
-        s.burns.push({ x: (k.x + edge) / 2, halfWidth: Math.abs(edge - k.x) / 2, dps: 18 * mult, life: 1.6 });
-      }
-      this.emit({ type: 'beam', x: k.x + dir * 6, y: WORLD.groundY - 11, tx: edge, ty: WORLD.groundY - 11 });
+      // Пронзающий луч: the Ascended stands still and channels a beam to the edge of the world
+      k.channel = BEAM_CHANNEL;
+      k.channelDir = dir;
+      k.channelDps = (def.damage * 2.2 * mult) / BEAM_CHANNEL;
+      k.move = 0;
       return;
     }
     if (form === 'A') {
@@ -737,8 +795,7 @@ export class Game {
   promoteRune(rid: KeeperRuneId): boolean {
     const k = this.state.keeper;
     const r = k.runeRank[rid];
-    if (r >= RUNE_RANK_COST.length - 1) return this.deny('Руна уже небесного ранга');
-    const cost = RUNE_RANK_COST[r + 1];
+    const cost = runeRankCost(r + 1);
     if (this.state.star < cost) return this.deny('Нужна Звёздная Кровь');
     this.state.star -= cost;
     k.runeRank[rid]++;
@@ -865,7 +922,7 @@ export class Game {
       const slot = SLOTS.find((x) => x.id === g.slotId)!;
       const st: Structure = {
         id: s.nextId++, family: 'beetle', slotId: g.slotId, x: slot.x, y: slot.y, underground: false, crown: false, tier: g.tier, spec: g.spec,
-        hp: 0, maxHp: 0, cd: 0, spentAmber: 0, spentStar: 0, hitFlash: 0, age: 0, aim: slot.x < WORLD.treeX ? -1 : 1, haste: 0, intercept: 0,
+        hp: 0, maxHp: 0, cd: 0, spentAmber: 0, spentStar: 0, hitFlash: 0, age: 0, aim: slot.x < WORLD.treeX ? -1 : 1, haste: 0, intercept: 0, merge: 0, ascend: 0,
       };
       st.hp = st.maxHp = this.nestStats(st).hp;
       s.structures.push(st);
@@ -1004,7 +1061,20 @@ export class Game {
       }
       return;
     }
-    if (k.move !== 0) {
+    if (k.channel > 0) {
+      const before = k.channel;
+      k.channel = Math.max(0, k.channel - dt);
+      // damage ticks every BEAM_TICK seconds along the whole line
+      if (Math.floor(before / BEAM_TICK) !== Math.floor(k.channel / BEAM_TICK)) {
+        const apo = this.apotheosis('spear');
+        for (const e of s.enemies) {
+          if (e.dead || ENEMIES[e.kind].underground || (e.x - k.x) * k.channelDir < 0) continue;
+          this.damageEnemy(e, k.channelDps * BEAM_TICK);
+          if (apo) { e.marked = Math.max(e.marked, 3); this.damageQuiet(e, k.channelDps * BEAM_TICK * 0.4); }
+        }
+      }
+      k.walkT = 0;
+    } else if (k.move !== 0) {
       k.dir = k.move;
       k.x = Math.max(8, Math.min(WORLD.width - 8, k.x + k.move * KEEPER.speed * (1 + this.mods.keeperSpeed) * dt));
       k.walkT += dt;
@@ -1030,6 +1100,7 @@ export class Game {
     if (k.hp <= 0) {
       k.hp = 0;
       k.alive = false;
+      k.channel = 0;
       // no free resurrection: wait for dawn, pay the Tree, or sacrifice to Eternity
       k.respawn = s0.phase === 'night' ? Infinity : KEEPER.respawn;
       k.charge = 0;
@@ -1272,7 +1343,7 @@ export class Game {
   /** «Высвечивание»: the strongest dragonfly light covering this enemy. */
   private vulnAt(e: Enemy): number {
     if (ENEMIES[e.kind].underground) return 0;
-    let v = this.state.keeper.radianceT > 0 && e.lit ? ABILITIES.radiance.vuln * RUNE_RANK_POWER[this.state.keeper.runeRank.radiance] ** 0.5 : 0;
+    let v = this.state.keeper.radianceT > 0 && e.lit ? ABILITIES.radiance.vuln * runeRankPower(this.state.keeper.runeRank.radiance) ** 0.5 : 0;
     for (const st of this.state.structures) {
       if (st.family !== 'dragonfly') continue;
       const ns = this.nestStats(st);
@@ -1369,7 +1440,7 @@ export class Game {
     let m = st.haste > 0 ? 1.3 : 1;
     for (const t of this.state.tempLights) if (t.haste && Math.abs(st.x - t.x) <= t.radius) { m *= 1 + t.haste; break; }
     const k = this.state.keeper;
-    if (k.swarmT > 0 && Math.abs(st.x - k.swarmX) <= this.swarmReach()) m *= 1 + ABILITIES.swarm.haste * RUNE_RANK_POWER[k.runeRank.swarm] ** 0.5;
+    if (k.swarmT > 0 && Math.abs(st.x - k.swarmX) <= this.swarmReach()) m *= 1 + ABILITIES.swarm.haste * runeRankPower(k.runeRank.swarm) ** 0.5;
     if (this.mods.dragonflyHaste) {
       for (const d of this.state.structures) {
         if (d.family === 'dragonfly' && d !== st && Math.abs(d.x - st.x) <= this.nestStats(d).light!) { m *= 1.2; break; }
@@ -1951,9 +2022,10 @@ export class Game {
           let bestScore = Infinity;
           for (const x of s.drops) {
             if (x.pulled || x.mode === 2 || x.mode === 3 || x.claimed !== 0 || aimed.has(x.id)) continue;
-            if (Math.abs(x.x - nest.x) > ns.range) continue;
+            // the whole world is in reach; drops beyond the nest's reach just cost more to choose
+            const far = Math.max(0, Math.abs(x.x - nest.x) - ns.range);
             const crowd = targets.filter((t) => Math.abs(t.x - x.x) < 24).length;
-            const score = Math.abs(x.x - w.x) + crowd * 60;
+            const score = Math.abs(x.x - w.x) + crowd * 60 + far * 0.5;
             if (score < bestScore) { bestScore = score; best = x; }
           }
           if (best) { d = best; d.claimed = w.id; w.target = d.id; aimed.set(d.id, w.id); }
@@ -1979,7 +2051,9 @@ export class Game {
       const dx = goal - w.x;
       if (Math.abs(dx) > 1) {
         w.dir = dx > 0 ? 1 : -1;
-        w.x += w.dir * Math.min(Math.abs(dx), speed * (w.home || w.target ? 1 : 0.4) * dt);
+        // outside the light they crawl slower
+        const dark = this.isLit(w.x, false) ? 1 : 0.55;
+        w.x += w.dir * Math.min(Math.abs(dx), speed * dark * (w.home || w.target ? 1 : 0.4) * dt);
         w.walk += dt;
       }
     }

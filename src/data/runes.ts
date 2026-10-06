@@ -118,11 +118,19 @@ export function boonById(id: string) { return BOONS.find((b) => b.id === id); }
  * rune's rank). Ranks scale power and area; at Серебро the rune takes one of two Forms
  * that change how it is used; at Небо the chosen Form reaches its Apotheosis.
  */
-export const RUNE_RANK_COST = [0, 12, 25, 45, 80] as const;
-/** damage, area and cooldown multipliers by rune rank */
-export const RUNE_RANK_POWER = [1, 1.35, 1.8, 2.4, 3.2] as const;
-export const RUNE_RANK_AREA = [1, 1.1, 1.2, 1.35, 1.5] as const;
-export const RUNE_RANK_CD = [1, 0.95, 0.9, 0.85, 0.8] as const;
+const RANK_COST = [0, 12, 25, 45, 80];
+const RANK_POWER = [1, 1.35, 1.8, 2.4, 3.2];
+const RANK_AREA = [1, 1.1, 1.2, 1.35, 1.5];
+const RANK_CD = [1, 0.95, 0.9, 0.85, 0.8];
+/** Beyond «Небо» runes climb endless Star ranks: +15% power each, exponentially priced. */
+export const runeRankCost = (r: number) => (r < RANK_COST.length ? RANK_COST[r] : Math.round(80 * Math.pow(1.45, r - 4)));
+export const runeRankPower = (r: number) => (r < RANK_POWER.length ? RANK_POWER[r] : 3.2 * Math.pow(1.15, r - 4));
+export const runeRankArea = (r: number) => RANK_AREA[Math.min(r, RANK_AREA.length - 1)];
+export const runeRankCd = (r: number) => RANK_CD[Math.min(r, RANK_CD.length - 1)];
+export const runeRankName = (r: number) => (r < RUNE_RANKS.length ? RUNE_RANKS[r] : `Звезда ${r - 4}`);
+/** Ability colour by rune rank: the rank ladder, then violet → crimson → emerald → white for Star ranks. */
+const STAR_COLORS = ['#b48cff', '#ff5a6a', '#7af0a0', '#ffffff'];
+export const runeColor = (r: number) => (r < RUNE_RANK_COLORS.length ? (r === 0 ? '#ffe58a' : RUNE_RANK_COLORS[r]) : STAR_COLORS[(r - 5) % STAR_COLORS.length]);
 /** rank index where a Form is chosen / reaches Apotheosis */
 export const FORM_RANK = 2;
 export const APOTHEOSIS_RANK = 4;
@@ -133,7 +141,7 @@ export interface FormDef { name: string; desc: string; apo: string; }
 export const RUNE_FORMS: Record<'spear' | 'hammer' | 'starfall', Record<FormId, FormDef>> = {
   spear: {
     A: { name: 'Веер Игг', desc: 'Пять коротких копий веером: разрывает толпу у ног Восходящего', apo: 'Апофеоз: семь копий, каждое отбрасывает' },
-    B: { name: 'Пронзающий луч', desc: 'Мгновенный луч до края мира, бьёт всех на линии. Дороже и реже', apo: 'Апофеоз: луч оставляет горящий след и высвечивает тварей' },
+    B: { name: 'Пронзающий луч', desc: 'Восходящий замирает и 1.6 с держит луч до края мира: урон всем на линии, пока луч горит', apo: 'Апофеоз: луч прожигает сильнее и метит тварей для гнёзд' },
   },
   hammer: {
     A: { name: 'Сотрясение Тверди', desc: 'Волна бежит по земле в обе стороны, бьёт и Червей под землёй', apo: 'Апофеоз: волна вдвое дальше и оглушает' },

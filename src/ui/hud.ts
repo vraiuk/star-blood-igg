@@ -1,8 +1,8 @@
 import { ABILITIES, ATTR_MAX, ATTRIBUTES, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
-import { NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
+import { MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
-  APOTHEOSIS_RANK, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, RUNE_RANK_COST,
-  RUNE_RANK_POWER, boonById, propertyById, type FormId, type KeeperRuneId,
+  APOTHEOSIS_RANK, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
+  runeRankPower, runeColor, boonById, propertyById, type FormId, type KeeperRuneId,
 } from '../data/runes';
 import { TREE_BRANCHES, TREE_STAGES } from '../data/tree';
 import type { Game } from '../sim/game';
@@ -511,12 +511,28 @@ export class Hud {
         });
       });
     }
+    const partners = g.mergePartners(st);
+    if (partners) {
+      opts.push({
+        icon: icon('merge'), title: `Слияние ★${st.merge + 1}`, sub: 'Три одинаковых гнезда → одно: сила ×2, освобождает 2 слота', key: 'M',
+        body: `<div class="stats"><div>Сольются: <b>${partners.map((p) => `ур.${p.tier + 1}`).join(', ')}</b></div><div>Урон и прочность: <b class="up">+110%</b></div></div>`,
+        price: { amber: 0, star: 0 }, ok: true, act: () => { g.mergeNests(st.id); },
+      });
+    }
+    if (st.tier >= MAX_TIER - 1) {
+      const c = g.ascendCost(st);
+      const next = g.nestStats({ family: st.family, tier: st.tier, spec: st.spec, merge: st.merge, ascend: st.ascend + 1 });
+      opts.push({
+        icon: icon('upgrade'), title: `Возвышение ${st.ascend + 1}`, sub: 'Бесконечный рост: +12% силы, цвет меняется каждые 5 уровней', key: 'U',
+        body: this.statsBlock(st.family, cur, next), price: { amber: c, star: 0 }, ok: g.state.amber >= c, act: () => { g.ascendNest(st.id); },
+      });
+    }
     const sv = g.sellValue(st);
     opts.push({
       icon: icon('sell'), title: 'Отпустить', sub: 'Вернуть 60% вложенного', key: 'S', danger: true,
       body: '', price: sv, ok: true, act: () => { if (g.sell(st.id)) this.closeMenu(); },
     });
-    const name = st.spec ? `${def.name}: ${def.specs[st.spec].name}` : def.name;
+    const name = (st.spec ? `${def.name}: ${def.specs[st.spec].name}` : def.name) + (st.merge ? ` ${'★'.repeat(st.merge)}` : '') + (st.ascend ? ` +${st.ascend}` : '');
     const y = st.underground || st.crown ? st.y : WORLD.groundY - (st.family === 'beetle' ? 12 : 26);
     return { x: st.x, y, title: `${name} · ур. ${st.tier + 1}`, opts };
   }
@@ -674,13 +690,13 @@ export class Hud {
         const rr = k.runeRank[rid];
         const hasForms = rid === 'spear' || rid === 'hammer' || rid === 'starfall';
         html += `<div class="rblock ${unlocked ? '' : 'dim'}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b>
-          <span class="rrank" style="--c:${RUNE_RANK_COLORS[rr]}">${RUNE_RANKS[rr]} · ×${RUNE_RANK_POWER[rr]}</span><span class="cap">${props.length}/${cap}</span>`;
+          <span class="rrank" style="--c:${runeColor(rr)}">${runeRankName(rr)} · ×${runeRankPower(rr).toFixed(2)}</span><span class="cap">${props.length}/${cap}</span>`;
         if (s.devRunes > 0 && cap < MAX_SLOTS) html += btn('+слот', true, () => { g.developRune(rid); }, 'tiny');
         html += `</div>`;
-        if (unlocked && rr < RUNE_RANK_COST.length - 1) {
-          const cost = RUNE_RANK_COST[rr + 1];
-          html += `<div class="row left">${btn(`Повышение → ${RUNE_RANKS[rr + 1]} (<img class="icon" src="${icon('star')}"> ${cost})`, s.star >= cost, () => { g.promoteRune(rid); }, 'tiny')}
-            <span class="hint">${rr + 1 === FORM_RANK && hasForms ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && hasForms ? 'Апофеоз Формы' : 'сила, площадь, перезарядка'}</span></div>`;
+        if (unlocked) {
+          const cost = runeRankCost(rr + 1);
+          html += `<div class="row left">${btn(`Повышение → ${runeRankName(rr + 1)} (<img class="icon" src="${icon('star')}"> ${cost})`, s.star >= cost, () => { g.promoteRune(rid); }, 'tiny')}
+            <span class="hint">${rr + 1 === FORM_RANK && hasForms ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && hasForms ? 'Апофеоз Формы' : rr >= 4 ? 'Звёздный ранг: +15% силы, новый цвет' : 'сила, площадь, перезарядка'}</span></div>`;
         }
         if ((rid === 'spear' || rid === 'hammer' || rid === 'starfall') && unlocked) {
           const forms = RUNE_FORMS[rid];
@@ -863,12 +879,11 @@ export class Hud {
     }
 
     for (const id of AB_IDS) {
-      const def = ABILITIES[id];
       const { box, cd, lock, charge } = this.abEls[id];
       const unlocked = g.abilityUnlocked(id);
       lock.style.display = unlocked ? 'none' : 'grid';
       const c = s.keeper.cooldowns[id];
-      cd.style.height = `${(c / def.cooldown) * 100}%`;
+      cd.style.height = `${Math.min(100, (c / Math.max(0.01, s.keeper.cdMax[id])) * 100)}%`;
       let ready: boolean;
       if (id === 'starfall') {
         const ch = s.keeper.charge / ABILITIES.starfall.chargeMax;

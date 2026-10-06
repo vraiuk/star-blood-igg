@@ -12,6 +12,7 @@ import {
 } from './sprites';
 import { drawGrass, drawRoots, drawTree } from './tree';
 import { TREE } from '../data/tree';
+import { runeColor } from '../data/runes';
 import { disc } from './pixel';
 
 export interface ViewState {
@@ -86,6 +87,12 @@ export class Renderer {
         case 'intercept': p.chain([[e.fx, e.fy], [e.x, e.y]]); p.acid(e.x, e.y); break;
         case 'jump': p.dust(e.x, WORLD.groundY - 2); break;
         case 'mend': p.mend(e.x, e.y, e.tx, e.ty); break;
+        case 'merge':
+          for (const [fx, fy] of e.from) p.mend(fx, fy, e.x, e.y);
+          p.goldBurst(e.x, e.y, 60);
+          p.addFx('ring', e.x, e.y, 0.6, 30);
+          this.shake = Math.max(this.shake, 3);
+          break;
         case 'shoot': if (e.kind === 'arrow') p.emit(3, e.x, e.y, { speed: 30, max: 0.25, colors: [PAL.white, PAL.gold4], glow: true }); break;
         case 'lostLoot': p.emit(4, e.x, e.y, { speed: 20, max: 0.8, colors: ['#8a8aa8', '#5a5a78'], glow: true, gravity: -30 }); break;
         case 'devRune': p.goldBurst(e.x, WORLD.groundY - 20, 40); p.addFx('ring', e.x, WORLD.groundY - 20, 0.8, 30); break;
@@ -217,7 +224,10 @@ export class Renderer {
       }
     }
     for (const d of s.drops) drawDrop(c, d, time);
-    for (const p of s.projectiles) drawProjectile(c, p);
+    const spearTint = s.keeper.runeRank.spear > 0 ? runeColor(s.keeper.runeRank.spear) : undefined;
+    const starTint = s.keeper.runeRank.starfall > 0 ? runeColor(s.keeper.runeRank.starfall) : undefined;
+    for (const p of s.projectiles) drawProjectile(c, p, p.kind === 'spear' ? spearTint : p.kind === 'meteor' ? starTint : undefined);
+    if (s.keeper.channel > 0 && s.keeper.alive) this.drawChannel(c, game, time);
     for (const t of s.tempLights) if (t.dps) this.drawDome(c, t.x, t.radius, t.life / t.maxLife, time);
     this.particles.draw(c, true);
     for (const e of s.enemies) drawEnemyHp(c, e);
@@ -276,6 +286,24 @@ export class Renderer {
     r.fillRect(0, 0, WORLD.width, WORLD.height);
     for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) c.drawImage(this.rimCv, dx, dy);
     c.drawImage(this.nestCv, 0, 0);
+  }
+
+  /** The channelled Piercing Beam, attached to the keeper's staff. */
+  private drawChannel(c: Ctx, game: Game, time: number) {
+    const k = game.state.keeper;
+    const x0 = k.x + k.channelDir * 6, y = WORLD.groundY - 12;
+    const x1 = k.channelDir > 0 ? WORLD.width : 0;
+    const k01 = Math.min(1, k.channel / 0.25);
+    const wob = Math.sin(time * 40) > 0 ? 1 : 0;
+    const col = runeColor(game.state.keeper.runeRank.spear);
+    c.fillStyle = 'rgba(255,200,90,0.35)';
+    c.fillRect(Math.min(x0, x1), y - 3 - wob, Math.abs(x1 - x0), 6 + wob * 2);
+    c.fillStyle = col;
+    c.fillRect(Math.min(x0, x1), y - 1, Math.abs(x1 - x0), 2);
+    c.fillStyle = PAL.white;
+    c.fillRect(Math.min(x0, x1), y, Math.abs(x1 - x0), 1);
+    disc(c, x0, y, 3 + wob * k01, PAL.white);
+    if (Math.random() < 0.6) this.particles.emit(1, x0 + k.channelDir * Math.random() * 300, y, { speed: 20, max: 0.3, colors: [PAL.white, col], glow: true });
   }
 
   /** «Купол Сияния»: a shimmering dome. */

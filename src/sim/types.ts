@@ -76,6 +76,9 @@ export interface Structure {
   haste: number;
   /** dragonfly: time until it can shoot down another acid glob */
   intercept: number;
+  /** merge stars (Слияние) and endless ascension levels (Возвышение) */
+  merge: number;
+  ascend: number;
 }
 
 export type ProjectileKind = 'arrow' | 'acid' | 'spear' | 'spark' | 'beam' | 'meteor' | 'wave';
@@ -158,8 +161,14 @@ export interface Keeper {
   light: number;
   move: -1 | 0 | 1;
   cooldowns: Record<AbilityId, number>;
+  /** full length of the current cooldown (for the UI sweep) */
+  cdMax: Record<AbilityId, number>;
   /** Starfall charge 0..100 */
   charge: number;
+  /** channelled Piercing Beam: seconds left, direction, damage per second */
+  channel: number;
+  channelDir: 1 | -1;
+  channelDps: number;
   /** Сияние Игг remaining; Зов Роя remaining and where it was called */
   radianceT: number;
   swarmT: number;
@@ -277,6 +286,7 @@ export type GameEvent =
   | { type: 'blast'; x: number; y: number }
   | { type: 'intercept'; x: number; y: number; fx: number; fy: number }
   | { type: 'jump'; x: number }
+  | { type: 'merge'; x: number; y: number; from: Array<[number, number]> }
   | { type: 'mend'; x: number; y: number; tx: number; ty: number }
   | { type: 'heal'; x: number; y: number; amount: number }
   | { type: 'polaria'; x: number; y: number; tx: number; ty: number }

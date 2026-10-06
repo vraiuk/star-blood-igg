@@ -1,5 +1,5 @@
 import { AFFIXES, ENEMIES, WORLD } from '../data/balance';
-import { NESTS } from '../data/nests';
+import { ASCEND, NESTS, glowBand } from '../data/nests';
 import type { Drop, Enemy, Keeper, Projectile, Structure } from '../sim/types';
 import { type Ctx, PAL, disc, ellipse, line, rect, ring } from './pixel';
 
@@ -30,7 +30,7 @@ export function drawEnemy(c: Ctx, e: Enemy, time: number) {
     case 'reaper': return reaper(c, e, t, moving, body, rim);
     case 'jumper': return jumper(c, e, t, body, rim);
     case 'tunneler': return worm(c, e, t, flash);
-    case 'tunnelerUp': return forager(c, e, t, moving, body, rim);
+    case 'tunnelerUp': return digger(c, e, t, moving, rim, flash);
   }
 }
 
@@ -201,6 +201,23 @@ function executioner(c: Ctx, e: Enemy, t: number, flash: boolean, time: number, 
   line(c, hx + d * 3, hy + 2, hx + d * 9, hy + 8, '#121019', 3);
   line(c, hx + d * 9, hy + 8, cx, cy, '#d8d0e8', 2);
   rect(c, cx, cy, 2, 2, Math.sin(time * 8) > 0 ? PAL.acid2 : PAL.acid1);
+}
+
+/** Имаго-Землерой on the surface: earthy, hunched, with big digging claws. */
+function digger(c: Ctx, e: Enemy, t: number, moving: boolean, rim: string, flash: boolean) {
+  const d = e.dir;
+  const x = Math.round(e.x), y = GY;
+  const ph = moving ? t * 10 : 0;
+  for (let i = 0; i < 3; i++) line(c, x - 4 + i * 4, y - 4, x - 4 + i * 4 + Math.sin(ph + i) * 2, y, '#2a1a10');
+  ellipse(c, x, y - 7, 8, 5, flash ? '#fff' : '#4a3020');
+  ellipse(c, x - d, y - 9, 6, 3, flash ? '#fff' : '#6a4a30');
+  rect(c, x - 6, y - 12, 12, 1, rim);
+  // shovel claws
+  const dig = e.attacking ? Math.sin(t * 12) * 2 : 0;
+  line(c, x + 7 * d, y - 6, x + 11 * d, y - 2 + dig, '#c9a070', 2);
+  line(c, x + 6 * d, y - 9, x + 11 * d, y - 8 - dig, '#c9a070', 2);
+  // soil crumbs
+  if (Math.sin(t * 5) > 0.6) rect(c, x - 5 * d, y - 2, 1, 1, '#6a4a30');
 }
 
 /** Имаго-Прыгун: «разведчики, лёгкая крылатая кавалерия» — a leaping winged bug. */
@@ -457,6 +474,21 @@ export function drawStructure(c: Ctx, s: Structure, time: number) {
     rect(c, s.x - w / 2, y, w, 2, '#10070c');
     rect(c, s.x - w / 2, y, Math.max(1, (w * s.hp) / s.maxHp), 1, s.hp / s.maxHp < 0.35 ? '#ff5a4a' : '#ffd25a');
   }
+  // merge stars and ascension glow (colour bands)
+  if (s.merge > 0 || s.ascend > 0) {
+    const col = glowBand(s.merge + Math.floor(s.ascend / ASCEND.band));
+    const top = s.underground ? s.y - 16 : GY - (s.family === 'beetle' ? 30 : s.family === 'dragonfly' ? 50 : 58);
+    for (let i = 0; i < s.merge; i++) {
+      const sx = s.x - (s.merge - 1) * 3 + i * 6;
+      rect(c, sx, top - 2, 1, 5, col); rect(c, sx - 2, top, 5, 1, col); rect(c, sx, top, 1, 1, PAL.white);
+    }
+    if (s.ascend > 0) {
+      for (let a = 0; a < 10; a++) {
+        const ang = time * 1.5 + (a / 10) * Math.PI * 2;
+        rect(c, s.x + Math.cos(ang) * 12, (s.underground ? s.y : GY - 14) + Math.sin(ang) * 8, 1, 1, col);
+      }
+    }
+  }
   // tier pips (gold for base levels, crimson for Star Blood specialization levels)
   const py = s.underground ? s.y + 12 : GY + 3;
   for (let i = 0; i <= s.tier; i++) rect(c, s.x - s.tier * 1.5 + i * 3 - 1, py, 2, 1, i >= 2 ? PAL.blood2 : PAL.gold3);
@@ -601,23 +633,26 @@ function mound(c: Ctx, s: Structure, time: number, flash: boolean) {
   if (s.spec === 'A') line(c, x, y - h, x + 4, y - h - 6, '#d8d0c0');
 }
 
-/** A Golden Termite warrior. */
+/** A Golden Termite warrior: bright gold, big head with white mandibles, six legs. */
 export function drawSoldier(c: Ctx, u: import('../sim/types').Soldier) {
   if (u.hp <= 0) return;
   const x = Math.round(u.x), y = GY;
+  const d = u.dir;
   const step = Math.round(Math.sin(u.walk * 14));
-  const body = u.hitFlash > 0 ? '#fff' : PAL.gold2;
-  rect(c, x - 3, y - 4, 6, 3, body);
-  rect(c, x - 3, y - 4, 6, 1, PAL.gold4);
-  rect(c, x + u.dir * 3, y - 5, 2, 2, PAL.gold1);
+  const flash = u.hitFlash > 0;
+  // legs
+  for (let i = -1; i <= 1; i++) rect(c, x + i * 2 + (i === 0 ? step : -step), y - 1, 1, 1, PAL.gold0);
+  // abdomen, thorax, head
+  rect(c, x - 4 * d - 1, y - 5, 3, 3, flash ? '#fff' : PAL.gold1);
+  rect(c, x - 1, y - 5, 3, 3, flash ? '#fff' : PAL.gold3);
+  rect(c, x + 2 * d - (d < 0 ? 2 : 0), y - 6, 3, 4, flash ? '#fff' : PAL.gold4);
+  rect(c, x - 1, y - 5, 2, 1, PAL.gold5);
   // mandibles
-  rect(c, x + u.dir * 5, y - 5, 1, 1, '#f0e0c0');
-  rect(c, x + u.dir * 5, y - 3, 1, 1, '#f0e0c0');
-  rect(c, x - 2 + step, y - 1, 1, 1, PAL.gold0);
-  rect(c, x + 1 - step, y - 1, 1, 1, PAL.gold0);
+  rect(c, x + 5 * d, y - 6, 1, 1, PAL.white);
+  rect(c, x + 5 * d, y - 3, 1, 1, PAL.white);
   if (u.hp < u.maxHp) {
-    rect(c, x - 3, y - 8, 6, 1, '#3a1420');
-    rect(c, x - 3, y - 8, Math.max(1, Math.round((6 * u.hp) / u.maxHp)), 1, '#9cff8a');
+    rect(c, x - 3, y - 9, 7, 1, '#3a1420');
+    rect(c, x - 3, y - 9, Math.max(1, Math.round((7 * u.hp) / u.maxHp)), 1, '#9cff8a');
   }
 }
 
@@ -648,13 +683,16 @@ export function drawWorker(c: Ctx, w: import('../sim/types').Worker, time: numbe
   }
   const y = GY;
   const inch = Math.abs(Math.sin(w.walk * 8));
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 5; i++) {
     const sx = x - i * 2 * w.dir;
-    const hump = i === 1 || i === 2 ? Math.round(inch * 2) : 0;
-    rect(c, sx, y - 3 - hump, 2, 2, i === 0 ? '#9be35a' : i % 2 ? '#5aa63a' : '#7ac04a');
-    rect(c, sx, y - 3 - hump, 1, 1, PAL.gold4);
+    const hump = i === 1 || i === 2 || i === 3 ? Math.round(inch * (i === 2 ? 3 : 2)) : 0;
+    rect(c, sx, y - 3 - hump, 2, 2, i === 0 ? '#b8f070' : i % 2 ? '#6ac040' : '#8ad850');
+    if (i % 2 === 1) rect(c, sx, y - 2 - hump, 1, 1, '#ff9a3c');
   }
+  // head with antennae
   rect(c, x + w.dir * 2, y - 3, 1, 1, '#1a1a10');
+  rect(c, x + w.dir * 1, y - 5, 1, 1, '#b8f070');
+  rect(c, x + w.dir * 2, y - 6, 1, 1, PAL.gold5);
   if (w.carry.n > 0) {
     for (let i = 0; i < Math.min(4, w.carry.n); i++) rect(c, x - w.dir * (2 + i * 2), y - 7 - Math.round(inch) - (i % 2), 2, 2, w.carry.star > 0 && i === 0 ? PAL.blood2 : PAL.gold3);
     if (Math.sin(time * 9) > 0.6) rect(c, x - w.dir * 2 + 1, y - 8, 1, 1, PAL.white);
@@ -761,7 +799,7 @@ export function drawDrop(c: Ctx, d: Drop, time: number) {
   }
 }
 
-export function drawProjectile(c: Ctx, p: Projectile) {
+export function drawProjectile(c: Ctx, p: Projectile, tint?: string) {
   const sp = Math.hypot(p.vx, p.vy) || 1;
   const ux = p.vx / sp, uy = p.vy / sp;
   switch (p.kind) {
@@ -773,8 +811,8 @@ export function drawProjectile(c: Ctx, p: Projectile) {
       rect(c, p.x, p.y, 1, 1, PAL.white);
       break;
     case 'spear':
-      line(c, p.x - ux * 14, p.y, p.x - ux * 4, p.y, PAL.gold3, 1);
-      line(c, p.x - ux * 6, p.y, p.x + ux * 2, p.y, PAL.gold5, 2);
+      line(c, p.x - ux * 14, p.y, p.x - ux * 4, p.y, tint ?? PAL.gold3, 1);
+      line(c, p.x - ux * 6, p.y, p.x + ux * 2, p.y, tint ?? PAL.gold5, 2);
       rect(c, p.x + ux * 3, p.y, 1, 1, PAL.white);
       break;
     case 'acid':
@@ -788,7 +826,7 @@ export function drawProjectile(c: Ctx, p: Projectile) {
     case 'meteor': {
       const big = (p.radius ?? 34) > 50 ? 2.2 : 1;
       line(c, p.x - ux * 18 * big, p.y - uy * 18 * big, p.x, p.y, '#ff7a4a', Math.round(2 * big));
-      line(c, p.x - ux * 8 * big, p.y - uy * 8 * big, p.x, p.y, PAL.gold4, Math.round(2 * big));
+      line(c, p.x - ux * 8 * big, p.y - uy * 8 * big, p.x, p.y, tint ?? PAL.gold4, Math.round(2 * big));
       disc(c, p.x, p.y, 2.5 * big, PAL.white);
       break;
     }

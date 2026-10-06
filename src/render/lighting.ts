@@ -80,6 +80,9 @@ export class Lighting {
       const f = Math.min(1, t.life / 0.6) * Math.min(1, (t.maxLife - t.life) / 0.15 + 0.2);
       out.push({ x: t.x, y: GY - 12, rx: t.radius * f, ry: t.radius * 0.8 * f, k: 1, glow: 1.2, layer: -1 });
     }
+    // our little creatures carry their own glow so they read in the dark
+    for (const u of s.soldiers) if (u.hp > 0) out.push({ x: u.x, y: GY - 4, rx: 13, ry: 11, k: 0.55, glow: 0.45, layer: -1 });
+    for (const w of s.workers) if (w.descend <= 0) out.push({ x: w.x, y: GY - 3, rx: 10, ry: 9, k: 0.5, glow: 0.4, layer: -1 });
     const k = s.keeper;
     if (k.alive) out.push({ x: k.x, y: GY - 10, rx: 20, ry: 18, k: 0.7, glow: 0.35, layer: -1 });
     for (const p of s.projectiles) {

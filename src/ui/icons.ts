@@ -171,6 +171,11 @@ const PAINTERS: Record<string, Painter> = {
     for (const [x, y] of [[4, 5], [11, 4], [8, 9], [3, 11], [12, 11]]) { rect(c, x, y, 2, 2, PAL.gold3); rect(c, x - 1, y - 1, 1, 1, PAL.gold5); rect(c, x + 2, y - 1, 1, 1, PAL.gold5); }
     rect(c, 7, 13, 3, 2, '#9cff8a');
   },
+  merge: (c) => {
+    disc(c, 4, 11, 2, PAL.gold2); disc(c, 12, 11, 2, PAL.gold2); disc(c, 8, 5, 3, PAL.gold4);
+    line(c, 5, 10, 7, 7, PAL.gold3); line(c, 11, 10, 9, 7, PAL.gold3);
+    rect(c, 8, 4, 1, 1, PAL.white);
+  },
   lock: (c) => {
     rect(c, 4, 7, 8, 7, '#4a4560');
     rect(c, 5, 3, 1, 5, '#6a6585'); rect(c, 10, 3, 1, 5, '#6a6585'); rect(c, 5, 3, 6, 1, '#6a6585');

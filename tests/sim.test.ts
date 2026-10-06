@@ -82,6 +82,46 @@ describe('economy', () => {
     expect(maxCarry).toBeGreaterThan(1);
   });
 
+  it('three same nests merge into one stronger nest, freeing two slots', () => {
+    const g = new Game();
+    g.state.amber = 9999;
+    g.feed(TREE_STAGES[0].growCost); g.choose(0);
+    for (const id of ['L0', 'R0', 'L1']) g.build(id, 'hive');
+    const st = g.structureAt('L0')!;
+    const dmg0 = g.nestStats(st).damage;
+    expect(g.mergeNests(st.id)).toBe(true);
+    expect(g.state.structures.filter((x) => x.family === 'hive').length).toBe(1);
+    expect(st.merge).toBe(1);
+    expect(g.nestStats(st).damage).toBeGreaterThan(dmg0 * 2);
+  });
+
+  it('mastered nests ascend endlessly with exponential prices', () => {
+    const g = new Game();
+    g.state.amber = 1e9; g.state.star = 999;
+    g.build('L0', 'hive');
+    const st = g.structureAt('L0')!;
+    g.upgrade(st.id); g.specialize(st.id, 'A'); g.upgrade(st.id);
+    const c0 = g.ascendCost(st);
+    for (let i = 0; i < 12; i++) expect(g.ascendNest(st.id)).toBe(true);
+    expect(g.ascendCost(st)).toBeGreaterThan(c0 * 50);
+  });
+
+  it('the piercing beam is channelled: the Ascended stands and damage ticks over time', () => {
+    const g = new Game();
+    const k = g.state.keeper;
+    k.runeRank.spear = 2; k.forms.spear = 'B'; k.light = 999; k.dir = 1;
+    const e = g.spawnEnemy('stalker', k.x + 100, -1);
+    e.speedMul = 0;
+    g.cast('spear', k.x + 100);
+    g.setMove(1);
+    const x0 = k.x;
+    g.step();
+    const hp1 = e.hp;
+    for (let i = 0; i < 60; i++) g.step();
+    expect(k.x).toBe(x0);
+    expect(e.hp).toBeLessThan(hp1);
+  });
+
   it('shadows drop Amber, worms also drop Star Blood', () => {
     const g = new Game();
     const e = g.spawnEnemy('stalker', 100, 1);

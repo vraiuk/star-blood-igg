@@ -260,7 +260,7 @@ export const NESTS: Record<Family, FamilyDef> = {
   },
   caterpillar: {
     name: 'Кокон гусениц', creature: 'гусеницы-сборщицы',
-    desc: 'В кроне Древа: гусеницы спускаются и собирают добычу за краем Круга', underground: false, blocks: false,
+    desc: 'В кроне Древа: гусеницы собирают добычу по всему краю, во тьме — медленнее', underground: false, blocks: false,
     levels: [
       { hp: 120, damage: 0, rate: 0, range: 240, workers: 2, speed: 50, carry: 3 },
       { hp: 170, damage: 0, rate: 0, range: 300, workers: 3, speed: 58, carry: 4 },
@@ -286,6 +286,23 @@ export const NESTS: Record<Family, FamilyDef> = {
     },
   },
 };
+
+/**
+ * «Слияние» (a Property from the books): three nests of the same family and the same merge
+ * rank fuse into one — the target keeps its level and specialization, gains a merge star.
+ * «Возвышение»: endless levels after mastery, exponentially priced; glow colour changes
+ * every few levels.
+ */
+export const MERGE = { power: 1.1, hp: 1.0, range: 0.06 } as const;
+export const ASCEND = {
+  power: 0.12,
+  cost: (n: number) => Math.round(220 * Math.pow(1.4, n)),
+  /** levels per glow colour band */
+  band: 5,
+} as const;
+/** Glow colours by band (merge stars and ascension tiers share it). */
+export const GLOW_BANDS = ['#ffc847', '#fff6cf', '#8fd0ff', '#b48cff', '#ff5a6a', '#7af0a0'] as const;
+export const glowBand = (n: number) => GLOW_BANDS[Math.min(GLOW_BANDS.length - 1, n)];
 
 export const SELL_REFUND = 0.6;
 
