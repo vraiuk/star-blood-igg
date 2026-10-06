@@ -21,6 +21,8 @@ import type { Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Project
 
 /** Big underground Imago that toughen faster in endless nights. */
 const HEAVY = new Set<EnemyKind>(['worm', 'guard', 'tyrant']);
+/** «Пожирание»: share of max hp the Devourer regains by eating a nest */
+const DEVOUR_HEAL = 0.08;
 /** Underground creatures that dig Лазы for the others. */
 /** Dragonflies are hunters of the air. */
 const DRAGONFLY_VS_AIR = 1.6;
@@ -35,7 +37,7 @@ const REACH_FAMILIES = new Set<Family>(['dragonfly', 'beetle', 'termite', 'mende
 /** Run statistics: who owns a projectile's damage. */
 const PROJ_SRC: Record<string, string> = { arrow: 'hive', spark: 'tree', spear: 'spear', meteor: 'starfall', wave: 'hammer', acid: 'other', beam: 'hive' };
 /** Big and giant worms: termites can't hold them, dragonflies barely sting through the hide. */
-const GIANTS = new Set<EnemyKind>(['worm', 'guard', 'reaper', 'tyrant', 'mother', 'executioner']);
+const GIANTS = new Set<EnemyKind>(['worm', 'guard', 'reaper', 'tyrant', 'mother', 'executioner', 'devourer']);
 const GIANT = { small: 0.35, trample: 1.5 } as const;
 const DIGGERS = new Set<EnemyKind>(['worm', 'guard', 'tunneler']);
 
@@ -2049,6 +2051,10 @@ export class Game {
     const ns = this.nestStats(st);
     if (attacker && ns.thorns) this.damageEnemy(attacker, ns.thorns);
     if (st.hp <= 0) {
+      if (attacker?.kind === 'devourer' && !attacker.dead) {
+        attacker.hp = Math.min(attacker.maxHp, attacker.hp + attacker.maxHp * DEVOUR_HEAL);
+        this.emit({ type: 'devour', x: st.x });
+      }
       s.structures = s.structures.filter((x) => x !== st);
       if (st.family === 'beetle' && this.mods.beetleRevive) this.graveyard.push({ slotId: st.slotId, tier: st.tier, spec: st.spec });
       this.emit({ type: 'structureLost', family: st.family, x: st.x, y: st.y, underground: st.underground });

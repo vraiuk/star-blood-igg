@@ -408,7 +408,7 @@ describe('balance corridor (heuristic bots)', () => {
     // rhythm: a breather after each boss and a spike before it
     const t = (n: number) => generateNight(n).title;
     expect(t(10)).toContain('Тихая');
-    expect(t(14)).toMatch(/Охота|Палач/);
+    expect(t(14)).toMatch(/Охота|Палач|Пожирател/);
   });
   it('pure tree greed without defense loses', async () => {
     const rs = [];

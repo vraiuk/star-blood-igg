@@ -1156,6 +1156,7 @@ export class Hud {
   /** Context tips (the Observer's tutorial) for the first minutes. */
   private updateTips(g: Game) {
     const s = g.state;
+    if (s.enemies.some((e) => e.kind === 'devourer')) this.once('devourer', 'Тень Пожирателя! Разрушив гнездо, она пожирает его и лечится, из пасти сыплются Копатели. Сбей панцирь Молотом и Звездопадом и не подпускай к гнёздам.');
     if (s.enemies.some((e) => e.kind === 'tyrant')) this.once('tyrant', 'Отродье Тирана идёт на прорыв! Сперва сбей шипастый панцирь — Молот бьёт по нему втрое, Звездопад вдвое; мелкие укусы гнёзд его лишь царапают.');
     const done = (k: string) => this.tipsDone.has(k);
     const mark = (k: string) => this.tipsDone.add(k);

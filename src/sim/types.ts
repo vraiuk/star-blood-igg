@@ -352,6 +352,7 @@ export type GameEvent =
   | { type: 'tunnelOpen'; x: number }
   | { type: 'slam'; x: number }
   | { type: 'plateBreak'; x: number; y: number }
+  | { type: 'devour'; x: number }
   | { type: 'cleave'; x: number; r: number }
   | { type: 'tunnelSealed'; x: number; by: 'keeper' | 'hammer' | 'worn' }
   | { type: 'blast'; x: number; y: number }

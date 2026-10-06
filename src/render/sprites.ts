@@ -21,6 +21,13 @@ export function drawEnemy(c: Ctx, e: Enemy, time: number) {
   switch (e.kind) {
     case 'moth': return moth(c, e, t, flash, body, rim);
     case 'tyrant': return tyrant(c, e, t, flash, moving, time);
+    case 'devourer': {
+      // drawn 1.6× larger: the greatest of the Worms
+      c.save(); c.translate(e.x, GY); c.scale(DEVOURER_SCALE, DEVOURER_SCALE); c.translate(-e.x, -GY);
+      devourer(c, e, t, flash, moving, time);
+      c.restore();
+      return;
+    }
     case 'bomber': return bomber(c, e, t, flash, body, rim, time);
     case 'hound': return hound(c, e, t, moving, body, rim);
     case 'stalker': return stalker(c, e, t, moving, body, rim);
@@ -93,6 +100,51 @@ function tyrant(c: Ctx, e: Enemy, t: number, flash: boolean, moving: boolean, ti
   const bite = e.attacking ? Math.abs(Math.sin(t * 8)) * 4 : 1;
   line(c, hx + d * 6, hy + 3, hx + d * 13, hy + 2 + bite, '#d8d0e8', 2);
   line(c, hx + d * 6, hy + 5, hx + d * 12, hy + 8 - bite, '#d8d0e8', 2);
+}
+
+/**
+ * Тень Пожирателя: «громаднейший из Червей, однажды проглотивший летающую цитадель
+ * Наблюдателя». A towering arch of segments crawling on its belly, spiked carapace on the
+ * back, and a round maw ringed with teeth that opens wide when it bites.
+ */
+const DEVOURER_SCALE = 1.6;
+function devourer(c: Ctx, e: Enemy, t: number, flash: boolean, moving: boolean, time: number) {
+  const d = e.dir;
+  const x = Math.round(e.x), y = GY;
+  const crawl = moving ? t * 2.2 : 0;
+  const segs = 11;
+  const plated = e.maxPlates > 0 ? Math.ceil((segs * e.plates) / e.maxPlates) : 0;
+  // body: from the tail (behind, low) rising to the head (ahead, high)
+  for (let i = segs - 1; i >= 0; i--) {
+    const k = i / (segs - 1);
+    const sx = x - d * (i * 7 - 26);
+    const sy = y - 10 - Math.max(0, 1 - k * 1.6) * 44 + Math.sin(crawl + i * 0.6) * 2;
+    const r = 13 - k * 4;
+    disc(c, sx, sy, r, flash ? '#fff' : '#1c0f1c');
+    disc(c, sx, sy + 2, r - 2, flash ? '#fff' : '#3a1a30');
+    rect(c, sx - 2, sy + r - 3, 4, 2, '#5a2a40');
+    if (segs - 1 - i < plated) {
+      ellipse(c, sx, sy - r * 0.45, r, r * 0.5, flash ? '#fff' : '#34344a');
+      rect(c, sx - r + 1, sy - r * 0.45, r * 2 - 2, 1, '#7a7a96');
+      line(c, sx, sy - r * 0.8, sx - d * 2, sy - r - 7, '#b8b8d4', 2);
+      rect(c, sx - r + 2, sy - r * 0.7, 1, 3, '#8a8aa6');
+      rect(c, sx + r - 3, sy - r * 0.7, 1, 3, '#8a8aa6');
+    } else {
+      const p = Math.sin(time * 5 + i) > 0;
+      ellipse(c, sx, sy - r * 0.4, r * 0.75, r * 0.4, p ? '#c23a5a' : '#8a2240');
+    }
+  }
+  // the maw
+  const hx = x + d * 30, hy = y - 56 + Math.sin(crawl) * 2;
+  const open = e.attacking ? 7 + Math.abs(Math.sin(t * 4)) * 6 : 6;
+  disc(c, hx, hy, 17, flash ? '#fff' : '#1c0f1c');
+  disc(c, hx + d * 4, hy, open + 3, '#5a1020');
+  disc(c, hx + d * 5, hy, open, '#12040a');
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2;
+    const tx = hx + d * 5 + Math.cos(a) * (open + 2), ty = hy + Math.sin(a) * (open + 2);
+    line(c, tx, ty, hx + d * 5 + Math.cos(a) * (open - 2), hy + Math.sin(a) * (open - 2), '#e8e0d0');
+  }
 }
 
 /** Тенекрыл: a moth-like shadow flyer with ragged, beating wings. */
@@ -548,6 +600,14 @@ export function drawEnemyEyes(c: Ctx, e: Enemy, time: number) {
     case 'tyrant':
       for (let i = 0; i < 3; i++) eye(x + (24 + i) * d, y - 32 + (i % 2), '#ff3a3a');
       break;
+    case 'devourer': {
+      const S = DEVOURER_SCALE, hy = GY - 56 * S;
+      for (let i = 0; i < 4; i++) {
+        eye(x + (20 + i * 2) * S * d, hy - 12 * S + (i % 2), '#ff2a2a'); eye(x + (21 + i * 2) * S * d, hy - 12 * S + 1, '#ff2a2a');
+        eye(x + (20 + i * 2) * S * d, hy + 12 * S - (i % 2), '#ff2a2a');
+      }
+      break;
+    }
     case 'bomber':
       eye(e.x + 3 * d, e.y - 10, '#d8ffb0'); eye(e.x + 4 * d, e.y - 9, '#d8ffb0');
       break;
@@ -586,7 +646,7 @@ export function drawEnemyHp(c: Ctx, e: Enemy) {
   if ((e.hp >= e.maxHp && !cracked) || !e.lit) return;
   const def = ENEMIES[e.kind];
   const w = def.boss ? 60 : e.kind === 'tyrant' ? 40 : Math.max(8, Math.min(30, def.radius * 2));
-  const y = e.layer !== 'ground' || def.underground ? e.y - (def.air ? def.height + 8 : 12) : e.kind === 'mother' ? GY - 66 : e.kind === 'executioner' ? GY - 62 : e.kind === 'tyrant' ? GY - 50 : GY - def.height - 6;
+  const y = e.layer !== 'ground' || def.underground ? e.y - (def.air ? def.height + 8 : 12) : e.kind === 'mother' ? GY - 66 : e.kind === 'executioner' ? GY - 62 : e.kind === 'tyrant' ? GY - 50 : e.kind === 'devourer' ? GY - 122 : GY - def.height - 6;
   rect(c, e.x - w / 2, y, w, 2, '#1a0b14');
   rect(c, e.x - w / 2, y, Math.max(1, (w * e.hp) / e.maxHp), 1, def.worm ? '#ff9a3c' : '#c58cff');
   // the Tyrant's carapace: a steel bar above the health

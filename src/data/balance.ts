@@ -24,7 +24,7 @@ export const WORLD = {
 export type EnemyKind =
   | 'hound' | 'stalker' | 'spitter'
   | 'forager' | 'worm' | 'guard' | 'larva' | 'reaper' | 'jumper' | 'tunneler' | 'tunnelerUp'
-  | 'moth' | 'bomber' | 'tyrant'
+  | 'moth' | 'bomber' | 'tyrant' | 'devourer'
   | 'mother' | 'executioner';
 export type AbilityId = 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm' | 'timestop';
 
@@ -108,6 +108,10 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     name: 'Отродье Тирана', hp: 2200, plates: 2200, armor: 12, speed: 9, damage: 70, attackRate: 1.6, structureMult: 2.5, amber: 60, star: 8, devRune: 0.08, charge: 25,
     worm: true, smashesStructures: true, ccMult: 0.2, radius: 20, height: 30, cleave: 30, fog: 50,
   }),
+  devourer: E({
+    name: 'Тень Пожирателя', hp: 14000, plates: 10000, armor: 16, speed: 5, damage: 180, attackRate: 2, structureMult: 4, amber: 320, star: 80, devRune: 1, charge: 80,
+    worm: true, smashesStructures: true, ccMult: 0.1, radius: 40, height: 100, cleave: 48, fog: 90, boss: true,
+  }),
   moth: E({
     name: 'Тенекрыл', hp: 75, speed: 44, damage: 9, attackRate: 0.8, amber: 6, star: 0.2, charge: 3,
     air: true, altitude: 95, radius: 7, height: 10,
@@ -131,6 +135,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
 export const BROOD: Partial<Record<EnemyKind, { every: number; count: number; kind: EnemyKind }>> = {
   mother: { every: 6, count: 4, kind: 'larva' },
   executioner: { every: 9, count: 2, kind: 'forager' },
+  devourer: { every: 10, count: 2, kind: 'worm' },
 };
 
 /** Elite affixes (from night 6): readable modifiers with an aura and a glyph. */

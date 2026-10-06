@@ -227,7 +227,8 @@ export function generateNight(n: number): NightDef {
   let budget = ENDLESS.budget(n) * theme.budget * (pos === 4 ? 1.3 : 1);
   if (bossNight) {
     const extra = Math.floor((n + 1) / 20);
-    const kinds: EnemyKind[] = (n + 1) % 10 === 0 ? ['executioner', 'mother'] : ['mother'];
+    // every 15th night the Shadow of the Devourer rises: «громаднейший из Червей»
+    const kinds: EnemyKind[] = (n + 1) % 15 === 0 ? ['devourer', 'mother'] : (n + 1) % 10 === 0 ? ['executioner', 'mother'] : ['mother'];
     for (const k of kinds) groups.push(g(8, k, r() > 0.5 ? 'L' : 'R', 1 + extra, 12));
     budget *= 0.7;
   }
@@ -251,13 +252,14 @@ export function generateNight(n: number): NightDef {
     budget -= (THREAT[p.kind] ?? 2) * size * flanks;
     t += (themeId === 'calm' ? 4 : 2.5) + r() * 3;
   }
-  const bossName = (n + 1) % 10 === 0 ? 'Палач и Матерь' : 'Охота Матерей';
+  const bossName = (n + 1) % 15 === 0 ? 'Тень Пожирателя' : (n + 1) % 10 === 0 ? 'Палач и Матерь' : 'Охота Матерей';
   const label = bossNight ? bossName : theme.name;
   return {
     title: label ? `Ночь ${n + 1}: ${label}` : `Ночь ${n + 1}`,
     hpMul: ENDLESS.hp(n),
     hint: bossNight
-      ? ((n + 1) % 10 === 0 ? 'Имаго-Палач и Матерь идут вместе.' : 'Имаго-Матерь ведёт рой.')
+      ? ((n + 1) % 15 === 0 ? 'Идёт Тень Пожирателя — того, кто проглотил цитадель Наблюдателя. Сбей панцирь Молотом и Звездопадом, не давай ему жрать гнёзда.'
+        : (n + 1) % 10 === 0 ? 'Имаго-Палач и Матерь идут вместе.' : 'Имаго-Матерь ведёт рой.')
       : theme.hint ? `${theme.hint}${oneSide ? (flank === 'L' ? ' (слева)' : ' (справа)') : ''}` : LORE_HINTS[n % LORE_HINTS.length],
     groups,
   };
