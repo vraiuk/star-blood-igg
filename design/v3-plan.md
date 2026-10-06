@@ -169,3 +169,14 @@
   24 rushes in 29 nights; 17k Amber / 5k Star Blood unspent at night 27; star ranks felt weak.
 - Star rune ranks: +30% power each (was +15%), price ×1.3 per rank (was ×1.45).
 - Rush pays only for creatures already out (pending ones bring their own loot).
+
+## v0.5.x — улучшения рун только через окно ранга, Огранка
+- Every rank-up is a modal choice (no more picking Forms inside the Tablet):
+  Бронза → Грань · Серебро → Форма (runes without Forms: a 2nd tier-I facet) · Золото → Грань ·
+  Небо → Апофеоз + Грань · each Star rank → Огранка: +1 level to one of the rune's facets (max V).
+- Facets have levels; every facet's numbers grow per level (fx(id, base, step, off)).
+- All Properties/Facets work with every Form: the hammer wave/dome get pull, tremor stun,
+  deep (underground ×), sun refund, eclipse field and tunnel caving; the piercing beam gets
+  twin (backward light), sky (air), lance (gentler falloff), mark, flame, swift (cheaper hold),
+  rhythm/crescendo ticks and ricochet sparks.
+- Rune promotions/slots no longer show the keeper-rank message.

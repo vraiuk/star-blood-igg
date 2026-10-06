@@ -99,6 +99,25 @@ describe('revive', () => {
   });
 });
 
+describe('rune rank-up choices', () => {
+  it('every rank brings a choice: facet, form, facet, apotheosis facet, then facet grinding', () => {
+    const g = new Game();
+    while (g.choice) g.choose(0);
+    g.state.star = 99999;
+    const kinds: string[] = [];
+    for (let r = 1; r <= 6; r++) {
+      expect(g.promoteRune('spear')).toBe(true);
+      const c = g.choice as { kind: string } | null;
+      kinds.push(c?.kind ?? 'none');
+      g.choose(0);
+    }
+    expect(kinds).toEqual(['facet', 'form', 'facet', 'facet', 'facetUp', 'facetUp']);
+    expect(g.state.keeper.forms.spear).toBe('A');
+    const lvls = Object.values(g.state.keeper.facetLv);
+    expect(Math.max(...lvls)).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe('time stop', () => {
   it('freezes creatures and the night, then recovers over nights, not seconds', () => {
     const g = new Game();

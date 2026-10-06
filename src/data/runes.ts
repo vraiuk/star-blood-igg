@@ -204,6 +204,8 @@ export interface FacetDef {
   requires?: string;
 }
 export const FACET_RANKS = [1, 3];
+/** Огранка: a facet can be ground up to this level on Star ranks */
+export const FACET_MAX = 5;
 const F = (o: FacetDef) => o;
 export const FACETS: FacetDef[] = [
   // Копьё

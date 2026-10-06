@@ -2,7 +2,7 @@ import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, ECONOMY, KEEPER_RANKS, SLOTS, W
 import { MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   APOTHEOSIS_RANK, DEV_SLOTS, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
-  runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, FACETS, FACET_RANKS, type FormId, type KeeperRuneId,
+  runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, FACETS, FACET_MAX, FACET_RANKS, type FormId, type KeeperRuneId,
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
 import type { Game } from '../sim/game';
@@ -11,6 +11,8 @@ import type { GameEvent } from '../sim/types';
 import { icon } from './icons';
 import { QUESTS } from './quests';
 
+/** Roman numerals for facet levels */
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
 const AB_IDS: AbilityId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'timestop'];
 const RUNE_IDS: KeeperRuneId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'timestop', 'light'];
 
@@ -364,7 +366,15 @@ export class Hud {
         case 'rune': {
           const p = propertyById(e.id);
           const b = boonById(e.id);
-          if (e.id.startsWith('facet:')) {
+          if (e.id.startsWith('rank:')) {
+            const rid = e.id.slice(5) as KeeperRuneId;
+            this.say(`Руна «${KEEPER_RUNES[rid].name}» повышена до ранга «${runeRankName(g.state.keeper.runeRank[rid])}».`);
+          } else if (e.id.startsWith('slot:')) {
+            this.say(`В руне «${KEEPER_RUNES[e.id.slice(5) as KeeperRuneId].name}» открыт новый слот Свойства.`);
+          } else if (e.id.startsWith('facetUp:')) {
+            const f = facetById(e.id.slice(8));
+            this.say(`Огранка: Грань «${f?.name ?? ''}» стала сильнее — уровень ${ROMAN[g.facetLv(e.id.slice(8))]}.`);
+          } else if (e.id.startsWith('facet:')) {
             this.say(`Грань «${facetById(e.id.slice(6))?.name ?? ''}» повёрнута.`);
           } else if (e.id.startsWith('learn:')) {
             this.say(`Восходящий изучил руну «${ABILITIES[e.id.slice(6) as AbilityId].name}».`);
@@ -801,7 +811,7 @@ export class Hud {
         if (unlocked) {
           const cost = runeRankCost(rr + 1);
           html += `<div class="row left">${btn(`Повышение → ${runeRankName(rr + 1)} (<img class="icon" src="${icon('star')}"> ${cost})`, s.star >= cost, () => { g.promoteRune(rid); }, 'tiny')}
-            <span class="hint">${rr + 1 === FORM_RANK && hasForms ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && hasForms ? 'Апофеоз Формы' : FACET_RANKS.includes(rr + 1) ? 'откроет выбор Грани' : rr >= 4 ? 'звёздный ранг' : 'площадь ↑'} · сила ×${(runeRankPower(rr + 1) / runeRankPower(rr)).toFixed(2)} · ${rid === 'light' ? 'Свойства высших рангов' : `откат +${Math.round((runeRankCd(rr + 1) / runeRankCd(rr) - 1) * 100)}%`}${rid !== 'light' && rid !== 'starfall' ? ` · Свет +${Math.round((runeRankLight(rr + 1) / runeRankLight(rr) - 1) * 100)}%` : ''}</span></div>`;
+            <span class="hint">${rr + 1 === FORM_RANK && hasForms ? 'выбор Формы' : rr + 1 === APOTHEOSIS_RANK ? (hasForms ? 'Апофеоз + Грань' : 'выбор Грани') : rr + 1 < APOTHEOSIS_RANK ? 'выбор Грани' : 'Огранка Грани'} · сила ×${(runeRankPower(rr + 1) / runeRankPower(rr)).toFixed(2)} · ${rid === 'light' ? 'Свойства высших рангов' : `откат +${Math.round((runeRankCd(rr + 1) / runeRankCd(rr) - 1) * 100)}%`}${rid !== 'light' && rid !== 'starfall' ? ` · Свет +${Math.round((runeRankLight(rr + 1) / runeRankLight(rr) - 1) * 100)}%` : ''}</span></div>`;
         }
         if ((rid === 'spear' || rid === 'hammer' || rid === 'starfall') && unlocked) {
           const forms = RUNE_FORMS[rid];
@@ -809,20 +819,15 @@ export class Hud {
           if (cur) {
             html += `<div class="form on"><b>Форма: ${forms[cur].name}</b><small>${forms[cur].desc}${rr >= APOTHEOSIS_RANK ? `<br><i>${forms[cur].apo}</i>` : ''}</small></div>`;
           } else {
-            html += `<div class="forms ${rr >= FORM_RANK ? '' : 'locked'}">`;
-            for (const f of ['A', 'B'] as FormId[]) {
-              actions.push(() => { g.chooseForm(rid, f); });
-              html += `<div class="form ${rr >= FORM_RANK ? 'pick' : ''}" ${rr >= FORM_RANK ? `data-i="${actions.length - 1}"` : ''}><b>${forms[f].name}</b><small>${forms[f].desc}</small></div>`;
-            }
-            html += `</div>`;
-            if (rr < FORM_RANK) html += `<div class="sub">Форма выбирается на ранге «Серебро»</div>`;
+            // the Form is chosen in the rank-up window at «Серебро» (shown here for reference)
+            html += `<div class="sub">Форма на ранге «${runeRankName(FORM_RANK)}»: <b>${forms.A.name}</b> или <b>${forms.B.name}</b></div>`;
           }
         }
         if (unlocked) {
           const mine = k.facets.map((id) => facetById(id)).filter((f) => f && f.rune === rid);
           const next = FACET_RANKS.find((r) => r > rr);
           const opts = next !== undefined ? FACETS.filter((f) => f.rune === rid && f.rank === next) : [];
-          html += `<div class="sub">Грани: ${mine.length ? mine.map((f) => `<b title="${f!.desc}">${f!.name}</b>`).join(' · ') : '—'}${next !== undefined ? ` · на «${runeRankName(next)}»: ${opts.map((f) => {
+          html += `<div class="sub">Грани: ${mine.length ? mine.map((f) => `<b title="${f!.desc}">${f!.name}${g.facetLv(f!.id) > 1 ? ` ${ROMAN[g.facetLv(f!.id)]}` : ''}</b>`).join(' · ') : '—'}${next !== undefined ? ` · на «${runeRankName(next)}»: ${opts.map((f) => {
             const on = !f.requires || k.props[rid].includes(f.requires);
             return `<span title="${f.desc}" style="${on ? '' : 'opacity:.45'}">${f.name}${f.requires ? ` (резонанс: ${propertyById(f.requires)?.name})` : ''}</span>`;
           }).join(', ')}` : ''}</div>`;
@@ -915,11 +920,34 @@ export class Hud {
             <div class="nm">${p ? p.name : b!.name}</div><div class="ds">${p ? p.desc : b!.desc}</div><div class="hk">[${i + 1}]</div></div>`;
         }).join('')}</div>
         <div class="row"><button class="btn reroll" ${g.state.star >= g.rerollCost() ? '' : 'disabled'}>Перебросить <img class="icon" src="${icon('star')}"> ${g.rerollCost()} [R]</button></div></div>`;
+    } else if (c.kind === 'form') {
+      const rune = KEEPER_RUNES[c.rune];
+      const forms = RUNE_FORMS[c.rune as 'spear' | 'hammer' | 'starfall'];
+      html = `<div class="tablet big"><div class="who">Скрижаль · Форма руны</div>
+        <h3>«${rune.name}» достигла ранга «${runeRankName(c.rank)}»</h3>
+        <div class="sub">Руна принимает Форму — она меняет сам способ применения. Все Свойства и Грани руны работают с любой Формой. На ранге «${runeRankName(APOTHEOSIS_RANK)}» Форма достигнет Апофеоза.</div>
+        <div class="cards two">${(['A', 'B'] as FormId[]).map((f, i) => `<div class="rcard" data-i="${i}" style="--c:${runeColor(c.rank)}">
+          <div class="rank">Форма</div><img src="${icon(rune.icon)}"><div class="nm">${forms[f].name}</div><div class="ds">${forms[f].desc}<br><i style="opacity:.75">${forms[f].apo}</i></div><div class="hk">[${i + 1}]</div></div>`).join('')}</div></div>`;
+    } else if (c.kind === 'facetUp') {
+      const rune = KEEPER_RUNES[c.rune];
+      html = `<div class="tablet big"><div class="who">Скрижаль · Огранка</div>
+        <h3>«${rune.name}» — звёздный ранг «${runeRankName(c.rank)}»</h3>
+        <div class="sub">Звёздная руна гранит одну из своих Граней: её эффект растёт (до уровня ${ROMAN[FACET_MAX]}).</div>
+        <div class="cards">${c.offers.map((id, i) => {
+          const f = facetById(id)!;
+          const lv = g.facetLv(id);
+          return `<div class="rcard" data-i="${i}" style="--c:#8fd0ff">
+            <div class="rank">${ROMAN[lv]} → ${ROMAN[lv + 1]}</div><img src="${icon(rune.icon)}">
+            <div class="nm">${f.name}</div><div class="ds">${f.desc}<br><i style="opacity:.75">Каждый уровень усиливает эффект</i></div><div class="hk">[${i + 1}]</div></div>`;
+        }).join('')}</div></div>`;
     } else if (c.kind === 'facet') {
       const rune = KEEPER_RUNES[c.rune];
+      const formRune = c.rune === 'spear' || c.rune === 'hammer' || c.rune === 'starfall';
+      const cur = formRune ? g.state.keeper.forms[c.rune as 'spear' | 'hammer' | 'starfall'] : null;
+      const apoNote = c.rank === APOTHEOSIS_RANK && cur ? `<b style="color:#8fd0ff">${RUNE_FORMS[c.rune as 'spear' | 'hammer' | 'starfall'][cur].apo}</b> ` : '';
       html = `<div class="tablet big"><div class="who">Скрижаль · Грань руны</div>
         <h3>«${rune.name}» достигла ранга «${runeRankName(c.rank)}»</h3>
-        <div class="sub">Руна поворачивается новой Гранью. Резонансные Грани открывают вставленные в руну Свойства.</div>
+        <div class="sub">${apoNote}Руна поворачивается новой Гранью — она работает с любой Формой. Резонансные Грани открывают вставленные в руну Свойства.</div>
         <div class="cards">${c.offers.map((id, i) => {
           const f = facetById(id)!;
           const req = f.requires ? propertyById(f.requires) : undefined;

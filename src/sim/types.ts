@@ -147,8 +147,9 @@ export interface Projectile {
   radius?: number;
   breakArmor?: number;
   burnTime?: number;
-  /** hits underground creatures too (wave) */
+  /** hits underground creatures too (wave), with this damage factor on them */
   deep?: boolean;
+  deepMult?: number;
   /** Сверхзвезда: huge, hits underground, leaves a crater and bursts into shards */
   giant?: boolean;
   /** a shard of a burst star (small, flies out of the crater) */
@@ -247,8 +248,9 @@ export interface Keeper {
   /** Перегрев: consecutive spear throws and the window to the next one */
   heat: number;
   heatT: number;
-  /** chosen rune facets (Грани) */
+  /** chosen rune facets (Грани) and their levels (Огранка on Star ranks) */
   facets: string[];
+  facetLv: Record<string, number>;
   /** runes the Keeper has learned (bought or gifted by the Observer) */
   learned: Record<import('../data/balance').AbilityId, boolean>;
   /** Ascended attributes 0..10 */
@@ -322,7 +324,9 @@ export type Phase = 'day' | 'night' | 'lost';
 export type Choice =
   | { kind: 'dawn'; offers: string[]; start?: boolean }
   | { kind: 'branch'; stage: number }
-  | { kind: 'facet'; rune: KeeperRuneId; rank: number; offers: string[] };
+  | { kind: 'facet'; rune: KeeperRuneId; rank: number; offers: string[] }
+  | { kind: 'form'; rune: KeeperRuneId; rank: number; offers: string[] }
+  | { kind: 'facetUp'; rune: KeeperRuneId; rank: number; offers: string[] };
 
 export type GameEvent =
   | { type: 'hit'; x: number; y: number; amount: number; crit: boolean }

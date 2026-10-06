@@ -11,13 +11,13 @@ import { ASCEND, BASE_TIERS, MAX_TIER, MERGE, NESTS, SELL_REFUND, type Family, t
 const CROWN_FAMILIES = new Set<Family>(['caterpillar', 'honeycomb', 'mender']);
 import { ENDLESS, nightDef, type NightDef } from '../data/nights';
 import {
-  APOTHEOSIS_RANK, BASE_SLOTS, BOONS, DEV_SLOTS, EXTRA_SLOT_PRICE, FACETS, FACET_RANKS, RUNE_RANKS, removeCost, FORM_RANK, MAX_SLOTS, PROPERTIES, runeRankArea, runeRankCd, runeRankCost, runeRankLight,
+  APOTHEOSIS_RANK, BASE_SLOTS, BOONS, DEV_SLOTS, EXTRA_SLOT_PRICE, FACETS, FACET_MAX, RUNE_RANKS, removeCost, FORM_RANK, MAX_SLOTS, PROPERTIES, runeRankArea, runeRankCd, runeRankCost, runeRankLight,
   runeRankPower, boonById, maxRankForNight, propertyById,
   type FormId, type KeeperRuneId, type PropertyDef,
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
 import { mulberry32 } from './rng';
-import type { Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Projectile, Soldier, Structure, Tunnel } from './types';
+import type { Choice, Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Projectile, Soldier, Structure, Tunnel } from './types';
 
 /** Big underground Imago that toughen faster in endless nights. */
 const HEAVY = new Set<EnemyKind>(['worm', 'guard', 'tyrant']);
@@ -114,7 +114,7 @@ export class Game {
         attrs: { might: 0, spirit: 0, body: 0 },
         runeRank: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0, timestop: 0, light: 0 },
         forms: { spear: null, hammer: null, starfall: null },
-        facets: [],
+        facets: [], facetLv: {},
         learned: { spear: true, hammer: false, starfall: false, radiance: false, swarm: false, timestop: false },
         castAnim: 9, hitFlash: 0, walkT: 0, rhythm: 0, rhythmT: 0, freeCast: 0, lastLightCd: 0,
       },
@@ -144,7 +144,7 @@ export class Game {
     return this.stageDef.radius * (1 + this.mods.lightRadius + flare);
   }
   keeperMaxHp() { return Math.round((KEEPER_RANKS[this.state.keeper.rank].hp + this.mods.keeperHp) * (1 + 0.1 * this.state.keeper.attrs.body)); }
-  maxLight() { return KEEPER_RANKS[this.state.keeper.rank].maxLight + this.mods.lightMax + 6 * this.state.keeper.attrs.spirit + (this.facet('lt-deep') ? 50 : 0); }
+  maxLight() { return KEEPER_RANKS[this.state.keeper.rank].maxLight + this.mods.lightMax + 6 * this.state.keeper.attrs.spirit + this.fx('lt-deep', 50, 30, 0); }
   /** Share of incoming damage the Ascended shrugs off. */
   keeperGuard() { return Math.min(0.8, KEEPER_RANKS[this.state.keeper.rank].guard + 0.04 * this.state.keeper.attrs.body); }
   /** Radiance dps burning creatures that touch the Ascended. */
@@ -275,7 +275,7 @@ export class Game {
       * KEEPER_RANKS[this.state.keeper.rank].power * (1 + 0.08 * this.state.keeper.attrs.might)
       * runeRankPower(this.state.keeper.runeRank[id])
       * (this.state.keeper.chordT > 0 ? 1 + CHORD.power * this.state.keeper.chord : 1)
-      * (this.facet('lt-over') && this.state.keeper.light >= this.maxLight() * 0.95 ? 1.25 : 1);
+      * (this.facet('lt-over') && this.state.keeper.light >= this.maxLight() * 0.95 ? this.fx('lt-over', 1.25, 0.1, 1) : 1);
   }
 
   /** Keeper Light regen factor by distance from the trunk: ×1.8 at the trunk → ×0.3 at the Circle edge. */
@@ -610,7 +610,24 @@ export class Game {
       const id = c.offers[index];
       if (!id) return false;
       s.keeper.facets.push(id);
+      s.keeper.facetLv[id] = 1;
       this.emit({ type: 'rune', id: `facet:${id}` });
+      s.choices.shift();
+      return true;
+    }
+    if (c.kind === 'form') {
+      const f = c.offers[index] as FormId | undefined;
+      if (!f || (c.rune !== 'spear' && c.rune !== 'hammer' && c.rune !== 'starfall')) return false;
+      s.keeper.forms[c.rune] = f;
+      this.emit({ type: 'rune', id: `form:${c.rune}:${f}` });
+      s.choices.shift();
+      return true;
+    }
+    if (c.kind === 'facetUp') {
+      const id = c.offers[index];
+      if (!id) return false;
+      s.keeper.facetLv[id] = Math.min(FACET_MAX, this.facetLv(id) + 1);
+      this.emit({ type: 'rune', id: `facetUp:${id}` });
       s.choices.shift();
       return true;
     }
@@ -675,7 +692,7 @@ export class Game {
     if (!this.canPay(p)) return this.deny('Нужно больше Янтаря и Звёздной Крови');
     this.pay(p);
     this.state.keeper.slots[rune]++;
-    this.emit({ type: 'rankUp', rank: this.state.keeper.rank });
+    this.emit({ type: 'rune', id: `slot:${rune}` });
     return true;
   }
 
@@ -686,7 +703,7 @@ export class Game {
     if (k.slots[rune] >= DEV_SLOTS) return this.deny('4-й слот уже открыт — 5-й и 6-й куются за Янтарь и Кровь');
     this.state.devRunes--;
     k.slots[rune]++;
-    this.emit({ type: 'rankUp', rank: k.rank });
+    this.emit({ type: 'rune', id: `slot:${rune}` });
     return true;
   }
 
@@ -767,7 +784,7 @@ export class Game {
       // the piercing beam costs twice the Light
       const cost = this.abilityCost(id) * (id === 'spear' && form === 'B' ? 2 : 1);
       // Эхо Света: every 5th cast costs nothing
-      const echoFree = this.facet('lt-echo') && (k.echo + 1) % 5 === 0;
+      const echoFree = this.facet('lt-echo') && (k.echo + 1) % Math.max(2, 6 - this.facetLv('lt-echo')) === 0;
       if (this.facet('lt-echo')) k.echo++;
       if (k.freeCast <= 0 && !echoFree) {
         if (k.light < cost) return this.deny('Мало Света');
@@ -807,7 +824,7 @@ export class Game {
     if ((id === 'radiance' && this.propCount('radiance', 'rd-cheap')) || (id === 'swarm' && this.propCount('swarm', 'sw-cheap'))) cd *= 0.8;
     if (id === 'spear' && k.forms.spear === 'B') cd = Math.max(cd, 6 * runeRankCd(k.runeRank[id]));
     if (id === 'spear' && k.forms.spear === 'A') cd = Math.max(cd, 1.1 * runeRankCd(k.runeRank[id]));
-    if (id === 'spear' && this.facet('sp-swift')) cd *= 0.65;
+    if (id === 'spear' && this.facet('sp-swift')) cd *= this.fx('sp-swift', 0.65, -0.07, 1);
     return cd * Math.max(0.4, 1 + this.mods.abilityCd);
   }
 
@@ -817,14 +834,14 @@ export class Game {
   private castRadiance() {
     const k = this.state.keeper;
     const def = ABILITIES.radiance;
-    k.radianceT = def.duration * this.runeArea('radiance') * (1 + 0.5 * this.propCount('radiance', 'rd-long')) * (this.facet('rd-sun') ? 1.5 : 1);
+    k.radianceT = def.duration * this.runeArea('radiance') * (1 + 0.5 * this.propCount('radiance', 'rd-long')) * this.fx('rd-sun', 1.5, 0.25, 1);
     if (this.facet('rd-burst')) {
       // Вспышка: the flare strikes every creature in the Circle and blinds it
       const s = this.state;
       for (const e of s.enemies) {
         if (e.dead || e.layer === 'under' || !e.lit) continue;
-        this.damageEnemy(e, 120 * this.abilityMult('radiance'));
-        this.stunEnemy(e, 1);
+        this.damageEnemy(e, this.fx('rd-burst', 120, 60, 0) * this.abilityMult('radiance'));
+        this.stunEnemy(e, this.fx('rd-burst', 1, 0.5, 0));
       }
     }
   }
@@ -834,7 +851,7 @@ export class Game {
   private castTimeStop() {
     const k = this.state.keeper;
     const def = ABILITIES.timestop;
-    k.timeStopMax = k.timeStopT = def.duration * this.runeArea('timestop') * (1 + 0.25 * this.propCount('timestop', 'ts-long')) + (this.facet('ts-eternal') ? 3 : 0);
+    k.timeStopMax = k.timeStopT = def.duration * this.runeArea('timestop') * (1 + 0.25 * this.propCount('timestop', 'ts-long')) + this.fx('ts-eternal', 3, 2, 0);
     k.timeStopNights = Math.max(1, def.nights - this.propCount('timestop', 'ts-quick'));
   }
   /** A giant walks over termite soldiers, crushing them as it goes. */
@@ -858,7 +875,7 @@ export class Game {
     const s = this.state;
     const k = s.keeper;
     const def = ABILITIES.swarm;
-    k.swarmT = def.duration * this.runeArea('swarm') * (this.propCount('swarm', 'sw-long') ? 1.5 : 1) * (this.facet('sw-long2') ? 1.6 : 1);
+    k.swarmT = def.duration * this.runeArea('swarm') * (this.propCount('swarm', 'sw-long') ? 1.5 : 1) * this.fx('sw-long2', 1.6, 0.3, 1);
     if (this.facet('sw-termite')) {
       for (const u of s.soldiers) if (Math.abs(u.x - k.x) <= this.swarmReach() * 1.2) { u.hp = u.maxHp; u.respawn = 0; }
     }
@@ -871,7 +888,7 @@ export class Game {
       this.healFx(st.id, st.x, st.underground ? st.y : WORLD.groundY - 20, 99);
     }
   }
-  swarmReach() { return ABILITIES.swarm.reach * this.runeArea('swarm') * (1 + 0.4 * this.propCount('swarm', 'sw-wide')); }
+  swarmReach() { return ABILITIES.swarm.reach * this.runeArea('swarm') * (1 + 0.4 * this.propCount('swarm', 'sw-wide')) * this.fx('sw-follow', 1, 0.1, 1); }
 
   /** Rune area multiplier (rank). */
   runeArea(rid: KeeperRuneId) { return runeRankArea(this.state.keeper.runeRank[rid]); }
@@ -885,8 +902,8 @@ export class Game {
     const dir = k.dir;
     void tx;
     const form = k.forms.spear;
-    const range = def.range * this.runeArea('spear') * (this.facet('sp-sky') ? 1.4 : 1);
-    const airMult = this.facet('sp-sky') ? 1.8 : 1;
+    const range = def.range * this.runeArea('spear') * this.fx('sp-sky', 1.4, 0.1, 1);
+    const airMult = this.fx('sp-sky', 1.8, 0.4, 1);
     const before = s.projectiles.length;
     if (form === 'B') {
       // Пронзающий луч: the Ascended stands still and holds a beam to the edge of the world
@@ -920,7 +937,7 @@ export class Game {
     // Обоюдное древко: the same throw flies backwards too
     if (this.facet('sp-twin')) {
       for (const p of s.projectiles.slice(before)) {
-        s.projectiles.push({ ...p, id: s.nextId++, x: k.x - (p.x - k.x), vx: -p.vx, damage: p.damage * 0.6, hit: [] });
+        s.projectiles.push({ ...p, id: s.nextId++, x: k.x - (p.x - k.x), vx: -p.vx, damage: p.damage * Math.min(1, this.fx('sp-twin', 0.6, 0.2, 0)), hit: [] });
       }
     }
   }
@@ -948,77 +965,90 @@ export class Game {
     const def = ABILITIES.hammer;
     const form = k.forms.hammer;
     const area = this.runeArea('hammer');
+    const apo = this.apotheosis('hammer');
+    const radius = def.radius * (1 + this.mods.hammerRadius) * area;
+    const stun = def.stun * this.fx('hm-tremor', 1.6, 0.3, 1);
+    const deep = this.fx('hm-deep', 2, 0.5, 1);
+    const pull = this.facet('hm-pull');
     if (!echo && this.facet('hm-after')) {
+      // Отголосок: the rune strikes again (any Form), stronger with each level
       const x = k.x;
+      const echoMult = this.fx('hm-after', 0.5, 0.25, 0);
       this.later(0.8, () => {
         const back = k.x;
         k.x = x;
-        this.castHammer(mult * 0.5, true);
+        this.castHammer(mult * echoMult, true);
         k.x = back;
         this.emit({ type: 'cast', ability: 'hammer', x, tx: x });
       });
     }
     if (this.facet('hm-shield')) {
+      const heal = this.fx('hm-shield', 0.3, 0.15, 0);
       for (const st of s.structures) {
-        if (st.crown || Math.abs(st.x - k.x) > def.radius * area * 1.3) continue;
-        st.hp = Math.min(st.maxHp, st.hp + st.maxHp * 0.3);
+        if (st.crown || Math.abs(st.x - k.x) > radius * 1.3) continue;
+        st.hp = Math.min(st.maxHp, st.hp + st.maxHp * heal);
         this.healFx(st.id, st.x, st.underground ? st.y : WORLD.groundY - 20, 99);
       }
     }
+    let hits = 0;
+    let reach = radius;
     if (form === 'A') {
-      // Сотрясение Тверди: a ground wave running both ways, hits underground too
-      const reach = (this.apotheosis('hammer') ? 520 : 260) * area;
+      // Сотрясение Тверди: a ground wave running both ways, hits underground too;
+      // Притяжение turns its push into a pull, Тектоника makes it stun
+      reach = (apo ? 520 : 260) * area;
       for (const dir of [-1, 1] as const) {
         s.projectiles.push({
           id: s.nextId++, kind: 'wave', x: k.x, y: WORLD.groundY, vx: dir * 330, vy: 0, damage: def.damage * 1.2 * mult,
-          targetId: 0, tx: 0, ty: 0, pierce: 999, hit: [], life: reach / 330, age: 0, knock: 90,
-          stun: this.apotheosis('hammer') ? 1.4 : 0, deep: true,
+          targetId: 0, tx: 0, ty: 0, pierce: 999, hit: [], life: reach / 330, age: 0, knock: pull ? -70 : 90,
+          stun: (apo ? 1.4 : 0) + (this.facet('hm-tremor') ? 0.6 * this.fx('hm-tremor', 1, 0.3, 1) : 0), deep: true, deepMult: deep,
         });
       }
-      s.tempLights.push({ x: k.x, radius: def.lightRadius * area, life: def.lightTime, maxLife: def.lightTime });
-      return;
-    }
-    if (form === 'B') {
-      // Купол Сияния: a lasting dome that burns, slows and hastes nests
-      const apo = this.apotheosis('hammer');
+      hits = s.enemies.filter((e) => !e.dead && e.layer !== 'air' && Math.abs(e.x - k.x) <= reach).length;
+    } else if (form === 'B') {
+      // Купол Сияния: a lasting dome that burns, slows and hastes nests (pulls inward with Притяжение)
       const life = apo ? 10 : 6;
+      reach = 100 * area;
       s.tempLights.push({
-        x: k.x, radius: 100 * area, life, maxLife: life, slow: 0.5, dps: 34 * mult, haste: 0.4, heal: apo ? 30 : 0,
+        x: k.x, radius: reach, life, maxLife: life, slow: 0.5, dps: 34 * mult, haste: 0.4, heal: apo ? 30 : 0,
       });
       for (const e of s.enemies) {
-        if (e.dead || e.layer !== 'ground' || Math.abs(e.x - k.x) > 100 * area) continue;
-        this.damageEnemy(e, def.damage * 0.5 * mult);
+        const under = e.layer === 'under';
+        if (e.dead || e.layer === 'air' || (under && deep <= 1) || Math.abs(e.x - k.x) > reach) continue;
+        hits++;
+        this.damageEnemy(e, def.damage * 0.5 * mult * (under ? deep : 1));
+        if (this.facet('hm-tremor')) this.stunEnemy(e, stun * 0.5);
+        if (pull && !under && e.kind !== 'mother') e.kick = -Math.sign(e.x - k.x) * Math.min(Math.abs(e.x - k.x) * 2, 120) * ENEMIES[e.kind].ccMult;
       }
-      return;
+    } else {
+      for (const e of s.enemies) {
+        const under = (e.layer === 'under');
+        if (e.dead || e.layer === 'air' || (under && !this.mods.hammerQuake && deep <= 1)) continue;
+        const d = e.x - k.x;
+        if (Math.abs(d) > radius) continue;
+        hits++;
+        if (under) { this.damageEnemy(e, def.damage * mult * deep); this.stunEnemy(e, stun); continue; }
+        e.armorBreak = Math.max(e.armorBreak, def.armorBreak);
+        this.damageEnemy(e, def.damage * mult);
+        this.stunEnemy(e, stun);
+        if (e.kind !== 'mother') e.kick = pull ? -Math.sign(d) * Math.min(Math.abs(d) * 2.5, def.knockback * 3) : Math.sign(d || -e.dir) * def.knockback * 3;
+      }
     }
-    let hits = 0;
-    const radius = def.radius * (1 + this.mods.hammerRadius) * area;
-    for (const e of s.enemies) {
-      const under = (e.layer === 'under');
-      if (e.dead || e.layer === 'air' || (under && !this.mods.hammerQuake)) continue;
-      const d = e.x - k.x;
-      if (Math.abs(d) > radius) continue;
-      hits++;
-      const stun = def.stun * (this.facet('hm-tremor') ? 1.6 : 1);
-      if (under) { this.damageEnemy(e, def.damage * mult * (this.facet('hm-deep') ? 2 : 1)); this.stunEnemy(e, stun); continue; }
-      e.armorBreak = Math.max(e.armorBreak, def.armorBreak);
-      this.damageEnemy(e, def.damage * mult);
-      this.stunEnemy(e, stun);
-      if (e.kind !== 'mother') e.kick = this.facet('hm-pull') ? -Math.sign(d) * Math.min(Math.abs(d) * 2.5, def.knockback * 3) : Math.sign(d || -e.dir) * def.knockback * 3;
-    }
-    const caveR = radius * (this.facet('hm-deep') ? 2 : 1);
+    // common to every Form: caving tunnels, the sun refund, the eclipse field and the light
+    const caveR = Math.max(radius, form === 'B' ? reach : 0) * this.fx('hm-deep', 2, 0.3, 1);
     for (const tn of [...s.tunnels]) {
       if (tn.open && (Math.abs(tn.headX - k.x) <= caveR || Math.abs(tn.entryX - k.x) <= caveR)) this.collapseTunnel(tn, 'hammer');
     }
     if (this.mods.hammerRefund) {
-      const sun = this.facet('hm-sun');
-      k.light = Math.min(this.maxLight(), k.light + Math.min(sun ? 60 : 30, hits * (sun ? 10 : 5)));
-      if (sun) k.hp = Math.min(this.keeperMaxHp(), k.hp + hits * 4);
+      const sun = this.facetLv('hm-sun');
+      const per = sun ? 10 + 5 * (sun - 1) : 5;
+      k.light = Math.min(this.maxLight(), k.light + Math.min(sun ? 60 + 20 * (sun - 1) : 30, hits * per));
+      if (sun) k.hp = Math.min(this.keeperMaxHp(), k.hp + hits * (4 + 2 * (sun - 1)));
     }
     s.tempLights.push({ x: k.x, radius: def.lightRadius * area, life: def.lightTime, maxLife: def.lightTime });
     if (this.mods.hammerEclipse) {
-      const night = this.facet('hm-night');
-      s.tempLights.push({ x: k.x, radius: radius, life: night ? 8 : 5, maxLife: night ? 8 : 5, slow: night ? 0.55 : 0.35 });
+      const night = this.facetLv('hm-night');
+      const life = night ? 8 + 2 * (night - 1) : 5;
+      s.tempLights.push({ x: k.x, radius: Math.max(radius, form === 'B' ? reach : 0), life, maxLife: life, slow: night ? Math.min(0.7, 0.55 + 0.05 * (night - 1)) : 0.35 });
     }
   }
 
@@ -1035,7 +1065,8 @@ export class Game {
     const s = this.state;
     if (this.facet('sf-hunt')) {
       // Звёзды-охотницы: each star bends toward the nearest creature
-      const t = s.enemies.filter((e) => !e.dead && e.layer !== 'under' && Math.abs(e.x - x) <= 80)
+      const seek = this.fx('sf-hunt', 80, 40, 0);
+      const t = s.enemies.filter((e) => !e.dead && e.layer !== 'under' && Math.abs(e.x - x) <= seek)
         .sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0];
       if (t) x = t.x + t.dir * ENEMIES[t.kind].speed * fall * 0.6;
     }
@@ -1058,7 +1089,7 @@ export class Game {
         stun: 2.5, breakArmor: apo ? 20 : 8, burnTime: apo ? 8 : def.burnTime, giant: true,
       });
       // extra stars (Ливень, Звёздная буря) escort the giant one and land around its crater
-      const escort = this.mods.starfallMeteors + (this.facet('sf-storm') ? 4 : 0);
+      const escort = this.mods.starfallMeteors + this.fx('sf-storm', 4, 2, 0);
       for (let i = 0; i < escort; i++) {
         const side = i % 2 ? 1 : -1;
         this.meteor(tx + side * (40 + (i >> 1) * 28), 1.3 + i * 0.08, def.damage * mult, def.impactRadius * area);
@@ -1067,7 +1098,7 @@ export class Game {
     }
     if (form === 'B') {
       // Звёздный ливень: stars rain over the whole Circle for a few seconds
-      const n = (apo ? 35 : 20) + (this.facet('sf-storm') ? 8 : 0) + this.mods.starfallMeteors * 2;
+      const n = (apo ? 35 : 20) + this.fx('sf-storm', 8, 4, 0) + this.mods.starfallMeteors * 2;
       const targets = s.enemies.filter((e) => !e.dead && !(e.layer === 'under') && e.lit);
       for (let i = 0; i < n; i++) {
         let x: number;
@@ -1077,7 +1108,7 @@ export class Game {
       }
       return;
     }
-    const n = def.meteors + this.mods.starfallMeteors + (this.facet('sf-storm') ? 4 : 0);
+    const n = def.meteors + this.mods.starfallMeteors + this.fx('sf-storm', 4, 2, 0);
     for (let i = 0; i < n; i++) {
       const x = tx + (i - (n - 1) / 2) * ((def.spread * area * 2) / (n - 1)) + (this.rand() - 0.5) * 10;
       this.meteor(x, 0.7 + i * 0.12, def.damage * mult, def.impactRadius * area);
@@ -1120,7 +1151,7 @@ export class Game {
    */
   fogLevel(e: Enemy): number {
     if (!e.fogged) return 0;
-    const thin = (this.mods.fogPierce ? 1 : 0) + (this.state.keeper.radianceT > 0 && this.facet('rd-fog') ? 1 : 0);
+    const thin = (this.mods.fogPierce ? 1 : 0) + (this.state.keeper.radianceT > 0 ? Math.min(2, this.facetLv('rd-fog')) : 0);
     return thin >= 2 ? 0 : thin === 1 ? 0.5 : 1;
   }
 
@@ -1136,11 +1167,37 @@ export class Game {
 
   /** Has the Keeper turned this facet? */
   facet(id: string) { return this.state.keeper.facets.includes(id); }
+  /** Facet level (0 = not turned, 1..FACET_MAX after Огранка on Star ranks). */
+  facetLv(id: string) { return this.facet(id) ? this.state.keeper.facetLv[id] ?? 1 : 0; }
+  /** A facet's value: `off` when not turned, else base + step per extra level. */
+  private fx(id: string, base: number, step: number, off: number) {
+    const l = this.facetLv(id);
+    return l ? base + step * (l - 1) : off;
+  }
 
   /** Facets a rune may turn at a rank: base ones plus resonances with installed Properties. */
   facetOffers(rid: KeeperRuneId, rank: number): string[] {
     const k = this.state.keeper;
-    return FACETS.filter((f) => f.rune === rid && f.rank === rank && (!f.requires || k.props[rid].includes(f.requires))).map((f) => f.id);
+    return FACETS.filter((f) => f.rune === rid && f.rank === rank && !k.facets.includes(f.id) && (!f.requires || k.props[rid].includes(f.requires))).map((f) => f.id);
+  }
+
+  /**
+   * What a rune offers on reaching a rank — every rank is a choice:
+   * Бронза: a facet · Серебро: the Form (or a second facet for runes without Forms) ·
+   * Золото: a facet · Небо: Apotheosis + one more facet · Star ranks: Огранка (a facet +1 level).
+   */
+  rankChoice(rid: KeeperRuneId, rank: number): Choice | null {
+    const k = this.state.keeper;
+    const formRune = rid === 'spear' || rid === 'hammer' || rid === 'starfall';
+    if (rank >= FORM_RANK && formRune && !k.forms[rid]) return { kind: 'form', rune: rid, rank, offers: ['A', 'B'] };
+    let offers: string[] = [];
+    if (rank === 1 || rank === 3) offers = this.facetOffers(rid, rank);
+    else if (rank === FORM_RANK) offers = this.facetOffers(rid, 1);
+    else if (rank === APOTHEOSIS_RANK) offers = [...this.facetOffers(rid, 3), ...this.facetOffers(rid, 1)].slice(0, 4);
+    if (offers.length) return { kind: 'facet', rune: rid, rank, offers };
+    // Огранка: grind one of this rune's facets one level higher
+    const up = k.facets.filter((id) => FACETS.find((f) => f.id === id)?.rune === rid && this.facetLv(id) < FACET_MAX);
+    return up.length ? { kind: 'facetUp', rune: rid, rank, offers: up } : null;
   }
 
   /** «Повышение»: raise a keeper rune's rank for Star Blood. */
@@ -1151,11 +1208,9 @@ export class Game {
     if (this.state.star < cost) return this.deny('Нужна Звёздная Кровь');
     this.state.star -= cost;
     k.runeRank[rid]++;
-    if (FACET_RANKS.includes(k.runeRank[rid])) {
-      const offers = this.facetOffers(rid, k.runeRank[rid]);
-      if (offers.length) this.state.choices.push({ kind: 'facet', rune: rid, rank: k.runeRank[rid], offers });
-    }
-    this.emit({ type: 'rankUp', rank: k.rank });
+    const c = this.rankChoice(rid, k.runeRank[rid]);
+    if (c) this.state.choices.push(c);
+    this.emit({ type: 'rune', id: `rank:${rid}` });
     return true;
   }
 
@@ -1188,10 +1243,11 @@ export class Game {
     s.keeper.coldT = Math.max(0, s.keeper.coldT - dt);
     if (s.keeper.timeStopT > 0) {
       s.keeper.timeStopT = Math.max(0, s.keeper.timeStopT - dt);
-      if (s.keeper.timeStopT <= 0 && this.facet('ts-cold')) s.keeper.coldT = 4;
+      if (s.keeper.timeStopT <= 0 && this.facet('ts-cold')) s.keeper.coldT = this.fx('ts-cold', 4, 2, 0);
       if (this.facet('ts-mend')) {
-        s.tree.hp = Math.min(this.treeMaxHp(), s.tree.hp + this.treeMaxHp() * 0.03 * dt);
-        for (const st of s.structures) st.hp = Math.min(st.maxHp, st.hp + st.maxHp * 0.03 * dt);
+        const mend = this.fx('ts-mend', 0.03, 0.015, 0);
+        s.tree.hp = Math.min(this.treeMaxHp(), s.tree.hp + this.treeMaxHp() * mend * dt);
+        for (const st of s.structures) st.hp = Math.min(st.maxHp, st.hp + st.maxHp * mend * dt);
       }
       // the darkness can't send anyone while time stands
       for (const p of s.pending) p.at += dt;
@@ -1437,13 +1493,13 @@ export class Game {
     k.radianceT = Math.max(0, k.radianceT - dt);
     k.swarmT = Math.max(0, k.swarmT - dt);
     if (k.radianceT > 0 && this.propCount('radiance', 'rd-heal')) {
-      const bloom = this.facet('rd-bloom');
-      const h = (bloom ? 40 : 20) * dt;
+      const bloom = this.facetLv('rd-bloom');
+      const h = (bloom ? 40 + 20 * (bloom - 1) : 20) * dt;
       if (s.tree.hp < this.treeMaxHp()) {
         s.tree.hp = Math.min(this.treeMaxHp(), s.tree.hp + h);
         this.healFx(-1, WORLD.treeX, WORLD.groundY - 40, h);
       }
-      if (bloom) for (const st of s.structures) if (st.hp < st.maxHp) st.hp = Math.min(st.maxHp, st.hp + 10 * dt);
+      if (bloom) for (const st of s.structures) if (st.hp < st.maxHp) st.hp = Math.min(st.maxHp, st.hp + (10 + 5 * (bloom - 1)) * dt);
     }
     if (k.swarmT > 0 && this.facet('sw-follow')) k.swarmX = k.x;
     k.hitFlash = Math.max(0, k.hitFlash - dt);
@@ -1451,13 +1507,13 @@ export class Game {
     if (k.rhythmT <= 0) k.rhythm = 0;
     k.freeCast = Math.max(0, k.freeCast - dt);
     k.lastLightCd = Math.max(0, k.lastLightCd - dt);
-    const hurry = k.timeStopT > 0 && this.facet('ts-hurry') ? 3 : 1;
+    const hurry = k.timeStopT > 0 ? this.fx('ts-hurry', 3, 1, 1) : 1;
     for (const id of Object.keys(k.cooldowns) as AbilityId[]) k.cooldowns[id] = Math.max(0, k.cooldowns[id] - dt * hurry);
     const maxL = this.maxLight();
-    k.light = Math.min(maxL, k.light + this.stageDef.lightRegen * (1 + this.mods.lightRegen + 0.08 * k.attrs.spirit + (this.facet('lt-flow') ? 0.25 : 0)) * this.lightRegenFactor() * dt);
+    k.light = Math.min(maxL, k.light + this.stageDef.lightRegen * (1 + this.mods.lightRegen + 0.08 * k.attrs.spirit + this.fx('lt-flow', 0.25, 0.15, 0)) * this.lightRegenFactor() * dt);
     if (this.mods.lastLight && k.light < 20 && k.lastLightCd <= 0 && s.phase === 'night') {
       k.freeCast = 3;
-      k.lastLightCd = this.facet('lt-last2') ? 25 : 45;
+      k.lastLightCd = this.fx('lt-last2', 25, -4, 45);
     }
 
     if (!k.alive) {
@@ -1483,7 +1539,8 @@ export class Game {
       const before = k.channel;
       k.channel += dt;
       // the beam feeds on Light; when it runs dry the beam goes out
-      const drain = this.abilityCost('spear') * BEAM_DRAIN * dt;
+      // Быстрая рука makes the beam cheaper to hold
+      const drain = this.abilityCost('spear') * BEAM_DRAIN * dt * this.fx('sp-swift', 0.75, -0.05, 1);
       if (k.freeCast <= 0) {
         if (k.light < drain) { this.endChannel(); k.walkT = 0; return; }
         k.light -= drain;
@@ -1491,24 +1548,49 @@ export class Game {
       // damage ticks every BEAM_TICK seconds along the whole line
       if (Math.floor(before / BEAM_TICK) !== Math.floor(k.channel / BEAM_TICK)) {
         const apo = this.apotheosis('spear');
+        // every spear Property and Facet carries over to the beam
+        const twin = this.fx('sp-twin', 0.6, 0.2, 0);
+        const air = this.fx('sp-sky', 1.8, 0.4, 1);
+        const lance = this.facet('sp-lance') ? 0.5 / this.fx('sp-lance', 1, 0.25, 1) : 1;
+        let rhythmMul = 1;
+        if (this.mods.spearRhythm) {
+          k.rhythm++;
+          k.rhythmT = 2;
+          if (k.rhythm % 3 === 0) rhythmMul = this.fx('sp-crescendo', 3, 1, 2);
+        }
+        let nearest: Enemy | null = null;
         for (const e of s.enemies) {
-          if (e.dead || (e.layer === 'under') || (e.x - k.x) * k.channelDir < 0) continue;
+          if (e.dead || (e.layer === 'under')) continue;
+          const ahead = (e.x - k.x) * k.channelDir >= 0;
+          if (!ahead && twin <= 0) continue;
           // the beam scatters with distance: full power up close, a quarter at the far end
-          const fall = beamFalloff(Math.abs(e.x - k.x));
-          this.damageEnemy(e, k.channelDps * BEAM_TICK * fall);
+          const fall = beamFalloff(Math.abs(e.x - k.x) * lance) * (ahead ? 1 : twin);
+          this.damageEnemy(e, k.channelDps * BEAM_TICK * fall * rhythmMul * (e.layer === 'air' ? air : 1));
+          if (this.mods.spearBeacon) e.marked = Math.max(e.marked, this.fx('sp-mark', 8, 2, 4));
           if (apo) { e.marked = Math.max(e.marked, 3); this.damageQuiet(e, k.channelDps * BEAM_TICK * 0.4 * fall); }
+          if (ahead && (!nearest || Math.abs(e.x - k.x) < Math.abs(nearest.x - k.x))) nearest = e;
+        }
+        // Огненный след: the beam sets the ground under its first target on fire
+        if (nearest && this.facet('sp-flame') && Math.floor(k.channel / 0.6) !== Math.floor(before / 0.6)) {
+          s.burns.push({ x: nearest.x, halfWidth: 12, dps: k.channelDps * this.fx('sp-flame', 0.25, 0.15, 0), life: 2.5 });
+        }
+        // Рикошет: sparks leap off the beam to creatures behind the Ascended
+        if (this.mods.spearRicochet) {
+          const behind = s.enemies.filter((e) => !e.dead && e.layer !== 'under' && (e.x - k.x) * k.channelDir < 0 && Math.abs(e.x - k.x) < 130)
+            .sort((a, b) => Math.abs(a.x - k.x) - Math.abs(b.x - k.x)).slice(0, this.fx('sp-chain', 2, 1, 1));
+          for (const e of behind) this.damageEnemy(e, k.channelDps * BEAM_TICK * 0.3);
         }
       }
       k.walkT = 0;
     } else if (k.move !== 0) {
       k.dir = k.move;
-      k.x = Math.max(8, Math.min(WORLD.width - 8, k.x + k.move * KEEPER.speed * (1 + this.mods.keeperSpeed + (this.facet('lt-dash') ? 0.2 : 0)) * dt));
+      k.x = Math.max(8, Math.min(WORLD.width - 8, k.x + k.move * KEEPER.speed * (1 + this.mods.keeperSpeed + this.fx('lt-dash', 0.2, 0.1, 0)) * dt));
       k.walkT += dt;
     } else {
       k.walkT = 0;
     }
     if (this.isLit(k.x, false)) k.hp = Math.min(this.keeperMaxHp(), k.hp + KEEPER.regenLit * (1 + k.rank) * dt);
-    if (this.facet('lt-tree') && Math.abs(k.x - WORLD.treeX) <= 80) k.hp = Math.min(this.keeperMaxHp(), k.hp + 8 * dt);
+    if (this.facet('lt-tree') && Math.abs(k.x - WORLD.treeX) <= 80) k.hp = Math.min(this.keeperMaxHp(), k.hp + this.fx('lt-tree', 8, 6, 0) * dt);
     // radiance: the Ascended burns creatures pressing against him
     this.src = 'keeper';
     const aura = this.keeperAura();
@@ -1522,7 +1604,7 @@ export class Game {
     const s0 = this.state;
     const k = s0.keeper;
     if (!k.alive || k.leapT > 0) return;
-    const shield = this.facet('lt-guard') && k.light >= this.maxLight() * 0.7 ? 0.75 : 1;
+    const shield = this.facet('lt-guard') && k.light >= this.maxLight() * 0.7 ? Math.max(0.4, this.fx('lt-guard', 0.75, -0.08, 1)) : 1;
     k.hp -= amount * (1 - this.keeperGuard()) * shield;
     k.hitFlash = 0.15;
     this.emit({ type: 'keeperHit' });
@@ -1559,9 +1641,9 @@ export class Game {
     const fog = this.fogLevel(e);
     const worm = lightMult && def.worm && fog < 1 && this.isLit(e.x, e.layer === 'under');
     const k0 = this.state.keeper;
-    const fury = fromNest && k0.swarmT > 0 && this.propCount('swarm', 'sw-fury') > 0 ? (k0.facets.includes('sw-frenzy') ? 1.7 : 1.4) : 1;
-    const mark = (fromNest && e.marked > 0 ? (k0.facets.includes('sp-mark') ? 1.45 : 1.25) : 1) * fury
-      * (fromNest && k0.radianceT > 0 && k0.facets.includes('rd-nests') ? 1.25 : 1);
+    const fury = fromNest && k0.swarmT > 0 && this.propCount('swarm', 'sw-fury') > 0 ? this.fx('sw-frenzy', 1.7, 0.15, 1.4) : 1;
+    const mark = (fromNest && e.marked > 0 ? this.fx('sp-mark', 1.45, 0.15, 1.25) : 1) * fury
+      * (fromNest && k0.radianceT > 0 ? this.fx('rd-nests', 1.25, 0.1, 1) : 1);
     const raw = amount * (worm ? WORM_LIGHT_MULT - (WORM_LIGHT_MULT - 1) * fog : 1) * mark * (1 + e.vuln);
     const exposed = def.plates && e.plates <= 0;
     const armor = e.armorBreak > 0 || pierceArmor || exposed ? 0 : def.armor + (e.affix === 'armored' ? ELITE.armor : 0) + (def.armor > 0 && HEAVY.has(e.kind) ? ENDLESS.heavyArmor(this.state.night) : 0);
@@ -1584,7 +1666,7 @@ export class Game {
     const def = ENEMIES[e.kind];
     const k = s.keeper;
     if (this.abilityUnlocked('starfall')) {
-      k.charge = Math.min(ABILITIES.starfall.chargeMax, k.charge + def.charge * (1 + this.mods.chargeGain + (this.facet('sf-hunger') ? 0.5 : 0)));
+      k.charge = Math.min(ABILITIES.starfall.chargeMax, k.charge + def.charge * (1 + this.mods.chargeGain + this.fx('sf-hunger', 0.5, 0.25, 0)));
     }
     this.emit({ type: 'enemyDied', kind: e.kind, x: e.x, y: e.y });
     const bounty = ENDLESS.bounty(s.night) * (e.affix ? ELITE.loot : 1);
@@ -1946,7 +2028,7 @@ export class Game {
     }
     if (e.web > 0) slow = Math.max(slow, 0.35 * ENEMIES[e.kind].ccMult);
     if (this.state.keeper.coldT > 0) slow = Math.max(slow, 0.4);
-    if (e.lit && this.state.keeper.radianceT > 0 && this.facet('rd-dawn')) slow = Math.max(slow, 0.3);
+    if (e.lit && this.state.keeper.radianceT > 0 && this.facet('rd-dawn')) slow = Math.max(slow, this.fx('rd-dawn', 0.3, 0.1, 0) * ENEMIES[e.kind].ccMult);
     // big creatures shrug off slows by their size (ccMult)
     return Math.min(0.7, slow * ENEMIES[e.kind].ccMult);
   }
@@ -1975,7 +2057,7 @@ export class Game {
 
   /** «Высвечивание»: the strongest dragonfly light covering this enemy. */
   private vulnAt(e: Enemy): number {
-    const shatter = this.frozen(e) && this.propCount('timestop', 'ts-shatter') ? (this.facet('ts-crack') ? 0.7 : 0.35) : 0;
+    const shatter = this.frozen(e) && this.propCount('timestop', 'ts-shatter') ? this.fx('ts-crack', 0.7, 0.2, 0.35) : 0;
     if ((e.layer === 'under')) return shatter;
     let v = shatter + this.state.keeper.radianceT > 0 && e.lit ? ABILITIES.radiance.vuln * runeRankPower(this.state.keeper.runeRank.radiance) ** 0.5 : 0;
     for (const st of this.state.structures) {
@@ -2045,7 +2127,7 @@ export class Game {
   private damageStructure(st: Structure, amount: number, attacker?: Enemy) {
     const s = this.state;
     const k = s.keeper;
-    const chitin = k.swarmT > 0 && this.propCount('swarm', 'sw-shield') && Math.abs(st.x - k.swarmX) <= this.swarmReach() ? (this.facet('sw-carapace') ? 0.5 : 0.7) : 1;
+    const chitin = k.swarmT > 0 && this.propCount('swarm', 'sw-shield') && Math.abs(st.x - k.swarmX) <= this.swarmReach() ? Math.max(0.2, this.fx('sw-carapace', 0.5, -0.08, 0.7)) : 1;
     st.hp -= amount * chitin;
     st.hitFlash = 0.12;
     this.emit({ type: 'structureHit', id: st.id, x: st.x });
@@ -2080,7 +2162,7 @@ export class Game {
 
   private hasteMult(st: Structure): number {
     let m = st.haste > 0 ? 1.3 : 1;
-    if (this.state.keeper.timeStopT > 0 && this.facet('ts-hush')) m *= 1.5;
+    if (this.state.keeper.timeStopT > 0) m *= this.fx('ts-hush', 1.5, 0.25, 1);
     for (const t of this.state.tempLights) if (t.haste && Math.abs(st.x - t.x) <= t.radius) { m *= 1 + t.haste; break; }
     const k = this.state.keeper;
     if (k.swarmT > 0 && Math.abs(st.x - k.swarmX) <= this.swarmReach()) m *= 1 + ABILITIES.swarm.haste * runeRankPower(k.runeRank.swarm) ** 0.5;
@@ -2238,7 +2320,7 @@ export class Game {
   /** Little dragonflies of a nest (more with level and merge stars). */
   dragonflyDrones(st: Structure) {
     const k = this.state.keeper;
-    const vortex = k.swarmT > 0 && this.facet('sw-sky') && Math.abs(st.x - k.swarmX) <= this.swarmReach() ? 2 : 1;
+    const vortex = k.swarmT > 0 && this.facet('sw-sky') && Math.abs(st.x - k.swarmX) <= this.swarmReach() ? this.fx('sw-sky', 2, 1, 1) : 1;
     return (STING.drones + st.tier + st.merge) * vortex;
   }
 
@@ -2504,11 +2586,11 @@ export class Game {
             // the giant star punches through the soil and hits worms below too
             if (e.dead || (e.layer === 'under' && !p.giant) || Math.abs(e.x - p.tx) > (p.radius ?? def.impactRadius) + ENEMIES[e.kind].radius) continue;
             if (p.breakArmor) e.armorBreak = p.breakArmor;
-            this.damageEnemy(e, p.damage * (e.layer === 'air' && this.facet('sf-sky') ? 2 : 1));
+            this.damageEnemy(e, p.damage * (e.layer === 'air' ? this.fx('sf-sky', 2, 0.5, 1) : 1));
             this.stunEnemy(e, p.stun ?? def.stun);
-            if (e.dead && this.facet('sf-refund')) k.charge = Math.min(def.chargeMax, k.charge + 4);
+            if (e.dead && this.facet('sf-refund')) k.charge = Math.min(def.chargeMax, k.charge + this.fx('sf-refund', 4, 2, 0));
           }
-          const life = (p.burnTime ?? def.burnTime) * (this.facet('sf-ash') ? 2 : 1);
+          const life = (p.burnTime ?? def.burnTime) * this.fx('sf-ash', 2, 1, 1);
           s.burns.push({ x: p.tx, halfWidth: (p.radius ?? def.impactRadius) * 0.7, dps: def.burnDps * this.abilityMult('starfall') * (1 + this.mods.starfallBurn) * (p.shard ? 0.4 : 1), life: p.shard ? life * 0.4 : life, crater: p.giant, maxLife: life });
           if (p.giant) {
             // the star bursts: burning shards fly out of the crater
@@ -2533,7 +2615,7 @@ export class Game {
           if (e.dead || p.hit.includes(e.id) || Math.abs(e.x - p.x) > ENEMIES[e.kind].radius + 6) continue;
           if ((e.layer === 'under') && !p.deep || e.layer === 'air') continue;
           p.hit.push(e.id);
-          this.damageEnemy(e, p.damage);
+          this.damageEnemy(e, p.damage * (e.layer === 'under' ? p.deepMult ?? 1 : 1));
           if (p.stun) this.stunEnemy(e, p.stun);
           if (p.knock && !ENEMIES[e.kind].boss && e.layer === 'ground') e.kick = Math.sign(p.vx) * p.knock * ENEMIES[e.kind].ccMult;
         }
@@ -2551,20 +2633,20 @@ export class Game {
             const n = p.hit.length;
             p.hit.push(e.id);
             p.pierce--;
-            let dmg = p.damage * Math.max(0.25, 1 - (this.facet('sp-lance') ? 0 : def.falloff) * n);
+            let dmg = p.damage * Math.max(0.25, 1 - (this.facet('sp-lance') ? 0 : def.falloff) * n) * this.fx('sp-lance', 1, 0.1, 1);
             if (e.layer === 'air') dmg *= p.airMult ?? 1;
             if (this.mods.spearRhythm) {
               k.rhythm++;
               k.rhythmT = 2;
-              if (k.rhythm % 3 === 0) dmg *= this.facet('sp-crescendo') ? 3 : 2;
+              if (k.rhythm % 3 === 0) dmg *= this.fx('sp-crescendo', 3, 1, 2);
             }
-            if (this.mods.spearBeacon) e.marked = this.facet('sp-mark') ? 8 : 4;
-            if (this.facet('sp-flame')) s.burns.push({ x: e.x, halfWidth: 12, dps: p.damage * 0.25, life: 2.5 });
+            if (this.mods.spearBeacon) e.marked = this.fx('sp-mark', 8, 2, 4);
+            if (this.facet('sp-flame')) s.burns.push({ x: e.x, halfWidth: 12, dps: p.damage * this.fx('sp-flame', 0.25, 0.15, 0), life: 2.5 });
             this.damageEnemy(e, dmg);
             if (p.knock && !ENEMIES[e.kind].boss) e.kick = Math.sign(p.vx) * p.knock * ENEMIES[e.kind].ccMult;
           }
         }
-        if (p.pierce <= 0 && this.mods.spearRicochet && (p.bounces ?? 0) < (this.facet('sp-chain') ? 2 : 1)) {
+        if (p.pierce <= 0 && this.mods.spearRicochet && (p.bounces ?? 0) < this.fx('sp-chain', 2, 1, 1)) {
           const next = s.enemies
             .filter((e) => !e.dead && !p.hit.includes(e.id) && !(e.layer === 'under') && Math.abs(e.x - p.x) < 130)
             .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
@@ -2814,7 +2896,7 @@ export class Game {
           goal = foe.x - Math.sign(foe.x - u.x) * (ENEMIES[foe.kind].radius + 3);
           if (fd <= ENEMIES[foe.kind].radius + 5 && u.cd <= 0) {
             u.cd = ns.rate;
-            const clich = s.keeper.swarmT > 0 && this.facet('sw-termite') && Math.abs(u.x - s.keeper.swarmX) <= this.swarmReach() ? 1.5 : 1;
+            const clich = s.keeper.swarmT > 0 && this.facet('sw-termite') && Math.abs(u.x - s.keeper.swarmX) <= this.swarmReach() ? this.fx('sw-termite', 1.5, 0.25, 1) : 1;
             this.damageEnemy(foe, ns.damage * clich * (GIANTS.has(foe.kind) ? GIANT.small : 1), true, true);
           }
         }
