@@ -211,3 +211,14 @@
   need (e.g. merge: «N из 3 одинаковых гнёзд»).
 - One key scheme for every ring: 1-2-3-4 by position, both when building (families) and when
   upgrading (1 upgrade/spec A/ascension, 2 spec B, 3 merge, 4 release — 4 must be pressed twice).
+
+## v0.5.x — темп, Слияние без потерь, падение Древа
+- Pace (playtest «too fast»): first day 55 s, days 35 s; night spawns stretched ×1.25;
+  every creature walks 12% slower. Night 4: one Ледозуб group from one side only.
+- Merge: same family, ★, layer and compatible spec only (spec A never meets spec B); the
+  survivor takes the best level, spec and ascension of the three; hovering «Слияние» shows
+  which two nests will be absorbed (pulsing rings + a stream into the survivor) and the result.
+- Selected nest shows its reach clearly (band, dome, posts; crown nests at their crown spot).
+- Dragonflies fly slower (orbit and sorties).
+- Defeat: the Tree leans, falls (clipped at the ground), its leaves dim and scatter, the crash
+  shakes the screen, the Circle's light goes out; the summary appears after 3.6 s.

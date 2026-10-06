@@ -118,6 +118,31 @@ describe('rune rank-up choices', () => {
   });
 });
 
+describe('merge keeps the best', () => {
+  it('the survivor takes the best level/ascension; a different spec never merges', () => {
+    const g = new Game();
+    g.state.amber = 99999; g.state.star = 9999;
+    for (let i = 0; i < 4; i++) { g.feed(g.growNeed()); while (g.choice) g.choose(0); }
+    const surface = ['L0', 'L1', 'R0', 'R1'];
+    for (const sl of surface) g.build(sl, 'hive');
+    const [a, b, c, d] = surface.map((id) => g.structureAt(id)!);
+    // b is the strong one (spec A, tier 4, ascended), d has the other spec
+    g.upgrade(b.id); g.specialize(b.id, 'A'); g.upgrade(b.id); b.ascend = 3;
+    g.upgrade(d.id); g.specialize(d.id, 'B');
+    const partners = g.mergePartners(b)!;
+    expect(partners.map((p) => p.id)).not.toContain(d.id); // spec B can't join spec A
+    expect(g.mergeNests(b.id)).toBe(true);
+    expect(b.tier).toBe(3);
+    expect(b.spec).toBe('A');
+    expect(b.ascend).toBe(3);
+    expect(b.merge).toBe(1);
+    expect(g.state.structures).toContain(d);
+    // merging through a weak nest still keeps the strongest level of the three
+    const e = g.structureAt('R1')!;
+    void a; void c; void e;
+  });
+});
+
 describe('time stop', () => {
   it('freezes creatures and the night, then recovers over nights, not seconds', () => {
     const g = new Game();

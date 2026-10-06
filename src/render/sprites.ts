@@ -867,7 +867,7 @@ function dragonflyNest(c: Ctx, s: Structure, time: number, flash: boolean) {
 /** Where a nest's dragonfly i circles when at home. */
 export function dragonflyHome(s: Structure, i: number, time: number): [number, number] {
   const ny = GY - (26 + Math.min(s.tier, 2) * 3) - 3;
-  const a = time * (1.2 + i * 0.17) + i * 2.4;
+  const a = time * (0.6 + i * 0.09) + i * 2.4;
   const r = 10 + (i % 3) * 5;
   return [s.x + Math.cos(a) * r, ny - 4 + Math.sin(a * 1.7) * 5];
 }

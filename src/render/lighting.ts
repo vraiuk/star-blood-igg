@@ -47,6 +47,9 @@ export class Lighting {
   /** smoothed day/night blend (1 = full night) */
   private night = 0.6;
 
+  /** 0..1: the Tree's light fading after it fell */
+  treeFade = 0;
+
   constructor() {
     [this.dark, this.darkCtx] = makeCanvas(LW, LH);
     this.darkImg = this.darkCtx.createImageData(LW, LH);
@@ -57,7 +60,8 @@ export class Lighting {
   private sources(game: Game, time: number): Source[] {
     const s = game.state;
     const out: Source[] = [];
-    const R = s.tree.radius;
+    // the dying Tree's light goes out
+    const R = s.tree.radius * (1 - 0.9 * this.treeFade);
     const flicker = 1 + Math.sin(time * 1.7) * 0.012;
     out.push({ x: WORLD.treeX, y: GY, rx: R * flicker, ry: R * 1.05, k: 1, glow: 1, layer: -1 });
     const rr = R * TREE.rootLightFactor;

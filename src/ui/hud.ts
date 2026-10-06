@@ -23,7 +23,7 @@ export type MenuTarget =
   | { kind: 'tree' };
 
 /** Range preview the renderer draws while hovering a ring option. */
-export interface RangePreview { x: number; r: number; underground: boolean; y?: number; }
+export interface RangePreview { x: number; r: number; underground: boolean; y?: number; merge?: { to: number; from: number[] } }
 
 export interface HudCallbacks {
   onStart(): void;
@@ -626,8 +626,16 @@ export class Hud {
     if (partners) {
       opts.push({
         icon: icon('merge'), title: `Слияние ★${st.merge + 1}`, sub: 'Три одинаковых гнезда → одно: сила ×2, освобождает 2 слота', key: '3',
-        body: `<div class="stats"><div>Сольются: <b>${partners.map((p) => `ур.${p.tier + 1}`).join(', ')}</b></div><div>Урон и прочность: <b class="up">+110%</b></div></div>`,
+        body: (() => {
+          const res = g.mergeResult(st, partners);
+          const nm = (x: { tier: number; spec: SpecId | null; ascend: number }) => `ур.${x.tier + 1}${x.spec ? ` ${def.specs[x.spec].name}` : ''}${x.ascend ? ` +${x.ascend}` : ''}`;
+          const next = g.nestStats({ family: st.family, tier: res.tier, spec: res.spec, merge: res.merge, ascend: res.ascend });
+          return `<div class="stats"><div>Поглотит: <b>${partners.map(nm).join(' и ')}</b></div>
+            <div>Останется: <b class="up">${nm(res)} ${'★'.repeat(res.merge)}</b> — лучшее из трёх</div></div>${this.statsBlock(st.family, cur, next)}`;
+        })(),
         price: { amber: 0, star: 0 }, ok: true, pos: 2, act: () => { g.mergeNests(st.id); },
+        // hovering shows which two nests will be absorbed
+        preview: { x: st.x, r: 0, underground: st.underground, y: st.y, merge: { to: st.id, from: partners.map((p) => p.id) } },
       });
     }
     if (st.tier >= MAX_TIER - 1) {

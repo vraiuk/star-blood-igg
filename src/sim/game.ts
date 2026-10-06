@@ -1,5 +1,5 @@
 import {
-  ABILITIES, ABILITY_STAGE_SCALING, CHORD, AFFIXES, ARMOR_FLOOR, ATTR_MAX, PLATES, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
+  ABILITIES, ABILITY_STAGE_SCALING, CHORD, PACE, AFFIXES, ARMOR_FLOOR, ATTR_MAX, PLATES, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
   SLOT_MARGIN, SLOTS, crownPos, ringsForCrownSlot, WORLD, WORM_LIGHT_MULT, FOG,
   type AbilityId, type AttrId, type EnemyKind, type SlotDef,
 } from '../data/balance';
@@ -424,11 +424,27 @@ export class Game {
   }
 
   /** Two other nests of the same family and merge rank (lowest level first), or null. */
+  /**
+   * Nests that would be absorbed by merging into `st`: same family, same merge stars, same
+   * layer, and a compatible specialization (a different spec never merges). The weakest two go.
+   */
   mergePartners(st: Structure): Structure[] | null {
     const others = this.state.structures
-      .filter((o) => o !== st && o.family === st.family && o.merge === st.merge && o.crown === st.crown)
+      .filter((o) => o !== st && o.family === st.family && o.merge === st.merge && o.crown === st.crown && o.underground === st.underground
+        && !(st.spec && o.spec && o.spec !== st.spec))
       .sort((a, b) => a.tier - b.tier || a.ascend - b.ascend);
-    return others.length >= 2 ? others.slice(0, 2) : null;
+    if (others.length < 2) return null;
+    const pick = others.slice(0, 2);
+    // the two picked must agree with each other too (spec A and spec B can't meet in one nest)
+    if (pick[0].spec && pick[1].spec && pick[0].spec !== pick[1].spec) return null;
+    return pick;
+  }
+
+  /** What the merged nest becomes: the best level, spec and ascension of the three, +1 ★. */
+  mergeResult(st: Structure, partners: Structure[]) {
+    const all = [st, ...partners];
+    const best = all.reduce((a, b) => (b.tier > a.tier || (b.tier === a.tier && b.ascend > a.ascend) ? b : a));
+    return { tier: best.tier, spec: best.spec ?? all.find((x) => x.spec)?.spec ?? null, ascend: Math.max(...all.map((x) => x.ascend)), merge: st.merge + 1 };
   }
 
   /** «Слияние»: fuse two same nests into this one — frees two slots, adds a merge star. */
@@ -438,8 +454,13 @@ export class Game {
     if (!st || this.over) return false;
     const partners = this.mergePartners(st);
     if (!partners) return this.deny('Нужно ещё 2 таких же гнезда того же ранга слияния');
+    const res = this.mergeResult(st, partners);
     s.structures = s.structures.filter((x) => !partners.includes(x));
-    st.merge++;
+    // the survivor keeps the best of the three — nothing upgraded is lost
+    st.tier = res.tier;
+    st.spec = res.spec;
+    st.ascend = res.ascend;
+    st.merge = res.merge;
     st.spentAmber += partners.reduce((a, p) => a + p.spentAmber, 0);
     st.spentStar += partners.reduce((a, p) => a + p.spentStar, 0);
     const hp = this.nestStats(st).hp;
@@ -1332,7 +1353,7 @@ export class Game {
         const every = boss ? g.every : g.every / Math.sqrt(grow);
         for (let i = 0; i < count; i++) {
           const stagger = g.side === 'B' && side === 'R' ? every * 0.5 : 0;
-          pending.push({ at: t0 + g.at + i * every + stagger, kind: g.kind, side });
+          pending.push({ at: t0 + (g.at + i * every + stagger) * PACE.spawnStretch, kind: g.kind, side });
         }
       }
     }

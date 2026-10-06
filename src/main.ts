@@ -309,9 +309,11 @@ function frame(now: number) {
     endShown = true;
     hud.closeMenu();
     const coins = finishRun();
-    setTimeout(() => hud.showEnd(coins, save.bestNight[game.path] ?? 0, lastRecord), 1400);
+    // let the Tree fall and its light go out before the summary
+    setTimeout(() => hud.showEnd(coins, save.bestNight[game.path] ?? 0, lastRecord), 3600);
   }
-  renderer.render(game, view, time, frozen && started ? dt * 0.15 : dt);
+  // paused worlds drift slowly; a lost run plays the Tree's fall in real time
+  renderer.render(game, view, time, frozen && started && !game.over ? dt * 0.15 : dt);
   hud.update(dt);
   requestAnimationFrame(frame);
 }

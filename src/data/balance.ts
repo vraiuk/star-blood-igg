@@ -67,6 +67,8 @@ export interface EnemyDef {
 const E = (o: Partial<EnemyDef> & Pick<EnemyDef, 'name' | 'hp' | 'speed' | 'damage' | 'amber'>): EnemyDef => ({
   armor: 0, attackRate: 1, structureMult: 1, range: 0, star: 0, devRune: 0, charge: 2, worm: false, underground: false, air: false, altitude: 0,
   smashesStructures: false, ccMult: 1, radius: 7, height: 12, ...o,
+  // the global pace: every creature walks a little slower so the player can keep up
+  speed: o.speed * 0.88,
 });
 
 export const ENEMIES: Record<EnemyKind, EnemyDef> = {
@@ -408,4 +410,6 @@ export const ECONOMY = {
   dropLifeDark: 12,
 } as const;
 
-export const DAY = { firstLength: 40, length: 25 } as const;
+/** Pace: days to build and think, nights stretched so the player keeps up (playtest: «too fast»). */
+export const DAY = { firstLength: 55, length: 35 } as const;
+export const PACE = { spawnStretch: 1.25, enemySpeed: 0.88 } as const;

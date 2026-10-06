@@ -24,7 +24,7 @@ export interface ViewState {
   mouseX: number;
   mouseY: number;
   /** range preview while hovering a ring option */
-  preview: { x: number; r: number; underground: boolean; y?: number } | null;
+  preview: { x: number; r: number; underground: boolean; y?: number; merge?: { to: number; from: number[] } } | null;
   /** ability currently aimed (shows a preview) */
   aiming: import('../data/balance').AbilityId | null;
 }
@@ -53,6 +53,10 @@ export class Renderer {
   private growPulse = 0;
   /** full-screen impact flash (Starfall) */
   private flash = 0;
+  /** the Tree's fall after defeat: seconds since it began (−1 = standing), side, crash done */
+  private fallT = -1;
+  private fallDir: 1 | -1 = 1;
+  private fellDown = false;
 
   constructor(private screen: Ctx) {
     this.bg = buildBackdrop();
@@ -230,11 +234,36 @@ export class Renderer {
     for (const e of s.enemies) if (e.layer === 'under') drawFog(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
     for (const e of s.enemies) if (e.layer === 'under') drawEnemy(c, e, time);
     const tsc = treeScale(s.tree.rings);
+    // the Tree's death: it leans, then falls ever faster and crashes down
+    if (s.phase === 'lost') this.fallT = this.fallT < 0 ? 0 : this.fallT + dt;
+    else this.fallT = -1;
+    const fall = this.fallT < 0 ? 0 : Math.min(1, this.fallT / 2.4);
+    this.lighting.treeFade = this.fallT < 0 ? 0 : Math.min(1, this.fallT / 3.2);
+    if (fall >= 1 && !this.fellDown) {
+      this.fellDown = true;
+      this.shake = Math.max(this.shake, 14);
+      const len = 150 * tsc * (0.4 + 0.12 * s.tree.stage);
+      for (let i = 0; i < 12; i++) this.particles.dust(WORLD.treeX + this.fallDir * (i / 12) * len, WORLD.groundY - 2);
+      this.particles.emit(60, WORLD.treeX + this.fallDir * len * 0.7, WORLD.groundY - 10, { speed: 90, max: 1.4, colors: [PAL.gold3, PAL.gold2, '#6a4a2a'], gravity: 90 });
+    }
+    if (this.fallT < 0) { this.fellDown = false; this.fallDir = Math.random() < 0.5 ? -1 : 1; }
+    if (fall > 0 && fall < 1 && Math.random() < 0.6) {
+      this.particles.emit(2, WORLD.treeX + this.fallDir * fall * 60, WORLD.groundY - 90 * tsc * (1 - fall), { speed: 30, max: 1.6, colors: [PAL.gold3, PAL.gold1], gravity: 40 });
+    }
     c.save();
+    if (fall > 0) {
+      // the fallen crown lies on the ground, never sinks below it
+      c.beginPath();
+      c.rect(0, 0, WORLD.width, WORLD.groundY + 3);
+      c.clip();
+    }
     c.translate(WORLD.treeX, WORLD.groundY);
+    c.rotate(this.fallDir * fall * fall * 1.32);
     c.scale(tsc, tsc);
     c.translate(-WORLD.treeX, -WORLD.groundY);
-    drawTree(c, s.tree.stage, time, this.treeHurt, this.growPulse, treeLook(s.tree.branches));
+    if (fall > 0) c.globalAlpha = 1 - 0.45 * fall;
+    drawTree(c, s.tree.stage, time, fall > 0 ? 1 : this.treeHurt, this.growPulse, treeLook(s.tree.branches));
+    c.globalAlpha = 1;
     // growth rings glow as golden bands on the trunk
     for (let i = 0; i < Math.min(12, s.tree.rings); i++) {
       const y = WORLD.groundY - 8 - i * 5;
@@ -243,7 +272,7 @@ export class Renderer {
     }
     c.restore();
     if (s.tree.stage + 1 >= TREE.polariaStage) this.drawPolaria(c, game, time);
-    for (const st of s.structures) if (st.crown) drawCrownNest(c, st, time);
+    if (this.fallT < 0) for (const st of s.structures) if (st.crown) drawCrownNest(c, st, time);
     for (const st of s.structures) {
       if (st.family === 'beetle' && st.spec === 'A' && Math.random() < dt * 4) {
         this.particles.emit(1, st.x + (Math.random() - 0.5) * 120, WORLD.groundY - 4, { speed: 10, max: 1.2, colors: ['#c8ffb0', PAL.gold4, PAL.gold2], glow: true, gravity: -20, angle: -Math.PI / 2, spread: 0.4 });
@@ -358,7 +387,8 @@ export class Renderer {
     drawKeeperHp(c, s.keeper, game.keeperMaxHp());
     if (lpHp >= 0) c.restore();
     if (view.aiming) this.drawAim(c, game, view, time);
-    if (view.preview) this.drawRangeRaw(c, view.preview.x, view.preview.r, view.preview.underground, true, view.preview.y);
+    if (view.preview?.merge) this.drawMergePreview(c, game, view.preview.merge, time);
+    else if (view.preview) this.drawRangeRaw(c, view.preview.x, view.preview.r, view.preview.underground, true, view.preview.y);
     else if (view.selectedSlot) {
       const sl = SLOTS.find((x) => x.id === view.selectedSlot);
       const st = game.structureAt(view.selectedSlot);
@@ -483,6 +513,35 @@ export class Renderer {
     rect(c, WORLD.treeX - 3, WORLD.groundY + 8, 7, 1, PAL.gold2);
   }
 
+  /** Слияние preview: the two nests that will be absorbed pulse and stream into the target. */
+  private drawMergePreview(c: Ctx, game: Game, m: { to: number; from: number[] }, time: number) {
+    const s = game.state;
+    const anchor = (st: import('../sim/types').Structure) => ({ x: st.x, y: st.underground || st.crown ? st.y : WORLD.groundY - 14 });
+    const to = s.structures.find((x) => x.id === m.to);
+    if (!to) return;
+    const t = anchor(to);
+    for (const id of m.from) {
+      const st = s.structures.find((x) => x.id === id);
+      if (!st) continue;
+      const a = anchor(st);
+      const r = 13 + Math.sin(time * 6) * 2;
+      for (let i = 0; i < 24; i++) {
+        const ang = (i / 24) * Math.PI * 2 + time * 2;
+        rect(c, a.x + Math.cos(ang) * r, a.y + Math.sin(ang) * r * 0.8, 2, 2, i % 2 ? '#ff9a6a' : PAL.gold5);
+      }
+      // a dotted stream flowing into the nest that stays
+      const n = Math.max(6, Math.round(Math.hypot(t.x - a.x, t.y - a.y) / 8));
+      for (let i = 0; i < n; i++) {
+        const k = (i / n + time * 0.8) % 1;
+        rect(c, a.x + (t.x - a.x) * k, a.y + (t.y - a.y) * k - Math.sin(k * Math.PI) * 18, 2, 2, PAL.gold4);
+      }
+    }
+    for (let i = 0; i < 28; i++) {
+      const ang = (i / 28) * Math.PI * 2 - time * 2;
+      rect(c, t.x + Math.cos(ang) * 16, t.y + Math.sin(ang) * 13, 2, 2, PAL.gold5);
+    }
+  }
+
   /** Сверхзвезда's crater: a scorched pit with a glowing rim, cooling as it fades. */
   private drawCrater(c: Ctx, x: number, hw: number, k: number, time: number) {
     const r = hw * 1.2;
@@ -519,7 +578,7 @@ export class Renderer {
         live.add(key);
         let [tx, ty] = dragonflyHome(st, i, time);
         if (foe) {
-          const a = time * (5 + i * 0.6) + i * 2.1;
+          const a = time * (2.2 + i * 0.25) + i * 2.1;
           const fy = foe.layer === 'ground' ? WORLD.groundY - ENEMIES[foe.kind].height * 0.6 : foe.y - ENEMIES[foe.kind].height * 0.5;
           tx = foe.x + Math.cos(a) * (ENEMIES[foe.kind].radius + 4);
           ty = fy + Math.sin(a * 1.3) * 6;
@@ -527,7 +586,7 @@ export class Renderer {
         let d = this.drones.get(key);
         if (!d) { d = { x: tx, y: ty }; this.drones.set(key, d); }
         const px = d.x;
-        const k = Math.min(1, dt * (foe ? 5 : 3.5));
+        const k = Math.min(1, dt * (foe ? 1.8 : 1.4));
         d.x += (tx - d.x) * k;
         d.y += (ty - d.y) * k;
         drawDragonfly(c, d.x, d.y, d.x >= px ? 1 : -1, st.spec === 'B', time, i);
@@ -539,7 +598,9 @@ export class Renderer {
 
   private drawRange(c: Ctx, game: Game, st: import('../sim/types').Structure, x: number, underground: boolean, y?: number) {
     const ns = game.nestStats(st);
-    this.drawRangeRaw(c, x, st.family === 'dragonfly' ? ns.light! : ns.range, underground, false, y);
+    // crown nests sit at their crown spot, not at the slot's base position
+    const px = st.crown ? st.x : x;
+    this.drawRangeRaw(c, px, st.family === 'dragonfly' ? ns.light! : ns.range, underground, true, y);
   }
 
   private drawRangeRaw(c: Ctx, x: number, r: number, underground: boolean, bright: boolean, slotY?: number) {
@@ -553,9 +614,12 @@ export class Renderer {
       return;
     }
     const y = underground ? (slotY ?? ROOT_SLOT_Y) + 2 : WORLD.groundY + 1;
-    for (let i = -r; i <= r; i += 3) rect(c, x + i, y, 1, 1, 'rgba(255,214,120,0.75)');
-    rect(c, x - r, y - 3, 1, 4, PAL.gold3);
-    rect(c, x + r, y - 3, 1, 4, PAL.gold3);
+    // a soft band over the covered ground, so the reach reads at a glance
+    c.fillStyle = 'rgba(255,214,120,0.07)';
+    c.fillRect(x - r, underground ? y : y - 46, r * 2, underground ? 20 : 46);
+    for (let i = -r; i <= r; i += 3) rect(c, x + i, y, 2, 1, 'rgba(255,214,120,0.85)');
+    rect(c, x - r, y - 10, 1, 11, PAL.gold3);
+    rect(c, x + r, y - 10, 1, 11, PAL.gold3);
     if (bright) {
       // dotted dome showing the reach
       const steps = Math.round(r * 1.2);

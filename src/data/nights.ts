@@ -54,7 +54,7 @@ export const NIGHTS: NightDef[] = [
     title: 'Четвёртая ночь', hpMul: 1.65,
     hint: 'Тьма давит на Круг. Прыгуны перескакивают Светожуков, а Тенекрылы летят к кроне — их бьют стрекозы, ульи и Копьё.',
     groups: [
-      g(2, 'hound', 'B', 6, 1), g(8, 'stalker', 'L', 1), g(10, 'spitter', 'R', 3, 2.5), g(14, 'worm', 'B', 1), g(24, 'stalker', 'B', 1),
+      g(2, 'hound', 'B', 6, 1), g(8, 'stalker', 'L', 1), g(10, 'spitter', 'R', 3, 2.5), g(14, 'worm', 'B', 1), g(24, 'stalker', 'R', 1),
       g(32, 'jumper', 'L', 4, 0.8), g(18, 'moth', 'R', 4, 1), g(40, 'moth', 'L', 4, 1),
       g(20, 'forager', 'B', 6, 0.8), g(26, 'stalker', 'R', 1), g(30, 'spitter', 'L', 3, 2.5), g(36, 'worm', 'B', 1),
       g(42, 'hound', 'B', 8, 0.7), g(50, 'stalker', 'B', 1),
