@@ -23,8 +23,14 @@ const LOBBY_ID = `star-blood-igg-coop-${VERSION.replace(/\W/g, '-')}${import.met
 const DIGEST_EVERY = 120;
 /** A guest keeps this many ticks in hand against network jitter. */
 const GUEST_BUFFER = 4;
-/** Give up on a host that doesn't answer. */
-const CONNECT_TIMEOUT = 9000;
+/**
+ * Heartbeat: a closed tab never says goodbye over WebRTC (the browser notices only after tens
+ * of seconds, longer over a relay) — the host pings, a guest that hears nothing gives up.
+ */
+const PING_EVERY = 2000;
+const HOST_SILENT = 7000;
+/** Give up on a host that doesn't answer (a TURN relay over TCP/TLS takes a few seconds more). */
+const CONNECT_TIMEOUT = 16000;
 /** The signalling server drops a socket now and then (often right after another one closed): retry. */
 const NET_RETRIES = 4;
 const isNetError = (t: string) => t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed';
@@ -44,6 +50,29 @@ const SERVERS: PeerOptions[] = [
   { host: '5-39-217-211.sslip.io', port: 8443, path: '/', secure: true, key: 'peerjs' },
   {},
 ];
+/**
+ * Short-lived TURN credentials from our server (coturn, TURN REST API): the relay for players
+ * whose NATs can't reach each other directly. Over TCP/TLS — UDP from RU home ISPs doesn't reach
+ * that IP. Without them only the STUN path is tried.
+ */
+const TURN_CRED_URL = 'https://5-39-217-211.sslip.io:8443/turn';
+const STUN: RTCIceServer = { urls: 'stun:stun.l.google.com:19302' };
+/** `?relay` in the address forces the relay path (diagnostics). */
+const FORCE_RELAY = typeof location !== 'undefined' && new URLSearchParams(location.search).has('relay');
+
+async function loadIce(): Promise<RTCIceServer[]> {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 4000);
+  try {
+    const r = await fetch(TURN_CRED_URL, { signal: ctl.signal, cache: 'no-store' });
+    const d = await r.json() as { urls: string[]; username: string; credential: string };
+    return [STUN, { urls: d.urls, username: d.username, credential: d.credential }];
+  } catch {
+    return [STUN];
+  } finally {
+    clearTimeout(t);
+  }
+}
 /** What went wrong, for the lobby line (the type alone says little). */
 const why = (err: { type: string; message?: string }) => `${err.type}${err.message ? `: ${err.message}` : ''}`;
 
@@ -66,7 +95,8 @@ type Msg =
   | { t: 'cmd'; m: string; a: unknown[]; s?: string }
   | { t: 'f'; at: number; n: number; c: FrameCmd[] }
   | { t: 'h'; tick: number; h: number }
-  | { t: 'pause'; on: boolean };
+  | { t: 'pause'; on: boolean }
+  | { t: 'ping' };
 
 export type Role = 'connecting' | 'host' | 'guest' | 'offline' | 'lost';
 
@@ -91,6 +121,8 @@ export interface CoopEvents {
   paused(on: boolean): void;
   /** the peers' worlds drifted apart */
   desync(tick: number): void;
+  /** the host is gone: a guest's run is over, the lobby is being searched again */
+  hostGone(): void;
 }
 
 export class Coop {
@@ -121,14 +153,32 @@ export class Coop {
   private expect = new Map<number, number>();
   private acc = 0;
 
-  constructor(private ev: CoopEvents) {}
+  /** guest: when the host was last heard from */
+  private heard = 0;
+
+  constructor(private ev: CoopEvents) {
+    setInterval(() => {
+      if (this.role === 'host') for (const c of this.guests) c.send({ t: 'ping' } satisfies Msg);
+      else if (this.role === 'guest' && performance.now() - this.heard > HOST_SILENT) {
+        this.host?.close();
+        this.hostLost();
+      }
+    }, PING_EVERY / 2);
+  }
 
   // ───────────────────────────── lobby ─────────────────────────────
 
   private retries = 0;
+  /** searches that found a lobby whose host never answered */
+  private silentHosts = 0;
   /** index into SERVERS */
   private server = 0;
-  private get opts(): PeerOptions { return { ...SERVERS[this.server], debug: 1 }; }
+  /** ICE servers of this session (STUN + our TURN when its credentials came) */
+  private ice: RTCIceServer[] = [STUN];
+  private get relay() { return this.ice.length > 1; }
+  private get opts(): PeerOptions {
+    return { ...SERVERS[this.server], debug: 1, config: { iceServers: this.ice, iceTransportPolicy: FORCE_RELAY ? 'relay' : 'all' } };
+  }
 
   /** Retry a flaky signalling step a few times before falling back to solo play. */
   private retryOr(err: { type: string; message?: string }, again: () => void) {
@@ -150,16 +200,24 @@ export class Coop {
   }
 
   /** Find the shared lobby: join its host or become it. */
-  connect() {
+  async connect() {
     this.reset();
     this.setNote('connecting', 'Ищем лобби…');
+    if (!this.relay) this.ice = await loadIce();
     const me = new Peer(guestId(), this.opts);
     this.peer = me;
     let settled = false;
+    let conn: DataConnection | null = null;
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      this.offline('Хост не отвечает (сеть или NAT). Можно играть одному.');
+      // what the browser saw, so a failure can be told apart (no route / no relay / no answer)
+      const pc = conn?.peerConnection;
+      const ice = pc ? `ICE: ${pc.iceConnectionState}, ${pc.iceGatheringState}` : 'нет ответа хоста';
+      me.destroy();
+      // a host that just left (refresh, lost network) holds the lobby id for a moment: look again
+      if (this.silentHosts++ < 1) { this.connect(); return; }
+      this.offline(`Хост не отвечает (${ice}; реле ${this.relay ? 'есть' : 'недоступно'}). Можно играть одному или обновить страницу.`);
     }, CONNECT_TIMEOUT);
     me.on('error', (err) => {
       if (settled) return;
@@ -176,20 +234,28 @@ export class Coop {
       me.destroy();
       this.retryOr(err, () => this.connect());
     });
+    let asked = false;
     me.on('open', () => {
-      const conn = me.connect(LOBBY_ID, { reliable: true, serialization: 'json' });
-      conn.on('open', () => {
-        if (settled) { conn.close(); return; }
+      // one link to the host per search, even if the signalling socket reopens
+      if (asked) return;
+      asked = true;
+      const c = me.connect(LOBBY_ID, { reliable: true, serialization: 'json' });
+      conn = c;
+      this.setNote('connecting', 'Лобби найдено, соединяемся с хостом…');
+      c.on('open', () => {
+        if (settled) { c.close(); return; }
         settled = true;
         clearTimeout(timer);
-        this.host = conn;
+        this.host = c;
+        this.heard = performance.now();
         this.retries = 0;
+        this.silentHosts = 0;
         this.role = 'guest';
         this.setNote('guest', 'В лобби. Ждём, когда хост начнёт.');
       });
-      conn.on('data', (d) => this.fromHost(d as Msg));
-      conn.on('close', () => this.hostLost());
-      conn.on('error', () => this.hostLost());
+      c.on('data', (d) => this.fromHost(d as Msg));
+      c.on('close', () => this.hostLost());
+      c.on('error', () => this.hostLost());
     });
   }
 
@@ -215,6 +281,19 @@ export class Coop {
     p.on('disconnected', () => { if (!p.destroyed) p.reconnect(); });
     p.on('connection', (conn) => {
       conn.on('open', () => {
+        // PeerJS may fire 'open' twice for one link (seen over a TURN relay): count it once
+        if (this.guests.includes(conn)) return;
+        // the same player reconnecting: the new link replaces the old one, seat and all
+        const old = this.guests.find((c) => c.peer === conn.peer);
+        if (old) {
+          this.guests[this.guests.indexOf(old)] = conn;
+          const seat = this.seats.get(old);
+          this.seats.delete(old);
+          if (seat !== undefined) this.seats.set(conn, seat);
+          old.close();
+          this.broadcastLobby();
+          return;
+        }
         if (this.guests.length >= MAX_KEEPERS - 1) {
           conn.send({ t: 'full' } satisfies Msg);
           setTimeout(() => conn.close(), 500);
@@ -244,7 +323,11 @@ export class Coop {
     if (this.role !== 'guest') return;
     this.role = 'lost';
     this.game = null;
-    this.setNote('lost', 'Хост вышел из игры. Обнови страницу, чтобы найти лобби заново.');
+    this.running = false;
+    this.ev.hostGone();
+    // somebody (maybe this tab) takes the lobby over: search again
+    this.setNote('lost', 'Хост вышел. Ищем лобби заново…');
+    setTimeout(() => this.connect(), 800 + Math.random() * 1200);
   }
 
   private guestLeft(conn: DataConnection) {
@@ -313,6 +396,7 @@ export class Coop {
   // ───────────────────────────── messages ──────────────────────────
 
   private fromHost(m: Msg) {
+    this.heard = performance.now();
     switch (m.t) {
       case 'lobby':
         this.lobbyIds = m.ids;

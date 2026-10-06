@@ -57,6 +57,17 @@ const coop = new Coop({
   start(info, you) { beginRun(info, you); },
   paused(on) { coopPanel.hostPaused = on; },
   desync() { coopPanel.desync = true; },
+  hostGone() {
+    // the host left: a guest's run can't go on — back to the lobby
+    if (!started) return;
+    logQuit();
+    started = false;
+    hud.closeMenu();
+    hud.hideEnd();
+    setPaused(false);
+    hud.showTitle();
+    titleInfo();
+  },
 });
 /** The UI and the input talk to this: commands go out over the network, reads pass through. */
 let cmd = commandProxy(game, coop);
