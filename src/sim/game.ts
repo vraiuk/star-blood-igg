@@ -4,14 +4,14 @@ import {
   type AbilityId, type AttrId, type EnemyKind, type SlotDef,
 } from '../data/balance';
 import { PATHS } from '../data/meta';
-import { type ModPatch, type Mods, combine } from '../data/mods';
+import { type ModPatch, type Mods, combine, scalePatch } from '../data/mods';
 import { ASCEND, BASE_TIERS, MAX_TIER, MERGE, NESTS, SELL_REFUND, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 
 /** Families that live in the Tree's crown (the crown also accepts a firefly hive). */
 const CROWN_FAMILIES = new Set<Family>(['caterpillar', 'honeycomb', 'mender']);
 import { ENDLESS, nightDef, type NightDef } from '../data/nights';
 import {
-  APOTHEOSIS_RANK, BASE_SLOTS, BOONS, DEV_SLOTS, EXTRA_SLOT_PRICE, FACETS, FACET_MAX, RUNE_RANKS, removeCost, FORM_RANK, MAX_SLOTS, PROPERTIES, runeRankArea, runeRankCd, runeRankCost, runeRankLight,
+  APOTHEOSIS_RANK, BASE_SLOTS, BOONS, DEV_SLOTS, EXTRA_SLOT_PRICE, FACETS, FACET_MAX, RUNE_RANKS, removeCost, PROP_MAX_LV, propLvFactor, propUpgradable, propUpgradeCost, FORM_RANK, MAX_SLOTS, PROPERTIES, runeRankArea, runeRankCd, runeRankCost, runeRankLight,
   runeRankPower, boonById, maxRankForNight, propertyById,
   type FormId, type KeeperRuneId, type PropertyDef,
 } from '../data/runes';
@@ -114,7 +114,7 @@ export class Game {
         attrs: { might: 0, spirit: 0, body: 0 },
         runeRank: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0, timestop: 0, light: 0 },
         forms: { spear: null, hammer: null, starfall: null },
-        facets: [], facetLv: {},
+        facets: [], facetLv: {}, propLv: {},
         learned: { spear: true, hammer: false, starfall: false, radiance: false, swarm: false, timestop: false },
         castAnim: 9, hitFlash: 0, walkT: 0, rhythm: 0, rhythmT: 0, freeCast: 0, lastLightCd: 0,
       },
@@ -162,6 +162,40 @@ export class Game {
     return this.freeSlots(p.rune) > 0 && k.props[p.rune].filter((x) => x === p.id).length < p.stack && p.rank <= k.runeRank[p.rune];
   }
 
+  /** Levels of the Properties installed in a rune (kept parallel to `props`). */
+  lvs(rune: KeeperRuneId): number[] {
+    const k = this.state.keeper;
+    const a = (k.propLv[rune] ??= []);
+    while (a.length < k.props[rune].length) a.push(1);
+    if (a.length > k.props[rune].length) a.length = k.props[rune].length;
+    return a;
+  }
+  propLevel(rune: KeeperRuneId, index: number) { return this.lvs(rune)[index] ?? 1; }
+
+  /** Raise an installed numeric Property one level (+50% of its effect per level). */
+  upgradeProperty(rune: KeeperRuneId, index: number): boolean {
+    const id = this.state.keeper.props[rune][index];
+    const p = id ? propertyById(id) : undefined;
+    if (!p || !propUpgradable(p)) return this.deny('Это Свойство не прокачивается — его усиливают Грани');
+    const lv = this.propLevel(rune, index);
+    if (lv >= PROP_MAX_LV) return this.deny('Свойство уже на пределе');
+    const cost = propUpgradeCost(p, lv);
+    if (this.state.star < cost) return this.deny('Нужна Звёздная Кровь');
+    this.state.star -= cost;
+    this.lvs(rune)[index] = lv + 1;
+    this.recalc();
+    this.emit({ type: 'rune', id: `propUp:${p.id}` });
+    return true;
+  }
+
+  /** Summed strength of a Property in a rune: copies × their level factors. */
+  private propPower(rune: KeeperRuneId, id: string) {
+    const k = this.state.keeper;
+    let sum = 0;
+    k.props[rune].forEach((x, i) => { if (x === id) sum += propLvFactor(this.propLevel(rune, i)); });
+    return sum;
+  }
+
   /** Pull a Property out of a rune slot for Star Blood. */
   removeProperty(rune: KeeperRuneId, index: number): boolean {
     const k = this.state.keeper;
@@ -172,6 +206,7 @@ export class Game {
     if (this.state.star < cost) return this.deny('Нужна Звёздная Кровь');
     this.state.star -= cost;
     k.props[rune].splice(index, 1);
+    this.lvs(rune).splice(index, 1);
     this.recalc();
     this.emit({ type: 'rune', id: `remove:${p.id}` });
     return true;
@@ -185,7 +220,12 @@ export class Game {
     const counts = pathCounts(s.tree.branches);
     for (const p of Object.keys(counts) as TreePath[]) if (counts[p] >= PATH_CAPSTONE) patches.push(TREE_PATHS[p].mods);
     const k = s.keeper;
-    for (const rune of Object.keys(k.props) as KeeperRuneId[]) for (const p of this.runeProps(rune)) patches.push(p.mods);
+    for (const rune of Object.keys(k.props) as KeeperRuneId[]) {
+      k.props[rune].forEach((id, i) => {
+        const p = propertyById(id);
+        if (p) patches.push(scalePatch(p.mods, propLvFactor(this.propLevel(rune, i))));
+      });
+    }
     for (const id of k.boons) { const b = boonById(id); if (b) patches.push(b.mods); }
     this.mods = combine(patches);
   }
@@ -266,9 +306,9 @@ export class Game {
 
   abilityCost(id: AbilityId) {
     const own = id === 'spear' ? this.mods.spearCost : id === 'hammer' ? this.mods.hammerCost
-      : id === 'radiance' && this.propCount('radiance', 'rd-cheap') ? -0.35
-      : id === 'swarm' && this.propCount('swarm', 'sw-cheap') ? -0.35
-      : id === 'timestop' ? -0.35 * this.propCount('timestop', 'ts-cheap') : 0;
+      : id === 'radiance' ? -0.35 * this.propPower('radiance', 'rd-cheap')
+      : id === 'swarm' ? -0.35 * this.propPower('swarm', 'sw-cheap')
+      : id === 'timestop' ? -0.35 * this.propPower('timestop', 'ts-cheap') : 0;
     const facet = id === 'spear' && this.state?.keeper?.facets.includes('sp-swift') ? -0.25 : 0;
     const k = this.state?.keeper;
     const rank = k ? runeRankLight(k.runeRank[id]) : 1;
@@ -585,6 +625,7 @@ export class Game {
         if ((fr === 'spear' || fr === 'hammer' || fr === 'starfall') && k.runeRank[fr] < FORM_RANK) k.forms[fr] = null;
       } else {
         k.props[t.rune].pop();
+        this.lvs(t.rune);
       }
       this.recalc();
     }
@@ -900,7 +941,7 @@ export class Game {
     if (id === 'spear' && this.facet('sp-swift')) cd *= this.fx('sp-swift', 0.65, -0.07, 1);
     // «Ускорение» Properties: −12% cooldown each
     const haste = id === 'hammer' ? 'hm-haste' : id === 'radiance' ? 'rd-haste' : id === 'swarm' ? 'sw-haste' : '';
-    if (haste) cd *= 1 - 0.12 * this.propCount(id, haste);
+    if (haste) cd *= Math.max(0.3, 1 - 0.12 * this.propPower(id, haste));
     return cd * Math.max(0.4, 1 + this.mods.abilityCd);
   }
 
@@ -910,7 +951,7 @@ export class Game {
   private castRadiance() {
     const k = this.state.keeper;
     const def = ABILITIES.radiance;
-    k.radianceT = def.duration * this.runeArea('radiance') * (1 + 0.5 * this.propCount('radiance', 'rd-long')) * this.fx('rd-sun', 1.5, 0.25, 1);
+    k.radianceT = def.duration * this.runeArea('radiance') * (1 + 0.5 * this.propPower('radiance', 'rd-long')) * this.fx('rd-sun', 1.5, 0.25, 1);
     if (this.facet('rd-burst')) {
       // Вспышка: the flare strikes every creature in the Circle and blinds it
       const s = this.state;
@@ -927,7 +968,7 @@ export class Game {
   private castTimeStop() {
     const k = this.state.keeper;
     const def = ABILITIES.timestop;
-    k.timeStopMax = k.timeStopT = def.duration * this.runeArea('timestop') * (1 + 0.25 * this.propCount('timestop', 'ts-long')) + this.fx('ts-eternal', 3, 2, 0);
+    k.timeStopMax = k.timeStopT = def.duration * this.runeArea('timestop') * (1 + 0.25 * this.propPower('timestop', 'ts-long')) + this.fx('ts-eternal', 3, 2, 0);
     k.timeStopNights = Math.max(1, def.nights - this.propCount('timestop', 'ts-quick'));
   }
   /** A giant walks over termite soldiers, crushing them as it goes. */
@@ -951,7 +992,7 @@ export class Game {
     const s = this.state;
     const k = s.keeper;
     const def = ABILITIES.swarm;
-    k.swarmT = def.duration * this.runeArea('swarm') * (this.propCount('swarm', 'sw-long') ? 1.5 : 1) * this.fx('sw-long2', 1.6, 0.3, 1);
+    k.swarmT = def.duration * this.runeArea('swarm') * (1 + 0.5 * this.propPower('swarm', 'sw-long')) * this.fx('sw-long2', 1.6, 0.3, 1);
     if (this.facet('sw-termite')) {
       for (const u of s.soldiers) if (Math.abs(u.x - k.x) <= this.swarmReach() * 1.2) { u.hp = u.maxHp; u.respawn = 0; }
     }
@@ -964,7 +1005,7 @@ export class Game {
       this.healFx(st.id, st.x, st.underground ? st.y : WORLD.groundY - 20, 99);
     }
   }
-  swarmReach() { return ABILITIES.swarm.reach * this.runeArea('swarm') * (1 + 0.4 * this.propCount('swarm', 'sw-wide')) * this.fx('sw-follow', 1, 0.1, 1); }
+  swarmReach() { return ABILITIES.swarm.reach * this.runeArea('swarm') * (1 + 0.4 * this.propPower('swarm', 'sw-wide')) * this.fx('sw-follow', 1, 0.1, 1); }
 
   /** Rune area multiplier (rank). */
   runeArea(rid: KeeperRuneId) { return runeRankArea(this.state.keeper.runeRank[rid]); }

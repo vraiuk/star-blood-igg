@@ -133,6 +133,14 @@ export function maxRankForNight(night: number): RuneRank {
   return Math.min(4, Math.floor(night / 2) + 1) as RuneRank;
 }
 
+/** Installed numeric Properties (Усиление, Уменьшение, Ускорение) level up to V in their slot. */
+export const PROP_MAX_LV = 5;
+export const propUpgradable = (p: PropertyDef) => p.type === 'Усиление' || p.type === 'Уменьшение' || p.type === 'Ускорение';
+/** Each level above I adds +50% to the Property's numeric effect. */
+export const propLvFactor = (lv: number) => 1 + 0.5 * (lv - 1);
+/** Star Blood to raise an installed Property from `lv` to `lv + 1`. */
+export const propUpgradeCost = (p: PropertyDef, lv: number) => Math.round(p.price * (1 + lv) * 1.5);
+
 /** Star Blood to pull a Property out of a rune (frees the slot, no refund). */
 export const removeCost = (p: PropertyDef) => 4 + p.rank * 3;
 

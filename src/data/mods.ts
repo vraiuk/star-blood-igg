@@ -110,3 +110,15 @@ export function combine(patches: ModPatch[]): Mods {
   }
   return m as unknown as Mods;
 }
+
+/** Scale every numeric modifier of a patch by `k` (flags stay as they are) — for leveled Properties. */
+export function scalePatch(p: ModPatch, k: number): ModPatch {
+  if (k === 1) return p;
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(p)) {
+    if (typeof v === 'number') out[key] = v * k;
+    else if (v && typeof v === 'object') out[key] = Object.fromEntries(Object.entries(v as Record<string, number>).map(([f, n]) => [f, n * k]));
+    else out[key] = v;
+  }
+  return out as ModPatch;
+}

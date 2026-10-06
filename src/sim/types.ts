@@ -248,6 +248,8 @@ export interface Keeper {
   /** Перегрев: consecutive spear throws and the window to the next one */
   heat: number;
   heatT: number;
+  /** level of each installed Property, parallel to `props` (1..5) */
+  propLv: Partial<Record<import('../data/runes').KeeperRuneId, number[]>>;
   /** chosen rune facets (Грани) and their levels (Огранка on Star ranks) */
   facets: string[];
   facetLv: Record<string, number>;

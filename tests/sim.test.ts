@@ -174,6 +174,25 @@ describe('build with merge stars', () => {
   });
 });
 
+describe('property levels', () => {
+  it('an installed Усиление levels up and strengthens its effect', () => {
+    const g = new Game();
+    g.state.star = 9999;
+    g.promoteRune('spear'); while (g.choice) g.choose(0);
+    expect(g.buyProperty('sp-power')).toBe(true);
+    const before = g.mods.spearDamage;
+    expect(g.upgradeProperty('spear', 0)).toBe(true);
+    expect(g.propLevel('spear', 0)).toBe(2);
+    expect(g.mods.spearDamage).toBeCloseTo(before * 1.5, 5);
+    // an «Изменение» doesn't level
+    g.promoteRune('spear'); while (g.choice) g.choose(0);
+    g.buyProperty('sp-ricochet');
+    expect(g.upgradeProperty('spear', 1)).toBe(false);
+    expect(g.removeProperty('spear', 0)).toBe(true);
+    expect(g.propLevel('spear', 0)).toBe(1); // the ricochet slid into slot 0 with its own level
+  });
+});
+
 describe('time stop', () => {
   it('freezes creatures and the night, then recovers over nights, not seconds', () => {
     const g = new Game();

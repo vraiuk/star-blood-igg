@@ -250,3 +250,7 @@
   a faint heartbeat at night.
 - Range preview: a soft dome instead of a rectangle; unaffordable build options are dimmed;
   the ring's pop-in animation plays only when it opens on a node (no blinking on +/−).
+- Installed numeric Properties (Усиление, Уменьшение, Ускорение) level up I→V right in their slot
+  (▲ button, Star Blood: price × (1+lv) × 1.5); each level adds +50% of the Property's effect
+  (scalePatch for mod Properties, propPower for rune-specific ones). «Изменения» are on/off —
+  Facets strengthen them.

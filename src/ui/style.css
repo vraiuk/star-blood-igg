@@ -514,3 +514,6 @@ body { display: grid; place-items: center; }
 .ropt.no { opacity: 0.5; box-shadow: none; }
 .ropt.no.locked { opacity: 0.45; }
 #ring.still .ropt, .still .ropt, .still .starstep, .still .starlbl { animation: none !important; }
+.slot .up { margin-left: calc(4 * var(--u)); font-size: calc(9 * var(--u) / 2); background: #2a3a14; color: #d8ffb0; border: 1px solid #8fd06a88; border-radius: 3px; cursor: pointer; padding: 0 calc(3 * var(--u)); }
+.slot .up.no { opacity: .4; cursor: default; }
+.slot .up .icon { width: calc(5 * var(--u)); height: calc(5 * var(--u)); vertical-align: middle; }

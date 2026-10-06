@@ -2,7 +2,7 @@ import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, KEEPER_RANKS, SLOTS, WORLD, att
 import { NEST_ROLE, MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   APOTHEOSIS_RANK, DEV_SLOTS, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
-  runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, FACETS, FACET_MAX, FACET_RANKS, type FormId, type KeeperRuneId,
+  runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, PROP_MAX_LV, propLvFactor, propUpgradable, propUpgradeCost, FACETS, FACET_MAX, FACET_RANKS, type FormId, type KeeperRuneId,
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
 import type { Game } from '../sim/game';
@@ -388,7 +388,9 @@ export class Hud {
         case 'rune': {
           const p = propertyById(e.id);
           const b = boonById(e.id);
-          if (e.id.startsWith('rank:')) {
+          if (e.id.startsWith('propUp:')) {
+            this.say(`Свойство «${propertyById(e.id.slice(7))?.name ?? ''}» прокачано.`);
+          } else if (e.id.startsWith('rank:')) {
             const rid = e.id.slice(5) as KeeperRuneId;
             this.say(`Руна «${KEEPER_RUNES[rid].name}» повышена до ранга «${runeRankName(g.state.keeper.runeRank[rid])}».`);
           } else if (e.id.startsWith('slot:')) {
@@ -935,8 +937,15 @@ export class Hud {
           const p = props[i];
           if (p) {
             const rc = removeCost(p);
+            const lv = g.propLevel(rid, i);
+            let up = '';
+            if (propUpgradable(p) && lv < PROP_MAX_LV) {
+              const uc = propUpgradeCost(p, lv);
+              actions.push(() => { g.upgradeProperty(rid, i); });
+              up = `<button class="up ${s.star >= uc ? '' : 'no'}" data-i="${actions.length - 1}" title="Прокачать до ${ROMAN[lv + 1]}: эффект ×${propLvFactor(lv + 1).toFixed(1)} от базового">▲ ${uc} <img class="icon" src="${icon('star')}"></button>`;
+            }
             actions.push(() => { g.removeProperty(rid, i); });
-            html += `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}">${p.name}<button class="rm ${s.star >= rc ? '' : 'no'}" data-i="${actions.length - 1}" title="Вынуть Свойство за ${rc} Звёздной Крови">✕ ${rc} <img class="icon" src="${icon('star')}"></button></span>`;
+            html += `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}${lv > 1 ? ` · уровень ${ROMAN[lv]}: ×${propLvFactor(lv).toFixed(1)}` : ''}">${p.name}${lv > 1 ? ` <b>${ROMAN[lv]}</b>` : ''}${up}<button class="rm ${s.star >= rc ? '' : 'no'}" data-i="${actions.length - 1}" title="Вынуть Свойство за ${rc} Звёздной Крови">✕ ${rc} <img class="icon" src="${icon('star')}"></button></span>`;
           } else html += `<span class="slot">пусто</span>`;
         }
         if (cap < DEV_SLOTS) html += `<span class="slot locked" title="Нужна Малая Руна Развития">+</span>`;
