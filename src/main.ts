@@ -37,7 +37,7 @@ const audio = new Audio();
 const renderer = new Renderer(ctx);
 const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null };
 let endShown = false;
-const SPEEDS = [1, 2, 5];
+const SPEEDS = [1, 1.25, 1.5, 2, 5];
 const nextSpeed = () => SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
 let lastRecord = false;
 
@@ -235,6 +235,8 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   const k = ALIAS[e.key.toLowerCase()] ?? e.key.toLowerCase();
   held.delete(k);
+  // releasing the spear key lets go of the Piercing Beam
+  if (ABILITY_KEYS[k] === 'spear') cmd.releaseBeam();
   updateMove();
 });
 window.addEventListener('blur', () => { held.clear(); updateMove(); });
@@ -356,6 +358,8 @@ function finishRun() {
 // ───────────────────────────── loop ────────────────────────────────
 
 let last = performance.now();
+/** when a held rune key last asked for a cast (the answer takes a tick or a round-trip) */
+const holdCastAt: Partial<Record<AbilityId, number>> = {};
 let acc = 0;
 let time = 0;
 
@@ -363,6 +367,15 @@ function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   time += dt;
+  // hold-to-cast: a held rune key fires again as soon as the rune is ready;
+  // the Piercing Beam is held while its key is down (co-op: at most one request per rune in flight)
+  if (started && !paused && !game.over && !game.choice && !hud.target && !hud.tabletOpen) {
+    for (const [key, id] of Object.entries(ABILITY_KEYS)) {
+      if (!held.has(key)) continue;
+      if (id === 'spear' && game.state.keeper.forms.spear === 'B') continue;
+      if (game.abilityReady(id) && now - (holdCastAt[id] ?? 0) > 150) { holdCastAt[id] = now; cmd.cast(id, view.mouseX, view.mouseY); }
+    }
+  }
   // co-op lockstep: the host runs the world (its pause holds everyone), guests replay its frames;
   // a pending choice (dawn rune, tree branch) holds the world still on every peer
   const running = started && !game.over;

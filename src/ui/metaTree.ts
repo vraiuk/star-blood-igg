@@ -1,6 +1,6 @@
 import './metaTree.css';
 import { META_BRANCH_NAMES, META_INFINITE, META_NODES, PATHS, infiniteCost, type MetaBranch, type MetaNode } from '../data/meta';
-import { buyNode, buyRing, canBuy, respec, treeComplete, writeSave, type MetaSave } from '../state/save';
+import { buyNode, buyRing, canBuy, canRefund, refundNode, respec, treeComplete, writeSave, type MetaSave } from '../state/save';
 import { PAL, dither, disc, lerp, makeCanvas, rect, ring, seeded, type Ctx } from '../render/pixel';
 
 /*
@@ -719,7 +719,7 @@ export function openMetaTree(root: HTMLElement, save: MetaSave, onClose: () => v
   }
 
   function stateText(n: MetaNode, st: NodeState): string {
-    if (st === 'bought' || st === 'flow') return 'Пробуждено';
+    if (st === 'bought' || st === 'flow') return canRefund(save, n.id) ? `Пробуждено · клик — вернуть ${n.cost} ${coinsWord(n.cost)}` : 'Пробуждено · сначала верни ячейки выше по ветви';
     if (st === 'locked') return `Сначала: ${n.requires ? viewById.get(n.requires)?.n.name ?? n.requires : '—'}`;
     if (st === 'poor') return `Не хватает Монет (ещё ${n.cost - save.coins})`;
     return 'Нажми, чтобы пробудить';
@@ -786,7 +786,19 @@ export function openMetaTree(root: HTMLElement, save: MetaSave, onClose: () => v
 
   function tryBuy(v: NodeView) {
     const st = stateOf(v.n);
-    if (st === 'bought' || st === 'flow') return;
+    if (st === 'bought') {
+      // clicking an awakened node gives it back (if nothing above depends on it)
+      if (!refundNode(save, v.n.id)) {
+        flash(tip, 'shake');
+        return;
+      }
+      burst(v.x, v.y, 10, 35);
+      flash(coinsRow, 'spend');
+      rebuildTree();
+      renderHud();
+      return;
+    }
+    if (st === 'flow') return;
     if (st === 'locked') {
       if (v.n.requires) nudge = { id: v.n.requires, t0: performance.now() };
       flash(tip, 'shake');

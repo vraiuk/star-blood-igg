@@ -8,7 +8,6 @@ export class Audio {
   private amb!: GainNode;
   private noise!: AudioBuffer;
   private last = new Map<string, number>();
-  private droneNight!: GainNode;
   enabled = true;
 
   /** Must be called from a user gesture. */
@@ -40,57 +39,131 @@ export class Audio {
 
   setPhase(phase: Phase) {
     if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    this.droneNight.gain.setTargetAtTime(phase === 'night' ? 0.5 : 0.08, t, 1.5);
+    this.night = phase === 'night';
   }
+
+  // ───────────────────────────── music ─────────────────────────────
+  // A quiet generative score instead of a drone: a soft pad whose chords drift every few
+  // seconds and sparse plucked notes with an echo — bright pentatonic by day, a lower,
+  // sparser minor with a faint heartbeat at night.
+  private night = false;
+  private pad: OscillatorNode[] = [];
+  private music!: GainNode;
+  private echo!: GainNode;
+  private nextChordT = 0;
+  private nextNoteT = 0;
+  private nextBeatT = 0;
+  private chord = 0;
+  private static readonly DAY_CHORDS = [[146.8, 220, 293.7, 370], [196, 246.9, 293.7, 392], [123.5, 185, 246.9, 293.7], [110, 164.8, 220, 277.2]];
+  private static readonly NIGHT_CHORDS = [[110, 164.8, 220, 261.6], [87.3, 174.6, 220, 261.6], [73.4, 146.8, 174.6, 220], [82.4, 164.8, 207.7, 246.9]];
+  private static readonly DAY_SCALE = [587.3, 659.3, 740, 880, 987.8, 1174.7];
+  private static readonly NIGHT_SCALE = [440, 523.3, 587.3, 659.3, 784];
 
   private startAmbience() {
     const ctx = this.ctx!;
-    // warm pad (the tree)
-    const pad = ctx.createGain();
-    pad.gain.value = 0.18;
-    pad.connect(this.amb);
-    for (const f of [110, 164.8, 220, 277.2]) {
+    this.music = ctx.createGain();
+    this.music.gain.value = 0.55;
+    this.music.connect(this.amb);
+    // pad: four soft voices through a low-pass
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 900;
+    const padGain = ctx.createGain();
+    padGain.gain.value = 0.09;
+    padGain.connect(lp).connect(this.music);
+    for (const f of Audio.DAY_CHORDS[0]) {
       const o = ctx.createOscillator();
-      o.type = 'sine';
+      o.type = 'triangle';
       o.frequency.value = f;
       const lfo = ctx.createOscillator();
-      lfo.frequency.value = 0.07 + Math.random() * 0.08;
+      lfo.frequency.value = 0.05 + Math.random() * 0.06;
       const lg = ctx.createGain();
-      lg.gain.value = f * 0.004;
+      lg.gain.value = f * 0.003;
       lfo.connect(lg).connect(o.frequency);
       const g = ctx.createGain();
       g.gain.value = 0.25;
-      o.connect(g).connect(pad);
+      o.connect(g).connect(padGain);
       o.start(); lfo.start();
+      this.pad.push(o);
     }
-    // dissonant void drone (night)
-    this.droneNight = ctx.createGain();
-    this.droneNight.gain.value = 0.08;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 260;
-    this.droneNight.connect(lp).connect(this.amb);
-    for (const f of [41.2, 43.6, 61.7]) {
+    // a soft echo for the plucks
+    this.echo = ctx.createGain();
+    const delay = ctx.createDelay(1);
+    delay.delayTime.value = 0.42;
+    const fb = ctx.createGain();
+    fb.gain.value = 0.32;
+    const tone = ctx.createBiquadFilter();
+    tone.type = 'lowpass';
+    tone.frequency.value = 2200;
+    this.echo.connect(this.music);
+    this.echo.connect(delay);
+    delay.connect(tone).connect(fb).connect(delay);
+    tone.connect(this.music);
+    const t = ctx.currentTime;
+    this.nextChordT = t + 8;
+    this.nextNoteT = t + 2;
+    this.nextBeatT = t + 1;
+    setInterval(() => this.tickMusic(), 200);
+  }
+
+  private tickMusic() {
+    const ctx = this.ctx;
+    if (!ctx || !this.enabled) return;
+    const now = ctx.currentTime;
+    // chords drift slowly
+    if (now >= this.nextChordT) {
+      this.chord = (this.chord + 1) % 4;
+      const ch = (this.night ? Audio.NIGHT_CHORDS : Audio.DAY_CHORDS)[this.chord];
+      this.pad.forEach((o, i) => o.frequency.setTargetAtTime(ch[i], now, 1.2));
+      this.nextChordT = now + 8;
+    }
+    // sparse plucked notes
+    while (this.nextNoteT < now + 0.3) {
+      const scale = this.night ? Audio.NIGHT_SCALE : Audio.DAY_SCALE;
+      const f = scale[Math.floor(Math.random() * scale.length)];
+      this.pluck(f, this.nextNoteT, this.night ? 0.045 : 0.055);
+      if (Math.random() < 0.25) this.pluck(f * 1.5, this.nextNoteT + 0.18, 0.03);
+      this.nextNoteT += this.night ? 1.6 + Math.random() * 2.6 : 0.9 + Math.random() * 1.8;
+    }
+    // a faint heartbeat at night
+    if (this.night) {
+      while (this.nextBeatT < now + 0.3) {
+        this.thump(this.nextBeatT, 0.12);
+        this.thump(this.nextBeatT + 0.28, 0.08);
+        this.nextBeatT += 1.7;
+      }
+    } else this.nextBeatT = now + 1;
+  }
+
+  private pluck(freq: number, t: number, vol: number) {
+    const ctx = this.ctx!;
+    for (const [mul, type, v] of [[1, 'triangle', 1], [2, 'sine', 0.35]] as const) {
       const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.value = f;
+      o.type = type;
+      o.frequency.value = freq * mul;
       const g = ctx.createGain();
-      g.gain.value = 0.22;
-      o.connect(g).connect(this.droneNight);
-      o.start();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol * v, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+      o.connect(g).connect(this.echo);
+      o.start(t);
+      o.stop(t + 1.5);
     }
-    const n = ctx.createBufferSource();
-    n.buffer = this.noise;
-    n.loop = true;
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 400;
-    bp.Q.value = 0.7;
-    const ng = ctx.createGain();
-    ng.gain.value = 0.12;
-    n.connect(bp).connect(ng).connect(this.droneNight);
-    n.start();
+  }
+
+  private thump(t: number, vol: number) {
+    const ctx = this.ctx!;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(70, t);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.25);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.connect(g).connect(this.music);
+    o.start(t);
+    o.stop(t + 0.4);
   }
 
   private ok(key: string, gap: number): boolean {

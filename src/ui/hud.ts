@@ -1,8 +1,8 @@
 import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
-import { MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
+import { NEST_ROLE, MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   APOTHEOSIS_RANK, DEV_SLOTS, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
-  runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, FACETS, FACET_MAX, FACET_RANKS, type FormId, type KeeperRuneId,
+  runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, PROP_MAX_LV, propLvFactor, propUpgradable, propUpgradeCost, FACETS, FACET_MAX, FACET_RANKS, type FormId, type KeeperRuneId,
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
 import type { Game } from '../sim/game';
@@ -390,7 +390,9 @@ export class Hud {
         case 'rune': {
           const p = propertyById(e.id);
           const b = boonById(e.id);
-          if (e.id.startsWith('rank:')) {
+          if (e.id.startsWith('propUp:')) {
+            this.say(`Свойство «${propertyById(e.id.slice(7))?.name ?? ''}» прокачано.`);
+          } else if (e.id.startsWith('rank:')) {
             const rid = e.id.slice(5) as KeeperRuneId;
             this.say(`Руна «${KEEPER_RUNES[rid].name}» повышена до ранга «${runeRankName(g.state.keeper.runeRank[rid])}».`);
           } else if (e.id.startsWith('slot:')) {
@@ -521,6 +523,7 @@ export class Hud {
   }
 
   closeMenu() {
+    this.ringAnimKey = '';
     const had = this.menuTarget !== null || this.panelKind !== null;
     this.menuTarget = null;
     this.ring.classList.remove('show');
@@ -533,6 +536,8 @@ export class Hud {
 
   /** Keyboard shortcut for the ring: key matches an option's hotkey. */
   private sellArmed = -1e9;
+  /** the node the ring last opened on (its pop-in animation plays once per node) */
+  private ringAnimKey = '';
   /** merge stars a new nest of each family is built with (the − ★N + steppers) */
   private buildStars: Partial<Record<Family, number>> = {};
   ringKey(key: string): boolean {
@@ -608,7 +613,7 @@ export class Hud {
         const stats = g.nestStats({ family: fam, tier: 0, spec: null, merge: stars });
         opts.push({
           fam, icon: icon(fam), title: def.name + (stars ? ` ${'★'.repeat(stars)}` : ''),
-          sub: stars ? `${def.desc} · сразу со ${'★'.repeat(stars)} — как ${Math.pow(3, stars)} гнёзд, слитых в одно` : def.desc, key: String(i + 1),
+          sub: `<b class="role">${NEST_ROLE[fam]}</b><br>${def.desc}${stars ? ` · сразу со ${'★'.repeat(stars)} — как ${Math.pow(3, stars)} гнёзд, слитых в одно` : ''}`, key: String(i + 1),
           body: this.statsBlock(fam, null, stats), price, ok: g.canPay(price),
           preview: { x: slot.x, r: fam === 'dragonfly' ? stats.light! : stats.range, underground: slot.underground, y: slot.y },
           // after building, stay on the same node: its upgrade menu opens right away
@@ -743,6 +748,11 @@ export class Hud {
           <button data-fam="${o.fam}" data-d="1" title="Больше звёзд: каждая ★ — как 3 гнезда, слитых в одно">+</button>
           <button data-fam="${o.fam}" data-d="-1" ${n0 > 0 ? '' : 'disabled'} title="Меньше звёзд">−</button></div>`;
       });
+      // the pop-in animation plays only when the menu opens on a new node — re-renders
+      // (prices, ★ steppers, affordability) must not make every button blink
+      const key = JSON.stringify(this.menuTarget);
+      this.ring.classList.toggle('still', key === this.ringAnimKey);
+      this.ringAnimKey = key;
       this.ring.innerHTML = html;
       this.ring.querySelectorAll<HTMLButtonElement>('.starstep button').forEach((b) => {
         b.addEventListener('mousedown', (ev) => ev.stopPropagation());
@@ -929,8 +939,15 @@ export class Hud {
           const p = props[i];
           if (p) {
             const rc = removeCost(p);
+            const lv = g.propLevel(rid, i);
+            let up = '';
+            if (propUpgradable(p) && lv < PROP_MAX_LV) {
+              const uc = propUpgradeCost(p, lv);
+              actions.push(() => { g.upgradeProperty(rid, i); });
+              up = `<button class="up ${s.star >= uc ? '' : 'no'}" data-i="${actions.length - 1}" title="Прокачать до ${ROMAN[lv + 1]}: эффект ×${propLvFactor(lv + 1).toFixed(1)} от базового">▲ ${uc} <img class="icon" src="${icon('star')}"></button>`;
+            }
             actions.push(() => { g.removeProperty(rid, i); });
-            html += `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}">${p.name}<button class="rm ${s.star >= rc ? '' : 'no'}" data-i="${actions.length - 1}" title="Вынуть Свойство за ${rc} Звёздной Крови">✕ ${rc} <img class="icon" src="${icon('star')}"></button></span>`;
+            html += `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}${lv > 1 ? ` · уровень ${ROMAN[lv]}: ×${propLvFactor(lv).toFixed(1)}` : ''}">${p.name}${lv > 1 ? ` <b>${ROMAN[lv]}</b>` : ''}${up}<button class="rm ${s.star >= rc ? '' : 'no'}" data-i="${actions.length - 1}" title="Вынуть Свойство за ${rc} Звёздной Крови">✕ ${rc} <img class="icon" src="${icon('star')}"></button></span>`;
           } else html += `<span class="slot">пусто</span>`;
         }
         if (cap < DEV_SLOTS) html += `<span class="slot locked" title="Нужна Малая Руна Развития">+</span>`;

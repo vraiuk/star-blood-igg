@@ -510,3 +510,10 @@ body { display: grid; place-items: center; }
 .starlbl { position: absolute; transform: translate(-50%, -50%); font-family: var(--pix); font-size: calc(6.5 * var(--u)); color: #c9c0a0;
   background: rgba(10, 8, 20, 0.85); border: var(--u) solid #4a4260; border-radius: calc(1.5 * var(--u)); padding: 0 calc(2 * var(--u)); pointer-events: none; white-space: nowrap; }
 .starlbl.on { color: #fff0b0; border-color: #ffd24a; box-shadow: 0 0 calc(4 * var(--u)) rgba(255, 210, 74, 0.55); }
+#card .role { color: #ffe58a; font-weight: normal; }
+.ropt.no { opacity: 0.5; box-shadow: none; }
+.ropt.no.locked { opacity: 0.45; }
+#ring.still .ropt, .still .ropt, .still .starstep, .still .starlbl { animation: none !important; }
+.slot .up { margin-left: calc(4 * var(--u)); font-size: calc(9 * var(--u) / 2); background: #2a3a14; color: #d8ffb0; border: 1px solid #8fd06a88; border-radius: 3px; cursor: pointer; padding: 0 calc(3 * var(--u)); }
+.slot .up.no { opacity: .4; cursor: default; }
+.slot .up .icon { width: calc(5 * var(--u)); height: calc(5 * var(--u)); vertical-align: middle; }

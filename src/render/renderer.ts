@@ -232,7 +232,7 @@ export class Renderer {
     this.drawNestsOutlined(c, s.structures.filter((x) => x.underground), time);
     for (const tn of s.tunnels) drawTunnel(c, tn, time);
     for (const e of s.enemies) if (e.layer === 'under') drawFog(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
-    for (const e of s.enemies) if (e.layer === 'under') drawEnemy(c, e, time);
+    this.drawEnemiesOutlined(c, s.enemies.filter((e) => e.layer === 'under'), time);
     const tsc = treeScale(s.tree.rings);
     // the Tree's death: it leans, then falls ever faster and crashes down
     if (s.phase === 'lost') this.fallT = this.fallT < 0 ? 0 : this.fallT + dt;
@@ -282,7 +282,7 @@ export class Renderer {
     this.drawNestsOutlined(c, s.structures.filter((x) => !x.underground && !x.crown), time);
     for (const tn of s.tunnels) if (tn.open) drawTunnelMouths(c, tn, time);
     for (const e of s.enemies) if (e.layer !== 'under') drawFog(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
-    for (const e of s.enemies) if (e.layer !== 'under') drawEnemy(c, e, time);
+    this.drawEnemiesOutlined(c, s.enemies.filter((e) => e.layer !== 'under'), time);
     // Прыжок Молота: the Ascended arcs through the air (every one of them in co-op, the local one on top)
     const order = s.keepers.map((_, i) => i).sort((a, b) => (a === game.local ? 1 : 0) - (b === game.local ? 1 : 0));
     for (const i of order) {
@@ -311,6 +311,7 @@ export class Renderer {
     // ── above darkness: eyes, light, drops, projectiles
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
     for (const e of s.enemies) drawFogEdge(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
+    if (s.phase === 'night') this.drawIncoming(c, game, time);
     // Остановка Времени: a pale-blue hush over the world, frost glints on the frozen
     // the Ascended holding time the longest shows the clock
     const tk = s.keepers.reduce((a, b) => (b.timeStopT > a.timeStopT ? b : a));
@@ -448,6 +449,69 @@ export class Renderer {
     r.fillRect(0, 0, WORLD.width, WORLD.height);
     for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) c.drawImage(this.rimCv, dx, dy);
     c.drawImage(this.nestCv, 0, 0);
+  }
+
+  /**
+   * Where the wave comes from, told by the setting: at the edge of the view the Darkness
+   * thickens and red eyes blink — denser the more creatures are on their way from that side.
+   */
+  private drawIncoming(c: Ctx, game: Game, time: number) {
+    const s = game.state;
+    const cam = this.camera;
+    const soon = (side: 'L' | 'R') => s.pending.filter((p) => p.side === side && p.at - s.phaseTime < 6).length;
+    const offscreen = (dir: 1 | -1) => s.enemies.filter((e) => !e.dead && e.layer !== 'under' && (dir < 0 ? e.x < cam.x : e.x > cam.x + cam.w)).length;
+    for (const [side, dir] of [['L', -1], ['R', 1]] as const) {
+      const n = soon(side) + offscreen(dir);
+      if (!n) continue;
+      const k = Math.min(1, 0.25 + n / 12);
+      const edge = dir < 0 ? cam.x : cam.x + cam.w;
+      const depth = 30 + 50 * k;
+      const top = WORLD.groundY - 90, bot = WORLD.groundY + 6;
+      for (let d = 0; d < depth; d += 3) {
+        const a = (1 - d / depth) * 0.55 * k * (0.85 + 0.15 * Math.sin(time * 2 + d * 0.2));
+        c.fillStyle = `rgba(40, 8, 40, ${a.toFixed(3)})`;
+        c.fillRect(edge - dir * d - (dir > 0 ? 3 : 0), top, 3, bot - top);
+      }
+      // creeping tendrils along the ground
+      for (let i = 0; i < 6; i++) {
+        const len = depth * (0.6 + 0.4 * Math.sin(time * 1.3 + i * 1.7));
+        const y = WORLD.groundY - 4 - i * 9;
+        for (let d = 0; d < len; d += 2) if (Math.sin(d * 0.4 + time * 3 + i) > 0.2) rect(c, edge - dir * d, y + Math.sin(d * 0.15 + i) * 2, 1, 1, 'rgba(120,40,110,0.6)');
+      }
+      // eyes in the dark
+      const eyes = Math.min(8, 2 + Math.floor(n / 2));
+      for (let i = 0; i < eyes; i++) {
+        if (Math.sin(time * 1.7 + i * 2.3) < -0.6) continue;
+        const ex = edge - dir * (8 + ((i * 37) % Math.max(10, depth - 10)));
+        const ey = WORLD.groundY - 10 - ((i * 23) % 60);
+        rect(c, ex, ey, 1, 1, '#ff3a3a');
+        rect(c, ex + 3, ey, 1, 1, '#ff3a3a');
+      }
+    }
+  }
+
+  /**
+   * Creatures get a thin hostile rim (as good 2D games outline enemies): the silhouette is
+   * redrawn 1 px around in a muted violet-rose, so dark beasts read on any background.
+   */
+  private drawEnemiesOutlined(c: Ctx, list: import('../sim/types').Enemy[], time: number) {
+    if (!list.length) return;
+    const n = this.nestCtx, r = this.rimCtx;
+    const cam = this.camera;
+    // work only inside the camera view (plus a margin) — cheaper than the whole world
+    const x0 = Math.max(0, Math.floor(cam.x) - 40), y0 = Math.max(0, Math.floor(cam.y) - 40);
+    const w = Math.min(WORLD.width - x0, Math.ceil(cam.w) + 80), h = Math.min(WORLD.height - y0, Math.ceil(cam.h) + 80);
+    n.clearRect(x0, y0, w, h);
+    for (const e of list) drawEnemy(n, e, time);
+    r.globalCompositeOperation = 'source-over';
+    r.clearRect(x0, y0, w, h);
+    r.drawImage(this.nestCv, x0, y0, w, h, x0, y0, w, h);
+    r.globalCompositeOperation = 'source-in';
+    r.fillStyle = 'rgba(200, 120, 170, 0.75)';
+    r.fillRect(x0, y0, w, h);
+    r.globalCompositeOperation = 'source-over';
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) c.drawImage(this.rimCv, x0, y0, w, h, x0 + dx, y0 + dy, w, h);
+    c.drawImage(this.nestCv, x0, y0, w, h, x0, y0, w, h);
   }
 
   /** The channelled Piercing Beam, attached to the keeper's staff. */
@@ -622,9 +686,13 @@ export class Renderer {
       return;
     }
     const y = underground ? (slotY ?? ROOT_SLOT_Y) + 2 : WORLD.groundY + 1;
-    // a soft band over the covered ground, so the reach reads at a glance
-    c.fillStyle = 'rgba(255,214,120,0.07)';
-    c.fillRect(x - r, underground ? y : y - 46, r * 2, underground ? 20 : 46);
+    // a soft dome over the covered ground (the same shape as the dotted arc)
+    c.fillStyle = 'rgba(255,214,120,0.08)';
+    c.beginPath();
+    if (underground) c.ellipse(x, y, r, r * 0.27, 0, 0, Math.PI);
+    else c.ellipse(x, y, r, r * 0.45, 0, Math.PI, Math.PI * 2);
+    c.closePath();
+    c.fill();
     for (let i = -r; i <= r; i += 3) rect(c, x + i, y, 2, 1, 'rgba(255,214,120,0.85)');
     rect(c, x - r, y - 10, 1, 11, PAL.gold3);
     rect(c, x + r, y - 10, 1, 11, PAL.gold3);
