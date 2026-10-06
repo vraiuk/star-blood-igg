@@ -136,7 +136,7 @@ const ABILITY_KEYS: Record<string, AbilityId> = Object.fromEntries(
   (Object.keys(ABILITIES) as AbilityId[]).map((id) => [ABILITIES[id].key, id]),
 );
 // Cyrillic layout aliases for letter hotkeys
-const ALIAS: Record<string, string> = { г: 'u', ы: 's', й: 'q', у: 'e', к: 'r', е: 't', а: 'f', ь: 'm', ф: 'a', в: 'd', и: 'b', м: 'v', п: 'g' };
+const ALIAS: Record<string, string> = { г: 'u', ы: 's', й: 'q', ц: 'w', у: 'e', к: 'r', е: 't', а: 'f', ь: 'm', ф: 'a', в: 'd', и: 'b', м: 'v', п: 'g' };
 
 window.addEventListener('keydown', (e) => {
   if (metaOpen) return;

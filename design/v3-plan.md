@@ -206,3 +206,6 @@
   Возвышение level +25% load, +5% speed, +1 caterpillar per 2 levels.
 - A nest's/slot's ring menu pauses the game (⏸ in its title).
 - Tablet: development-rune purchases show the rune icon and «1» instead of the word «руной».
+- Nest ring menu is always the same 4 buttons with fixed hotkeys: Q (upgrade / spec A /
+  ascension), W (spec B), E (merge), S (release); unavailable ones are greyed with what they
+  need (e.g. merge: «N из 3 одинаковых гнёзд»).

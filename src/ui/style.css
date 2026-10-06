@@ -489,3 +489,4 @@ body { display: grid; place-items: center; }
   font-family: Philosopher, serif; font-size: calc(6 * var(--u)); line-height: 1.35; color: #e8dcc4; text-align: left; }
 .gloss-tip b { display: block; color: #ffe58a; font-size: calc(7 * var(--u)); margin-bottom: calc(1.5 * var(--u)); }
 .gloss-tip.hidden { display: none; }
+.ropt.locked { opacity: 0.45; border-style: dashed; cursor: help; box-shadow: none; }
