@@ -27,6 +27,7 @@ export function drawEnemy(c: Ctx, e: Enemy, time: number) {
     case 'forager': return forager(c, e, t, moving, body, rim);
     case 'guard': return guard(c, e, t, flash);
     case 'executioner': return executioner(c, e, t, flash, time, rim);
+    case 'reaper': return reaper(c, e, t, moving, body, rim);
   }
 }
 
@@ -199,6 +200,29 @@ function executioner(c: Ctx, e: Enemy, t: number, flash: boolean, time: number, 
   rect(c, cx, cy, 2, 2, Math.sin(time * 8) > 0 ? PAL.acid2 : PAL.acid1);
 }
 
+/** Имаго-Жнец: «напоминающие богомолов» — armoured mantis with scythe arms. */
+function reaper(c: Ctx, e: Enemy, t: number, moving: boolean, body: string, rim: string) {
+  const d = e.dir;
+  const x = Math.round(e.x), y = GY;
+  const ph = moving ? t * 8 : 0;
+  for (let i = 0; i < 4; i++) {
+    const lx = x + (i - 1.5) * 4;
+    const sw = Math.sin(ph + i * 1.7) * 3;
+    line(c, lx, y - 10, lx + sw, y, PAL.shade0);
+  }
+  ellipse(c, x - 3 * d, y - 12, 8, 4, body);
+  rect(c, x - 9, y - 16, 14, 1, rim);
+  // upright thorax and small head
+  line(c, x + 2 * d, y - 14, x + 6 * d, y - 26, body, 3);
+  ellipse(c, x + 7 * d, y - 28, 3, 2, body);
+  // scythes
+  const sw = e.attacking ? Math.sin(t * 7) * 6 : 0;
+  line(c, x + 6 * d, y - 22, x + 12 * d, y - 30 + sw, '#16121f', 2);
+  line(c, x + 12 * d, y - 30 + sw, x + 16 * d, y - 20 + sw, '#d0c8e0');
+  line(c, x + 5 * d, y - 20, x + 10 * d, y - 26 - sw, '#16121f', 2);
+  line(c, x + 10 * d, y - 26 - sw, x + 14 * d, y - 17 - sw, '#d0c8e0');
+}
+
 function larva(c: Ctx, e: Enemy, t: number, flash: boolean) {
   for (let i = 0; i < 3; i++) {
     const sx = e.x - i * 3 * e.dir;
@@ -284,6 +308,9 @@ export function drawEnemyEyes(c: Ctx, e: Enemy, time: number) {
     case 'executioner':
       for (let i = 0; i < 3; i++) eye(x + (20 + i) * d, y - 45 + i, '#ff4a4a');
       break;
+    case 'reaper':
+      eye(x + 8 * d, y - 29, '#ff8a4a'); eye(x + 9 * d, y - 28, '#ff8a4a');
+      break;
     default:
       break;
   }
@@ -330,6 +357,22 @@ export function drawKeeper(c: Ctx, k: Keeper, time: number) {
   line(c, sx, y - 1, sx, sTop, PAL.wood2);
   const g = 0.6 + 0.4 * Math.sin(time * 5);
   disc(c, sx, sTop - 1, casting ? 2.5 : 1.5, g > 0.8 || casting ? PAL.gold5 : PAL.gold4);
+  // radiance of higher ranks
+  for (let i = 0; i < k.rank * 2; i++) {
+    const a = time * 2 + (i / Math.max(1, k.rank * 2)) * Math.PI * 2;
+    rect(c, x + Math.cos(a) * (9 + k.rank), top + 8 + Math.sin(a) * 6, 1, 1, i % 2 ? PAL.gold4 : PAL.gold5);
+  }
+}
+
+/** Keeper HP bar (drawn above the darkness). */
+export function drawKeeperHp(c: Ctx, k: Keeper, maxHp: number) {
+  if (!k.alive) return;
+  const w = 16;
+  const x = Math.round(k.x - w / 2), y = GY - 24;
+  rect(c, x - 1, y - 1, w + 2, 4, '#0a0610');
+  rect(c, x, y, w, 2, '#3a1420');
+  const f = Math.max(0, k.hp / maxHp);
+  rect(c, x, y, Math.max(1, Math.round(w * f)), 2, f < 0.3 ? '#ff4a4a' : f < 0.6 ? '#ffb04a' : '#7af07a');
 }
 
 // ───────────────────────────── nests ───────────────────────────────
@@ -349,6 +392,7 @@ export function drawStructure(c: Ctx, s: Structure, time: number) {
     case 'beetle': beetle(c, s, time, flash); break;
     case 'dragonfly': dragonflyNest(c, s, time, flash); break;
     case 'spider': spider(c, s, time); break;
+    case 'caterpillar': cocoon(c, s, time, flash); break;
   }
   c.restore();
   if (s.hp < s.maxHp || s.family === 'beetle') {
@@ -480,6 +524,36 @@ function dragonflyNest(c: Ctx, s: Structure, time: number, flash: boolean) {
     rect(c, fx - 1, fy - (wing ? 2 : 1), 1, 1, storm ? '#e8f4ff' : PAL.gold5);
     rect(c, fx + 1, fy - (wing ? 1 : 2), 1, 1, storm ? '#e8f4ff' : PAL.gold5);
     rect(c, fx + dir * 2, fy, 1, 1, PAL.white);
+  }
+}
+
+/** A silk cocoon hanging from a bent twig. */
+function cocoon(c: Ctx, s: Structure, time: number, flash: boolean) {
+  const x = Math.round(s.x), y = GY;
+  line(c, x - 4, y, x - 2, y - 22, flash ? '#fff' : PAL.wood1, 2);
+  line(c, x - 2, y - 22, x + 5, y - 24, PAL.wood1);
+  const sway = Math.round(Math.sin(time * 1.5 + s.id) * 1);
+  line(c, x + 5, y - 24, x + 5 + sway, y - 20, '#d8d0c0');
+  const h = 6 + Math.min(s.tier, 4);
+  ellipse(c, x + 5 + sway, y - 20 + h / 2 + 1, 3 + s.tier * 0.4, h / 2 + 1, s.spec === 'B' ? PAL.gold2 : '#d8d0c0');
+  for (let i = 0; i < h; i += 2) rect(c, x + 3 + sway, y - 19 + i, 5, 1, s.spec === 'B' ? PAL.gold1 : '#a89c8c');
+  if (s.spec === 'A') for (let i = -6; i <= 6; i += 3) line(c, x + 5 + sway, y - 16, x + 5 + i, y, 'rgba(230,224,210,0.35)');
+}
+
+/** A caterpillar collector (green-gold, segmented, inching along). */
+export function drawWorker(c: Ctx, w: import('../sim/types').Worker, time: number) {
+  const x = Math.round(w.x), y = GY;
+  const inch = Math.abs(Math.sin(w.walk * 8));
+  for (let i = 0; i < 4; i++) {
+    const sx = x - i * 2 * w.dir;
+    const hump = i === 1 || i === 2 ? Math.round(inch * 2) : 0;
+    rect(c, sx, y - 3 - hump, 2, 2, i === 0 ? '#9be35a' : i % 2 ? '#5aa63a' : '#7ac04a');
+    rect(c, sx, y - 3 - hump, 1, 1, PAL.gold4);
+  }
+  rect(c, x + w.dir * 2, y - 3, 1, 1, '#1a1a10');
+  if (w.carry) {
+    rect(c, x - w.dir * 2, y - 7 - Math.round(inch), 2, 2, w.carry.kind === 'star' ? PAL.blood2 : PAL.gold3);
+    if (Math.sin(time * 9) > 0.6) rect(c, x - w.dir * 2 + 1, y - 8, 1, 1, PAL.white);
   }
 }
 

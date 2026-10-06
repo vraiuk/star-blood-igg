@@ -140,6 +140,13 @@ const PAINTERS: Record<string, Painter> = {
     for (let i = 2; i < 14; i += 3) rect(c, i, 12, 1, 1, '#ff7a3a');
     disc(c, 7, 11, 2, PAL.gold4);
   },
+  caterpillar: (c) => {
+    line(c, 3, 15, 4, 4, PAL.wood2, 2);
+    line(c, 4, 4, 11, 3, PAL.wood2);
+    ellipse(c, 11, 7, 2, 3, '#d8d0c0');
+    for (let i = 0; i < 5; i++) rect(c, 6 + i * 2, 13 - (i === 2 ? 1 : 0), 2, 2, i % 2 ? '#5aa63a' : '#9be35a');
+    rect(c, 14, 13, 1, 1, PAL.gold4);
+  },
   lock: (c) => {
     rect(c, 4, 7, 8, 7, '#4a4560');
     rect(c, 5, 3, 1, 5, '#6a6585'); rect(c, 10, 3, 1, 5, '#6a6585'); rect(c, 5, 3, 6, 1, '#6a6585');

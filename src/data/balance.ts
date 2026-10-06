@@ -21,7 +21,7 @@ export const WORLD = {
  */
 export type EnemyKind =
   | 'hound' | 'stalker' | 'spitter'
-  | 'forager' | 'worm' | 'guard' | 'larva'
+  | 'forager' | 'worm' | 'guard' | 'larva' | 'reaper'
   | 'mother' | 'executioner';
 export type AbilityId = 'spear' | 'hammer' | 'starfall';
 
@@ -57,31 +57,35 @@ const E = (o: Partial<EnemyDef> & Pick<EnemyDef, 'name' | 'hp' | 'speed' | 'dama
 });
 
 export const ENEMIES: Record<EnemyKind, EnemyDef> = {
-  hound: E({ name: 'Найтволк', hp: 55, speed: 48, damage: 7, attackRate: 0.8, amber: 7, charge: 2, radius: 7, height: 12 }),
+  hound: E({ name: 'Найтволк', hp: 55, speed: 48, damage: 7, attackRate: 0.8, amber: 6, charge: 2, radius: 7, height: 12 }),
   stalker: E({
-    name: 'Ледозуб', hp: 420, armor: 6, speed: 18, damage: 34, attackRate: 1.5, structureMult: 1.5, amber: 22,
+    name: 'Ледозуб', hp: 420, armor: 6, speed: 18, damage: 34, attackRate: 1.5, structureMult: 1.5, amber: 20,
     charge: 8, smashesStructures: true, ccMult: 0.8, radius: 9, height: 34,
   }),
-  spitter: E({ name: 'Найторакс', hp: 110, speed: 28, damage: 13, attackRate: 2.1, range: 100, amber: 14, charge: 4, radius: 8, height: 16 }),
+  spitter: E({ name: 'Найторакс', hp: 110, speed: 28, damage: 13, attackRate: 2.1, range: 100, amber: 12, charge: 4, radius: 8, height: 16 }),
   forager: E({
-    name: 'Имаго-Фуражир', hp: 70, speed: 40, damage: 8, attackRate: 0.9, amber: 6, star: 0.25, charge: 2,
+    name: 'Имаго-Фуражир', hp: 70, speed: 40, damage: 8, attackRate: 0.9, amber: 5, star: 0.25, charge: 2,
     worm: true, radius: 7, height: 10,
   }),
   worm: E({
-    name: 'Имаго-Копатель', hp: 210, speed: 17, damage: 14, attackRate: 1, amber: 11, star: 3, devRune: 0.02, charge: 5,
+    name: 'Имаго-Копатель', hp: 210, speed: 17, damage: 14, attackRate: 1, amber: 10, star: 2, devRune: 0.006, charge: 5,
     worm: true, underground: true, radius: 12, height: 10,
   }),
   guard: E({
-    name: 'Имаго-Страж', hp: 520, armor: 10, speed: 12, damage: 22, attackRate: 1.2, amber: 20, star: 6, devRune: 0.08, charge: 9,
+    name: 'Имаго-Страж', hp: 520, armor: 10, speed: 12, damage: 22, attackRate: 1.2, amber: 19, star: 4, devRune: 0.03, charge: 9,
     worm: true, underground: true, ccMult: 0.6, radius: 14, height: 12,
+  }),
+  reaper: E({
+    name: 'Имаго-Жнец', hp: 900, armor: 9, speed: 24, damage: 46, attackRate: 1.3, structureMult: 1.3, amber: 28, star: 1,
+    charge: 10, worm: true, smashesStructures: true, ccMult: 0.7, radius: 10, height: 30,
   }),
   larva: E({ name: 'Личинка', hp: 18, speed: 38, damage: 3, attackRate: 0.7, amber: 1, star: 0.2, charge: 1, worm: true, radius: 4, height: 5 }),
   mother: E({
-    name: 'Имаго-Матерь', hp: 5200, armor: 4, speed: 8, damage: 80, attackRate: 2, amber: 84, star: 30, devRune: 1, charge: 40,
+    name: 'Имаго-Матерь', hp: 5200, armor: 4, speed: 8, damage: 80, attackRate: 2, amber: 79, star: 30, devRune: 1, charge: 40,
     worm: true, smashesStructures: true, ccMult: 0.25, radius: 26, height: 40, boss: true,
   }),
   executioner: E({
-    name: 'Имаго-Палач', hp: 11000, armor: 14, speed: 10, damage: 120, attackRate: 1.6, structureMult: 1.5, amber: 168, star: 60,
+    name: 'Имаго-Палач', hp: 11000, armor: 14, speed: 10, damage: 120, attackRate: 1.6, structureMult: 1.5, amber: 158, star: 60,
     devRune: 1, charge: 60, worm: true, smashesStructures: true, ccMult: 0.2, radius: 22, height: 52, boss: true,
   }),
 };
@@ -132,13 +136,34 @@ export const KEEPER = {
 } as const;
 
 /** Keeper Ascension ranks (дерево → бронза → серебро → золото → небо). */
+/** `guard` = share of incoming damage negated; `aura` = radiance dps on adjacent creatures. */
 export const KEEPER_RANKS = [
-  { name: 'Дерево', cost: 0, hp: 100, maxLight: 100, power: 1 },
-  { name: 'Бронза', cost: 10, hp: 130, maxLight: 115, power: 1.15 },
-  { name: 'Серебро', cost: 22, hp: 165, maxLight: 130, power: 1.3 },
-  { name: 'Золото', cost: 40, hp: 210, maxLight: 150, power: 1.5 },
-  { name: 'Небо', cost: 70, hp: 260, maxLight: 175, power: 1.75 },
+  { name: 'Дерево', cost: 0, hp: 100, maxLight: 100, power: 1, guard: 0, aura: 6 },
+  { name: 'Бронза', cost: 20, hp: 150, maxLight: 115, power: 1.2, guard: 0.15, aura: 16 },
+  { name: 'Серебро', cost: 50, hp: 230, maxLight: 130, power: 1.45, guard: 0.3, aura: 34 },
+  { name: 'Золото', cost: 100, hp: 340, maxLight: 150, power: 1.75, guard: 0.45, aura: 70 },
+  { name: 'Небо', cost: 180, hp: 500, maxLight: 175, power: 2.1, guard: 0.6, aura: 140 },
 ] as const;
+
+/**
+ * Attributes of an Ascended (from the books: «Атрибут Духа повышен 2/10»). Late-game Star
+ * Blood sink; a Lesser Rune of Development also raises one level.
+ */
+export type AttrId = 'might' | 'spirit' | 'body';
+export const ATTRIBUTES: Record<AttrId, { name: string; desc: string }> = {
+  might: { name: 'Сила', desc: '+8% урона умений' },
+  spirit: { name: 'Дух', desc: '+8% регенерации Света, +6 к запасу' },
+  body: { name: 'Тело', desc: '+10% HP, +4% защиты, +15% сияния' },
+};
+export const ATTR_MAX = 10;
+export const attrCost = (level: number) => 6 + level * 5;
+
+/** Growth rings after the Great Igg-Tree: endless Amber sink. */
+export const RINGS = {
+  cost: (r: number) => Math.round(900 * Math.pow(1.32, r)),
+  power: 0.07,
+  hp: 0.1,
+} as const;
 
 export interface AbilityDef {
   name: string;
@@ -166,9 +191,9 @@ export const ABILITIES = {
     damage: 70, radius: 92, stun: 1.6, knockback: 50, lightTime: 6, lightRadius: 80, restunWindow: 4,
   },
   starfall: {
-    name: 'Звездопад', desc: 'Заряжается убийствами. Звёзды падают у курсора и выжигают землю.',
-    cost: 0, cooldown: 40, unlockStage: 4, key: '3',
-    damage: 170, meteors: 5, spread: 52, burnDps: 22, burnTime: 3.5, chargeMax: 100,
+    name: 'Звездопад', desc: 'Заряжается убийствами. Пять огромных звёзд падают у курсора: оглушают, рвут броню и выжигают землю.',
+    cost: 0, cooldown: 70, unlockStage: 4, key: '3',
+    damage: 520, meteors: 5, spread: 60, burnDps: 60, burnTime: 5, chargeMax: 100, impactRadius: 34, stun: 1.2,
   },
 } satisfies Record<AbilityId, AbilityDef & Record<string, number | string>>;
 
@@ -179,7 +204,7 @@ export const RESTUN_FACTOR = 0.5;
 export const ECONOMY = {
   startAmber: 90,
   dawnBase: 50,
-  dawnPerNight: 16,
+  dawnPerNight: 12,
   earlyCallPerSecond: 1,
   dropLifeLit: 25,
   dropLifeDark: 12,

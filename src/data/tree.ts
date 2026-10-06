@@ -28,23 +28,23 @@ export interface TreeStage {
 
 export const TREE_STAGES: TreeStage[] = [
   {
-    name: 'Семя Игг-Древа', short: 'Семя', radius: 72, maxHp: 400, lightRegen: 5, growCost: 40, power: 1, wormBurn: 3,
+    name: 'Семя Игг-Древа', short: 'Семя', radius: 72, maxHp: 400, lightRegen: 5, growCost: 55, power: 1, wormBurn: 3,
     unlocks: ['Круг 72', 'Копьё Игг-Света [1]', 'Семя само защищает себя'],
   },
   {
-    name: 'Пробуждённый Росток', short: 'Росток', radius: 112, maxHp: 650, lightRegen: 6, growCost: 90, power: 1.15, wormBurn: 5,
+    name: 'Пробуждённый Росток', short: 'Росток', radius: 112, maxHp: 650, lightRegen: 6, growCost: 150, power: 1.15, wormBurn: 5,
     unlocks: ['Круг 112', 'Игг-Молот [2]', 'Искры Древа'],
   },
   {
-    name: 'Юный Игг', short: 'Юный Игг', radius: 160, maxHp: 950, lightRegen: 7, growCost: 160, power: 1.3, wormBurn: 8,
+    name: 'Юный Игг', short: 'Юный Игг', radius: 160, maxHp: 950, lightRegen: 7, growCost: 400, power: 1.3, wormBurn: 8,
     unlocks: ['Круг 160', 'Слеза Ростка: лечение днём ×2', 'новые руны и корневые узлы'],
   },
   {
-    name: 'Окрепший Росток', short: 'Окрепший', radius: 225, maxHp: 1350, lightRegen: 8, growCost: 260, power: 1.5, wormBurn: 12,
+    name: 'Окрепший Росток', short: 'Окрепший', radius: 225, maxHp: 1350, lightRegen: 8, growCost: 950, power: 1.5, wormBurn: 12,
     unlocks: ['Круг 225', 'Звездопад [3]', 'Полярии слетаются к Древу'],
   },
   {
-    name: 'Малое Игг-Древо', short: 'Малое Древо', radius: 315, maxHp: 1850, lightRegen: 9, growCost: 400, power: 1.75, wormBurn: 17,
+    name: 'Малое Игг-Древо', short: 'Малое Древо', radius: 315, maxHp: 1850, lightRegen: 9, growCost: 2000, power: 1.75, wormBurn: 17,
     unlocks: ['Круг 315', 'корни жгут Червей у ствола', '«световая ограда Круга»'],
   },
   {

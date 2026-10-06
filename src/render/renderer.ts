@@ -7,8 +7,8 @@ import { Lighting } from './lighting';
 import { Particles } from './particles';
 import { type Ctx, PAL, makeCanvas, rect } from './pixel';
 import {
-  ROOT_SLOT_Y, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawProjectile, drawSlotMarker,
-  drawStructure,
+  ROOT_SLOT_Y, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
+  drawStructure, drawWorker,
 } from './sprites';
 import { drawGrass, drawRoots, drawTree } from './tree';
 import { TREE } from '../data/tree';
@@ -42,6 +42,8 @@ export class Renderer {
   private shake = 0;
   private treeHurt = 0;
   private growPulse = 0;
+  /** full-screen impact flash (Starfall) */
+  private flash = 0;
 
   constructor(private screen: Ctx) {
     this.bg = buildBackdrop();
@@ -71,7 +73,14 @@ export class Renderer {
         case 'devRune': p.goldBurst(e.x, WORLD.groundY - 20, 40); p.addFx('ring', e.x, WORLD.groundY - 20, 0.8, 30); break;
         case 'chain': p.chain(e.points); break;
         case 'ram': p.addFx('ram', e.x, WORLD.groundY - 6, 0.35, 0, e.dir); p.dust(e.x + e.dir * 12, WORLD.groundY - 2); this.shake = Math.max(this.shake, 2); break;
-        case 'meteor': p.goldBurst(e.x, WORLD.groundY - 4, 24); p.dust(e.x, WORLD.groundY - 2); p.addFx('ring', e.x, WORLD.groundY - 4, 0.35, 24); this.shake = Math.max(this.shake, 4); break;
+        case 'meteor':
+          p.goldBurst(e.x, WORLD.groundY - 4, 60);
+          p.dust(e.x, WORLD.groundY - 2); p.dust(e.x - 10, WORLD.groundY - 2); p.dust(e.x + 10, WORLD.groundY - 2);
+          p.addFx('ring', e.x, WORLD.groundY - 4, 0.5, 40);
+          p.addFx('ring', e.x, WORLD.groundY - 4, 0.8, 70);
+          this.flash = Math.max(this.flash, 0.35);
+          this.shake = Math.max(this.shake, 9);
+          break;
         case 'shield': p.addFx('ring', WORLD.treeX, WORLD.groundY - 50, 0.9, 60); p.goldBurst(WORLD.treeX, WORLD.groundY - 50, 50); break;
         case 'secondWind': p.goldBurst(WORLD.treeX, WORLD.groundY - 60, 120); this.shake = 8; break;
         case 'rankUp': p.goldBurst(game.state.keeper.x, WORLD.groundY - 12, 50); p.addFx('ring', game.state.keeper.x, WORLD.groundY - 10, 0.6, 40); break;
@@ -111,6 +120,7 @@ export class Renderer {
     this.shake = Math.max(0, this.shake - dt * 18);
     this.treeHurt = Math.max(0, this.treeHurt - dt);
     this.growPulse = Math.max(0, this.growPulse - dt * 0.8);
+    this.flash = Math.max(0, this.flash - dt * 1.6);
     this.particles.ambient(s.tree.radius, dt, s.phase === 'night');
     this.particles.update(dt);
     this.lighting.update(game, time, dt);
@@ -148,6 +158,7 @@ export class Renderer {
     for (const st of s.structures) if (!st.underground) drawStructure(c, st, time);
     for (const e of s.enemies) if (!ENEMIES[e.kind].underground) drawEnemy(c, e, time);
     drawKeeper(c, s.keeper, time);
+    for (const w of s.workers) drawWorker(c, w, time);
     this.particles.draw(c, false);
 
     // ── darkness
@@ -167,6 +178,7 @@ export class Renderer {
     for (const p of s.projectiles) drawProjectile(c, p);
     this.particles.draw(c, true);
     for (const e of s.enemies) drawEnemyHp(c, e);
+    drawKeeperHp(c, s.keeper, game.keeperMaxHp());
     if (view.aiming) this.drawAim(c, game, view, time);
     if (view.preview) this.drawRangeRaw(c, view.preview.x, view.preview.r, view.preview.underground, true);
     else if (view.selectedSlot) {
@@ -198,6 +210,10 @@ export class Renderer {
     g.addColorStop(1, `rgba(3,3,10,${a})`);
     sc.fillStyle = g;
     sc.fillRect(0, 0, W, H);
+    if (this.flash > 0) {
+      sc.fillStyle = `rgba(255,236,190,${this.flash * 0.6})`;
+      sc.fillRect(0, 0, W, H);
+    }
   }
 
   /** «Полярии — золотистые медузы» drifting around the young tree. */

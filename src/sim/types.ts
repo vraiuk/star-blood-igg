@@ -98,6 +98,10 @@ export interface Drop {
   life: number;
   grounded: boolean;
   pulled: boolean;
+  /** claimed by a caterpillar worker (id) */
+  claimed: number;
+  /** being drawn in by the tree's roots */
+  rooted: boolean;
   age: number;
 }
 
@@ -131,6 +135,8 @@ export interface Keeper {
   slots: Record<KeeperRuneId, number>;
   /** creature runes and lasting gifts from the dawn roulette */
   boons: string[];
+  /** Ascended attributes 0..10 */
+  attrs: Record<import('../data/balance').AttrId, number>;
   castAnim: number;
   hitFlash: number;
   walkT: number;
@@ -158,6 +164,19 @@ export interface Tree {
   shield: number;
   shieldUsed: boolean;
   secondWindUsed: boolean;
+  /** endless growth rings after the Great Igg-Tree */
+  rings: number;
+}
+
+/** A caterpillar collector crawling along the ground. */
+export interface Worker {
+  id: number;
+  nestId: number;
+  x: number;
+  dir: 1 | -1;
+  carry: { kind: DropKind; value: number } | null;
+  target: number;
+  walk: number;
 }
 
 export type Phase = 'day' | 'night' | 'won' | 'lost';
@@ -231,6 +250,7 @@ export interface GameState {
   structures: Structure[];
   projectiles: Projectile[];
   drops: Drop[];
+  workers: Worker[];
   tempLights: TempLight[];
   burns: GroundBurn[];
   keeper: Keeper;

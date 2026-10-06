@@ -4,7 +4,7 @@
  * level 5 = specialization mastery (Star Blood). Design: design/progression.md.
  */
 
-export type Family = 'hive' | 'beetle' | 'dragonfly' | 'spider';
+export type Family = 'hive' | 'beetle' | 'dragonfly' | 'spider' | 'caterpillar';
 export type SpecId = 'A' | 'B';
 
 export interface NestStats {
@@ -37,6 +37,10 @@ export interface NestStats {
   vuln?: number;
   /** beetle healer: heals nests within `range` by `regen`-scaled amount per second */
   heal?: number;
+  /** caterpillar collectors: how many crawl out, their speed, and bonus value of what they carry */
+  workers?: number;
+  speed?: number;
+  bonus?: number;
 }
 
 export interface Price { amber: number; star: number; }
@@ -86,8 +90,8 @@ export const NESTS: Record<Family, FamilyDef> = {
       B: {
         name: 'Игг-Луч', desc: 'Сфокусированный луч прошивает строй и броню', perk: 'дальний луч, пробивает 3, против брони',
         levels: [
-          { hp: 360, damage: 120, rate: 1.7, range: 290, pierce: 3 },
-          { hp: 430, damage: 190, rate: 1.55, range: 320, pierce: 4 },
+          { hp: 360, damage: 130, rate: 2.8, range: 290, pierce: 3 },
+          { hp: 430, damage: 210, rate: 2.4, range: 320, pierce: 4 },
         ],
         costs: [p(160, 8), p(120, 14)],
       },
@@ -174,6 +178,34 @@ export const NESTS: Record<Family, FamilyDef> = {
           { hp: 720, damage: 48, rate: 0.7, range: 92, light: 64, slow: 0.35, poison: 52, poisonTime: 5 },
         ],
         costs: [p(130, 6), p(100, 11)],
+      },
+    },
+  },
+  caterpillar: {
+    name: 'Кокон гусениц', creature: 'гусеницы-сборщицы',
+    desc: 'Гусеницы сами собирают Янтарь и Кровь в охвате и несут к Древу', underground: false, blocks: false,
+    levels: [
+      { hp: 120, damage: 0, rate: 0, range: 120, workers: 2, speed: 46 },
+      { hp: 170, damage: 0, rate: 0, range: 160, workers: 3, speed: 54 },
+      { hp: 230, damage: 0, rate: 0, range: 210, workers: 4, speed: 62 },
+    ],
+    costs: [p(35), p(60), p(95)],
+    specs: {
+      A: {
+        name: 'Шелкопряды', desc: 'Больше гусениц, быстрее, собирают по всему краю', perk: '6 сборщиц, охват 320',
+        levels: [
+          { hp: 300, damage: 0, rate: 0, range: 320, workers: 6, speed: 78 },
+          { hp: 360, damage: 0, rate: 0, range: 440, workers: 8, speed: 92 },
+        ],
+        costs: [p(120, 5), p(100, 9)],
+      },
+      B: {
+        name: 'Медовые гусеницы', desc: 'Перерабатывают добычу: всё принесённое ценнее', perk: '+35% к добыче',
+        levels: [
+          { hp: 300, damage: 0, rate: 0, range: 240, workers: 4, speed: 64, bonus: 0.35 },
+          { hp: 360, damage: 0, rate: 0, range: 280, workers: 5, speed: 70, bonus: 0.6 },
+        ],
+        costs: [p(120, 5), p(100, 9)],
       },
     },
   },

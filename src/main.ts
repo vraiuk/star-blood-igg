@@ -32,6 +32,8 @@ const audio = new Audio();
 const renderer = new Renderer(ctx);
 const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null };
 let endShown = false;
+const SPEEDS = [1, 2, 5];
+const nextSpeed = () => SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
 let lastRecord = false;
 
 const titleInfo = () => {
@@ -65,7 +67,7 @@ const hud: Hud = new Hud(uiRoot, () => game, {
   },
   onCast(id) { beginAim(id); },
   onCallNight() { game.callNight(); },
-  onToggleSpeed() { speed = speed === 1 ? 2 : 1; hud.setSpeed(speed); },
+  onToggleSpeed() { speed = nextSpeed(); hud.setSpeed(speed); },
   onToggleSound() { hud.setSound(audio.toggle()); },
   onResume() { setPaused(false); },
   onMenuClosed() { view.selectedSlot = null; view.preview = null; },
@@ -148,7 +150,7 @@ window.addEventListener('keydown', (e) => {
     cancelAim();
   }
   if (k === ' ') { e.preventDefault(); game.callNight(); }
-  if (k === 'f') { speed = speed === 1 ? 2 : 1; hud.setSpeed(speed); }
+  if (k === 'f') { speed = nextSpeed(); hud.setSpeed(speed); }
   if (k === 'm') hud.setSound(audio.toggle());
   if (k === 'r' || k === 'b') hud.togglePanel('keeper');
   if (k === 't') hud.togglePanel('tree');

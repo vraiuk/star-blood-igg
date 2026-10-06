@@ -25,7 +25,7 @@ export const PLANS: Record<string, BotPlan> = {
 };
 
 /** Desired layout per side, by slot index (0 = closest to the tree). */
-const LAYOUT: Family[] = ['hive', 'beetle', 'dragonfly', 'hive', 'hive', 'beetle', 'dragonfly', 'hive', 'hive', 'beetle'];
+const LAYOUT: Family[] = ['hive', 'beetle', 'dragonfly', 'caterpillar', 'hive', 'beetle', 'dragonfly', 'hive', 'hive', 'beetle'];
 
 export interface BotResult {
   phase: string;
@@ -90,7 +90,9 @@ function act(g: Game, plan: BotPlan) {
     if (s.star >= 25) g.ascend();
     // Observer's treasury: power properties first
     for (const id of ['sp-power', 'hm-power', 'sp-power', 'lt-spring', 'sf-power']) if (s.star >= 14) g.buyProperty(id);
-    if (s.devRunes > 0) g.developRune('spear');
+    if (s.devRunes > 0 && !g.developRune('spear')) g.raiseAttr('body', true);
+    if (s.star >= 40) g.raiseAttr(s.keeper.attrs.might <= s.keeper.attrs.body ? 'might' : 'body');
+    if (g.growNeed() === 0 && s.amber > g.ringCost() + 150) g.addRing();
   }
   if (s.phase === 'day' && s.night > 0 && s.dayLeft < 18) g.callNight();
 

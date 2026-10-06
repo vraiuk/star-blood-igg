@@ -54,7 +54,7 @@ export const NIGHTS: NightDef[] = [
     title: 'Четвёртая ночь', hpMul: 1.8,
     hint: 'Тьма давит на Круг со всех сторон.',
     groups: [
-      g(2, 'hound', 'B', 6, 1), g(8, 'stalker', 'L', 2, 4), g(10, 'spitter', 'R', 3, 2.5), g(14, 'worm', 'B', 1),
+      g(2, 'hound', 'B', 6, 1), g(8, 'stalker', 'L', 2, 4), g(10, 'spitter', 'R', 3, 2.5), g(14, 'worm', 'B', 1), g(24, 'stalker', 'B', 1),
       g(20, 'forager', 'B', 6, 0.8), g(26, 'stalker', 'R', 2, 4), g(30, 'spitter', 'L', 3, 2.5), g(36, 'worm', 'B', 1),
       g(42, 'hound', 'B', 8, 0.7), g(50, 'stalker', 'B', 1),
     ],
@@ -72,7 +72,7 @@ export const NIGHTS: NightDef[] = [
     title: 'Шестая ночь', hpMul: 2.7,
     hint: 'Имаго-Стражи в броне идут под землёй. Слабые укусы их не берут — нужен Луч или яд.',
     groups: [
-      g(2, 'hound', 'B', 8, 0.9), g(8, 'guard', 'L', 1), g(12, 'stalker', 'R', 2, 4), g(16, 'worm', 'B', 2, 4),
+      g(2, 'hound', 'B', 8, 0.9), g(8, 'guard', 'L', 1), g(14, 'reaper', 'L', 1), g(30, 'reaper', 'R', 1), g(12, 'stalker', 'R', 2, 4), g(16, 'worm', 'B', 2, 4),
       g(22, 'spitter', 'B', 3, 2.5), g(28, 'guard', 'R', 1), g(34, 'forager', 'B', 8, 0.6), g(42, 'stalker', 'B', 2, 4),
       g(50, 'hound', 'B', 10, 0.5),
     ],
@@ -81,7 +81,7 @@ export const NIGHTS: NightDef[] = [
     title: 'Седьмая ночь', hpMul: 3.3,
     hint: 'Рой Фуражиров. Чем шире Круг — тем больше их сгорит в свету.',
     groups: [
-      g(2, 'forager', 'B', 12, 0.5), g(10, 'stalker', 'B', 2, 4), g(16, 'guard', 'B', 1), g(22, 'spitter', 'B', 4, 2),
+      g(2, 'forager', 'B', 12, 0.5), g(10, 'stalker', 'B', 2, 4), g(20, 'reaper', 'B', 1), g(16, 'guard', 'B', 1), g(22, 'spitter', 'B', 4, 2),
       g(30, 'forager', 'B', 12, 0.45), g(38, 'worm', 'B', 3, 3), g(46, 'hound', 'B', 10, 0.5), g(54, 'stalker', 'B', 2, 3),
     ],
   },
@@ -89,7 +89,7 @@ export const NIGHTS: NightDef[] = [
     title: 'Восьмая ночь', hpMul: 4.0,
     hint: 'Ледозубы стадом. Держи их Светожуками и Молотом.',
     groups: [
-      g(2, 'hound', 'B', 10, 0.6), g(8, 'stalker', 'B', 4, 3), g(14, 'guard', 'B', 2, 6), g(20, 'spitter', 'B', 4, 2),
+      g(2, 'hound', 'B', 10, 0.6), g(8, 'stalker', 'B', 4, 3), g(24, 'reaper', 'B', 2, 4), g(14, 'guard', 'B', 2, 6), g(20, 'spitter', 'B', 4, 2),
       g(28, 'worm', 'B', 3, 3), g(34, 'forager', 'B', 10, 0.5), g(42, 'stalker', 'B', 3, 3), g(52, 'hound', 'B', 12, 0.45),
     ],
   },
@@ -97,7 +97,7 @@ export const NIGHTS: NightDef[] = [
     title: 'Девятая ночь', hpMul: 4.8,
     hint: 'Черви подкапывали и убивали Великие Древа. Держи корни.',
     groups: [
-      g(2, 'worm', 'B', 4, 3), g(6, 'guard', 'B', 2, 6), g(10, 'hound', 'B', 10, 0.6), g(18, 'stalker', 'B', 3, 3),
+      g(2, 'worm', 'B', 4, 3), g(6, 'guard', 'B', 2, 6), g(16, 'reaper', 'B', 2, 3), g(36, 'stalker', 'B', 2, 3), g(10, 'hound', 'B', 10, 0.6), g(18, 'stalker', 'B', 3, 3),
       g(24, 'spitter', 'B', 5, 1.8), g(30, 'forager', 'B', 14, 0.4), g(40, 'guard', 'B', 2, 5), g(46, 'stalker', 'B', 3, 3),
       g(56, 'hound', 'B', 12, 0.4),
     ],
@@ -106,7 +106,7 @@ export const NIGHTS: NightDef[] = [
     title: 'Ночь Палача', hpMul: 5.8,
     hint: 'Имаго-Палач создан для уничтожения Восходящих. Его коготь пробивает ствол.',
     groups: [
-      g(2, 'hound', 'B', 10, 0.6), g(8, 'executioner', 'L', 1), g(12, 'stalker', 'R', 3, 3), g(18, 'guard', 'B', 2, 5),
+      g(2, 'hound', 'B', 10, 0.6), g(8, 'executioner', 'L', 1), g(20, 'reaper', 'B', 2, 4), g(12, 'stalker', 'R', 3, 3), g(18, 'guard', 'B', 2, 5),
       g(24, 'mother', 'R', 1), g(30, 'spitter', 'B', 5, 1.8), g(38, 'forager', 'B', 14, 0.4), g(46, 'worm', 'B', 3, 3),
       g(54, 'stalker', 'B', 3, 3), g(62, 'hound', 'B', 14, 0.4),
     ],
@@ -131,25 +131,28 @@ export const ENDLESS = {
   /** group-size multiplier for the hand-made nights */
   count: (n: number) => Math.min(2.2, 1 + 0.08 * n),
   /** Amber/Star Blood bounty multiplier */
-  bounty: (n: number) => 1 + 0.04 * n,
+  bounty: (n: number) => 1 + 0.02 * n,
   /** boss hp multiplier (bosses are tuned absolute at their first appearance) */
   bossHp: (n: number) => (1 + 0.12 * Math.max(0, n - 4)) * Math.pow(1.04, Math.max(0, n - 9)),
+  /** extra growth of underground worm groups per night */
+  wormCount: 0.06,
   /** threat budget of a generated night */
   budget: (n: number) => 90 + 11 * n,
 } as const;
 
 /** Threat cost of one creature (for the generator's budget). */
 const THREAT: Partial<Record<EnemyKind, number>> = {
-  hound: 1, forager: 1, spitter: 2.5, stalker: 5, worm: 3.5, guard: 7,
+  hound: 1, forager: 1, spitter: 2.5, stalker: 5, worm: 3.5, guard: 7, reaper: 9,
 };
 /** Night index from which a kind appears in generated nights, and its weight. */
 const POOL: Array<{ kind: EnemyKind; from: number; w: number; size: [number, number] }> = [
   { kind: 'hound', from: 0, w: 5, size: [4, 9] },
   { kind: 'forager', from: 0, w: 4, size: [5, 12] },
   { kind: 'spitter', from: 0, w: 2.5, size: [2, 4] },
-  { kind: 'stalker', from: 0, w: 2, size: [1, 3] },
+  { kind: 'stalker', from: 0, w: 3.2, size: [2, 4] },
   { kind: 'worm', from: 0, w: 2, size: [1, 3] },
-  { kind: 'guard', from: 0, w: 1.2, size: [1, 2] },
+  { kind: 'guard', from: 0, w: 1.8, size: [1, 3] },
+  { kind: 'reaper', from: 0, w: 2.2, size: [1, 3] },
 ];
 
 const LORE_HINTS = [
@@ -187,13 +190,15 @@ export function generateNight(n: number): NightDef {
   }
   let t = 2;
   const pool = POOL.filter((p) => n >= p.from);
-  const total = pool.reduce((a, p) => a + p.w, 0);
   // bigger packs as nights go on (fewer, meatier groups keep nights ~1–2 minutes)
   const sizeMul = 1 + n * 0.04;
   while (budget > 0) {
-    let pick = r() * total;
+    // worm-kinds get more common as nights go on
+    const wOf = (q: (typeof pool)[number]) => q.w * (q.kind === 'worm' || q.kind === 'guard' ? 1 + n * 0.05 : 1);
+    const tot = pool.reduce((a, q) => a + wOf(q), 0);
+    let pick = r() * tot;
     let p = pool[0];
-    for (const q of pool) { pick -= q.w; if (pick <= 0) { p = q; break; } }
+    for (const q of pool) { pick -= wOf(q); if (pick <= 0) { p = q; break; } }
     const size = Math.max(1, Math.round((p.size[0] + r() * (p.size[1] - p.size[0])) * sizeMul));
     const side: Side = r() < 0.4 ? 'B' : r() < 0.5 ? 'L' : 'R';
     const flanks = side === 'B' ? 2 : 1;

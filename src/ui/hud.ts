@@ -1,4 +1,4 @@
-import { ABILITIES, KEEPER_RANKS, SLOTS, WORLD, type AbilityId } from '../data/balance';
+import { ABILITIES, ATTR_MAX, ATTRIBUTES, KEEPER_RANKS, SLOTS, WORLD, attrCost, type AbilityId, type AttrId } from '../data/balance';
 import { NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_RANKS, RUNE_RANK_COLORS, boonById, propertyById, type KeeperRuneId,
@@ -66,6 +66,8 @@ export class Hud {
   private amberNum!: HTMLElement;
   private starNum!: HTMLElement;
   private devNum!: HTMLElement;
+  private khpFill!: HTMLElement;
+  private khpText!: HTMLElement;
   private lightFill!: HTMLElement;
   private hpFill!: HTMLElement;
   private shieldFill!: HTMLElement;
@@ -127,12 +129,16 @@ export class Hud {
       <div class="item" title="Янтарь — смола Игг. Гнёзда, уровни 1–3, рост Древа"><img class="icon" src="${icon('amber')}"><span class="num" id="amber">0</span></div>
       <div class="item" title="Звёздная Кровь — с Червей. Специализации, Свойства рун у Наблюдателя, ранги"><img class="icon" src="${icon('star')}"><span class="num star" id="star">0</span></div>
       <div class="item dev" title="Малые Руны Развития: открывают 4-й слот руны"><img class="icon" src="${icon('rune')}"><span class="num" id="dev">0</span></div>
-      <div class="item" title="Свет Восходящего — на умения. У ствола Древа течёт быстрее, у края Круга — медленно"><img class="icon" src="${icon('light')}"><div class="lightbar"><i></i></div></div>`;
+      <div class="item bars" title="HP и Свет Восходящего. Свет у ствола Древа течёт быстрее, у края Круга — медленно">
+        <div class="kbar hp"><i></i><span></span></div>
+        <div class="lightbar"><i></i></div></div>`;
     r.appendChild(res);
     this.amberNum = res.querySelector('#amber')!;
     this.starNum = res.querySelector('#star')!;
     this.devNum = res.querySelector('#dev')!;
     this.lightFill = res.querySelector('.lightbar > i')!;
+    this.khpFill = res.querySelector('.kbar.hp > i')!;
+    this.khpText = res.querySelector('.kbar.hp > span')!;
 
     const tb = el('div', 'panel plain hit');
     tb.id = 'treebar';
@@ -406,12 +412,15 @@ export class Hud {
     const rows = [
       fam !== 'beetle' || next.damage ? this.statDelta('Урон', cur?.damage, next.damage || undefined, '', f) : '',
       next.rate ? this.statDelta('Раз в', cur?.rate, next.rate, ' с', (v) => v.toFixed(2)) : '',
-      next.range && fam !== 'beetle' ? this.statDelta('Дальность', cur?.range, next.range) : '',
+      next.range && fam !== 'beetle' ? this.statDelta(fam === 'caterpillar' ? 'Охват' : 'Дальность', cur?.range, next.range) : '',
       next.light ? this.statDelta('Свет', cur?.light, next.light) : '',
       next.burn ? this.statDelta('Ожог', cur?.burn, next.burn, '/с', f) : '',
       next.slow ? this.statDelta('Замедление', cur?.slow, next.slow, '%', pct) : '',
       next.vuln ? this.statDelta('Высвечивание', cur?.vuln, next.vuln, '% урона', (v) => `+${Math.round(v * 100)}`) : '',
       next.heal ? this.statDelta('Лечит гнёзда', cur?.heal, next.heal, '/с') : '',
+      next.workers ? this.statDelta('Сборщиц', cur?.workers, next.workers) : '',
+      next.speed ? this.statDelta('Скорость', cur?.speed, next.speed) : '',
+      next.bonus ? this.statDelta('К добыче', cur?.bonus, next.bonus, '%', (v) => `+${Math.round(v * 100)}`) : '',
       next.volley ? this.statDelta('Целей', cur?.volley, next.volley) : '',
       next.pierce ? this.statDelta('Пробивает', cur?.pierce, next.pierce) : '',
       next.chain ? this.statDelta('Цепь', cur?.chain, next.chain) : '',
@@ -432,7 +441,7 @@ export class Hud {
     const opts: RingOpt[] = [];
     if (t.kind === 'slot') {
       const slot = SLOTS.find((sl) => sl.id === t.slotId)!;
-      const fams: Family[] = slot.underground ? ['spider'] : ['hive', 'beetle', 'dragonfly'];
+      const fams: Family[] = slot.underground ? ['spider'] : ['hive', 'beetle', 'dragonfly', 'caterpillar'];
       fams.forEach((fam, i) => {
         const def = NESTS[fam];
         const price = g.buildPrice(fam);
@@ -593,7 +602,10 @@ export class Hud {
         html += `<div class="row">${btn(give >= need ? `Вырастить Древо (−${give})` : `Напитать (−${give})`, give > 0, () => { g.feed(give); })}
           ${btn('+10', s.amber >= 10 && need > 10, () => { g.feed(10); }, '')}</div>`;
       } else {
-        html += `<div class="sub">Золотое Игг-Древо в полной силе.</div>`;
+        const rc = g.ringCost();
+        html += `<div class="sub">Великое Игг-Древо в полной силе. Теперь оно наращивает <b>годичные кольца</b>: каждое +7% силы гнёзд и +10% здоровья Древа.</div>`;
+        html += `<div class="row">${btn(`Годичное кольцо №${s.tree.rings + 1} (<img class="icon" src="${icon('amber')}"> ${rc})`, s.amber >= rc, () => { g.addRing(); })}</div>`;
+        if (s.tree.rings) html += `<div class="sub">Колец: <b>${s.tree.rings}</b> · сила гнёзд ×${g.treePower().toFixed(2)}</div>`;
       }
     } else if (this.panelKind === 'keeper') {
       const k = s.keeper;
@@ -602,6 +614,19 @@ export class Hud {
       html += `<h3>Скрижаль Восходящего</h3><div class="sub">Ранг: <b style="color:${RUNE_RANK_COLORS[k.rank]}">${rank.name}</b> · HP ${Math.ceil(k.hp)}/${g.keeperMaxHp()} · Свет ${g.maxLight()} · сила умений ×${rank.power}</div>`;
       html += `<div class="ranks">${KEEPER_RANKS.map((r, i) => `<span class="${i <= k.rank ? 'on' : ''}" style="--c:${RUNE_RANK_COLORS[i]}">${r.name}</span>`).join('<i></i>')}</div>`;
       if (next) html += `<div class="row">${btn(`Восхождение: ${next.name} (<img class="icon" src="${icon('star')}"> ${next.cost})`, s.star >= next.cost, () => { g.ascend(); })}</div>`;
+      html += `<div class="sub">Защита ${Math.round(g.keeperGuard() * 100)}% · сияние ${Math.round(g.keeperAura())}/с — сжигает тварей вплотную</div>`;
+      html += `<div class="attrs">`;
+      for (const id of Object.keys(ATTRIBUTES) as AttrId[]) {
+        const lv = k.attrs[id];
+        const a = ATTRIBUTES[id];
+        html += `<div class="attr"><b>${a.name}</b><span class="pips">${'◆'.repeat(lv)}${'◇'.repeat(ATTR_MAX - lv)}</span><small>${a.desc}</small>`;
+        if (lv < ATTR_MAX) {
+          html += btn(`<img class="icon" src="${icon('star')}"> ${attrCost(lv)}`, s.star >= attrCost(lv), () => { g.raiseAttr(id); }, 'tiny');
+          if (s.devRunes > 0) html += btn('руной', true, () => { g.raiseAttr(id, true); }, 'tiny');
+        }
+        html += `</div>`;
+      }
+      html += `</div>`;
       if (s.devRunes > 0) html += `<div class="sub hotline"><img class="icon" src="${icon('rune')}"> Малых Рун Развития: <b>${s.devRunes}</b> — нажми «+слот» у руны</div>`;
       html += `<div class="sub">Сокровищница Наблюдателя продаёт только Свойства. В руне 3 слота, 4-й открывает Малая Руна Развития.</div>`;
       for (const rid of RUNE_IDS) {
@@ -725,6 +750,9 @@ export class Hud {
     }
     this.lightFill.style.width = `${(s.keeper.light / g.maxLight()) * 100}%`;
     this.devNum.textContent = String(s.devRunes);
+    const kmax = g.keeperMaxHp();
+    this.khpFill.style.width = `${(Math.max(0, s.keeper.hp) / kmax) * 100}%`;
+    this.khpText.textContent = s.keeper.alive ? `${Math.ceil(s.keeper.hp)}/${kmax}` : `пал · ${Math.ceil(s.keeper.respawn)}с`;
     (this.devNum.parentElement as HTMLElement).style.display = s.devRunes > 0 ? '' : 'none';
     this.lightFill.parentElement!.classList.toggle('near', g.lightRegenFactor() > 1.2);
     this.lightFill.parentElement!.classList.toggle('far', g.lightRegenFactor() < 0.6);
