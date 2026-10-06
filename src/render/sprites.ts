@@ -20,6 +20,7 @@ export function drawEnemy(c: Ctx, e: Enemy, time: number) {
   if (e.layer === 'under' && !ENEMIES[e.kind].underground) return crawler(c, e, t, flash);
   switch (e.kind) {
     case 'moth': return moth(c, e, t, flash, body, rim);
+    case 'tyrant': return tyrant(c, e, t, flash, moving, time);
     case 'bomber': return bomber(c, e, t, flash, body, rim, time);
     case 'hound': return hound(c, e, t, moving, body, rim);
     case 'stalker': return stalker(c, e, t, moving, body, rim);
@@ -45,6 +46,53 @@ function crawler(c: Ctx, e: Enemy, t: number, flash: boolean) {
   ellipse(c, e.x, e.y + sway, r + 2, r * 0.6, flash ? '#fff' : '#0c0a14');
   ellipse(c, e.x - d, e.y - 1 + sway, r, r * 0.4, flash ? '#fff' : '#1d1830');
   for (let i = 0; i < 3; i++) rect(c, e.x - d * (r + 3 + i * 3), e.y + 2 + ((i + Math.floor(t * 8)) % 2), 1, 1, '#4a3a2a');
+}
+
+/**
+ * Отродье Тирана: «шипастое тело стало неприступной крепостью» — a huge segmented worm
+ * walking on spiked legs, its back covered by a carapace of spiked plates. Plates fall off
+ * as the carapace is cracked, leaving raw flesh.
+ */
+function tyrant(c: Ctx, e: Enemy, t: number, flash: boolean, moving: boolean, time: number) {
+  const d = e.dir;
+  const x = Math.round(e.x), y = GY;
+  const walk = moving ? t * 5 : 0;
+  const segs = 7;
+  const plated = e.maxPlates > 0 ? Math.ceil((segs * e.plates) / e.maxPlates) : 0;
+  for (let i = segs - 1; i >= 0; i--) {
+    const sx = x - d * (i * 7 - 18);
+    const lift = Math.max(0, 3 - i) * 4;
+    const sy = y - 14 - lift + Math.sin(walk + i * 0.8) * 1.5;
+    // legs
+    const sw = Math.sin(walk + i * 1.4) * 3;
+    line(c, sx - 3, sy + 4, sx - 4 + sw, y, '#14101c', 2);
+    line(c, sx + 3, sy + 4, sx + 4 - sw, y, '#14101c', 2);
+    // body
+    ellipse(c, sx, sy, 7, 7, flash ? '#fff' : '#2a1626');
+    ellipse(c, sx, sy + 1, 6, 5, flash ? '#fff' : '#4a2236');
+    const hasPlate = segs - 1 - i < plated;
+    if (hasPlate) {
+      // spiked carapace plate
+      ellipse(c, sx, sy - 3, 7, 4, flash ? '#fff' : '#3c3c4e');
+      rect(c, sx - 6, sy - 4, 12, 1, '#7a7a96');
+      rect(c, sx - 1, sy - 9, 2, 3, '#a8a8c4');
+      rect(c, sx - 5, sy - 7, 1, 2, '#8a8aa6');
+      rect(c, sx + 4, sy - 7, 1, 2, '#8a8aa6');
+    } else {
+      // exposed flesh, pulsing
+      const p = Math.sin(time * 6 + i) > 0;
+      ellipse(c, sx, sy - 3, 5, 3, p ? '#c23a5a' : '#8a2240');
+      rect(c, sx - 2, sy - 5, 1, 1, '#ff8aa0');
+    }
+  }
+  // head with mandibles and a ram horn
+  const hx = x + d * 22, hy = y - 30 + Math.sin(walk) * 1.5;
+  ellipse(c, hx, hy, 8, 7, flash ? '#fff' : '#2a1626');
+  ellipse(c, hx + d * 2, hy - 3, 6, 4, plated > 0 ? '#3c3c4e' : '#6a2a40');
+  line(c, hx + d * 4, hy - 6, hx + d * 13, hy - 12, '#c8c8dc', 2);
+  const bite = e.attacking ? Math.abs(Math.sin(t * 8)) * 4 : 1;
+  line(c, hx + d * 6, hy + 3, hx + d * 13, hy + 2 + bite, '#d8d0e8', 2);
+  line(c, hx + d * 6, hy + 5, hx + d * 12, hy + 8 - bite, '#d8d0e8', 2);
 }
 
 /** Тенекрыл: a moth-like shadow flyer with ragged, beating wings. */
@@ -497,6 +545,9 @@ export function drawEnemyEyes(c: Ctx, e: Enemy, time: number) {
     case 'moth':
       eye(e.x + 3 * d, e.y - 7, '#c8a0ff'); eye(e.x + 4 * d, e.y - 7, '#c8a0ff');
       break;
+    case 'tyrant':
+      for (let i = 0; i < 3; i++) eye(x + (24 + i) * d, y - 32 + (i % 2), '#ff3a3a');
+      break;
     case 'bomber':
       eye(e.x + 3 * d, e.y - 10, '#d8ffb0'); eye(e.x + 4 * d, e.y - 9, '#d8ffb0');
       break;
@@ -531,12 +582,18 @@ export function drawAffix(c: Ctx, e: Enemy, time: number) {
 }
 
 export function drawEnemyHp(c: Ctx, e: Enemy) {
-  if (e.hp >= e.maxHp || !e.lit) return;
+  const cracked = e.maxPlates > 0 && e.plates < e.maxPlates;
+  if ((e.hp >= e.maxHp && !cracked) || !e.lit) return;
   const def = ENEMIES[e.kind];
-  const w = def.boss ? 60 : Math.max(8, Math.min(30, def.radius * 2));
-  const y = e.layer !== 'ground' || def.underground ? e.y - (def.air ? def.height + 8 : 12) : e.kind === 'mother' ? GY - 66 : e.kind === 'executioner' ? GY - 62 : GY - def.height - 6;
+  const w = def.boss ? 60 : e.kind === 'tyrant' ? 40 : Math.max(8, Math.min(30, def.radius * 2));
+  const y = e.layer !== 'ground' || def.underground ? e.y - (def.air ? def.height + 8 : 12) : e.kind === 'mother' ? GY - 66 : e.kind === 'executioner' ? GY - 62 : e.kind === 'tyrant' ? GY - 50 : GY - def.height - 6;
   rect(c, e.x - w / 2, y, w, 2, '#1a0b14');
   rect(c, e.x - w / 2, y, Math.max(1, (w * e.hp) / e.maxHp), 1, def.worm ? '#ff9a3c' : '#c58cff');
+  // the Tyrant's carapace: a steel bar above the health
+  if (e.maxPlates > 0 && e.plates > 0) {
+    rect(c, e.x - w / 2, y - 3, w, 2, '#1a0b14');
+    rect(c, e.x - w / 2, y - 3, Math.max(1, (w * e.plates) / e.maxPlates), 1, '#b8c4d8');
+  }
 }
 
 // ───────────────────────────── keeper ──────────────────────────────

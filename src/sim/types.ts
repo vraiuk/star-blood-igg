@@ -54,6 +54,9 @@ export interface Enemy {
   usedTunnel: boolean;
   /** inside a big worm's «Туман Тьмы» this tick */
   fogged: boolean;
+  /** Tyrant carapace left (0 = broken / none) and its full value */
+  plates: number;
+  maxPlates: number;
   dead: boolean;
 }
 
@@ -344,6 +347,7 @@ export type GameEvent =
   | { type: 'emerge'; x: number }
   | { type: 'tunnelOpen'; x: number }
   | { type: 'slam'; x: number }
+  | { type: 'plateBreak'; x: number; y: number }
   | { type: 'cleave'; x: number; r: number }
   | { type: 'tunnelSealed'; x: number; by: 'keeper' | 'hammer' | 'worn' }
   | { type: 'blast'; x: number; y: number }

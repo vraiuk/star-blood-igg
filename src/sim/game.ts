@@ -1,5 +1,5 @@
 import {
-  ABILITIES, ABILITY_STAGE_SCALING, CHORD, AFFIXES, ARMOR_FLOOR, ATTR_MAX, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
+  ABILITIES, ABILITY_STAGE_SCALING, CHORD, AFFIXES, ARMOR_FLOOR, ATTR_MAX, PLATES, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
   SLOT_MARGIN, SLOTS, crownPos, ringsForCrownSlot, WORLD, WORM_LIGHT_MULT, FOG,
   type AbilityId, type AttrId, type EnemyKind, type SlotDef,
 } from '../data/balance';
@@ -20,7 +20,7 @@ import { mulberry32 } from './rng';
 import type { Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Projectile, Soldier, Structure, Tunnel } from './types';
 
 /** Big underground Imago that toughen faster in endless nights. */
-const HEAVY = new Set<EnemyKind>(['worm', 'guard']);
+const HEAVY = new Set<EnemyKind>(['worm', 'guard', 'tyrant']);
 /** Underground creatures that dig Лазы for the others. */
 /** Dragonflies are hunters of the air. */
 const DRAGONFLY_VS_AIR = 1.6;
@@ -678,15 +678,22 @@ export class Game {
   /** «Натиск» is possible: every creature of this night is out and the next night isn't the last one. */
   canRush(): boolean {
     const s = this.state;
-    return s.phase === 'night' && s.pending.length === 0 && s.enemies.length > 0 && s.choices.length === 0;
+    return s.phase === 'night' && this.rushProgress() >= ECONOMY.rushOpen && s.enemies.length > 0 && s.choices.length === 0;
   }
+
+  /** Share of tonight's creatures already out of the darkness (0..1). */
+  rushProgress(): number {
+    const total = this.nightSpawns;
+    return total > 0 ? 1 - this.state.pending.length / total : 1;
+  }
+  private nightSpawns = 0;
 
   /** What «Натиск» pays right now. */
   rushReward(): { amber: number; star: number } {
     const s = this.state;
     const gift = (ECONOMY.dawnBase + ECONOMY.dawnPerNight * (s.night + 1)) * (1 + this.mods.dawnGift);
     return {
-      amber: Math.round(gift * ECONOMY.rushGiftShare + s.enemies.length * ECONOMY.rushPerEnemy * ENDLESS.bounty(s.night)),
+      amber: Math.round(gift * ECONOMY.rushGiftShare + (s.enemies.length + s.pending.length) * ECONOMY.rushPerEnemy * ENDLESS.bounty(s.night)),
       star: ECONOMY.rushStar + Math.floor(s.night / 5),
     };
   }
@@ -697,7 +704,7 @@ export class Game {
    */
   private rushNight(): boolean {
     const s = this.state;
-    if (!this.canRush()) return this.deny('Натиск — когда все твари этой ночи уже вышли');
+    if (!this.canRush()) return this.deny(`Натиск — когда выйдет ${Math.round(ECONOMY.rushOpen * 100)}% тварей этой ночи`);
     const r = this.rushReward();
     s.amber += r.amber;
     s.star += r.star;
@@ -1046,6 +1053,20 @@ export class Game {
     }
   }
 
+  /**
+   * Панцирь Тирана soaks a hit: the carapace takes `raw` × the source's share, the body only
+   * a trickle; what's left after the carapace cracks goes through. Returns damage to the body.
+   */
+  private hitPlates(e: Enemy, raw: number, body: number): number {
+    const share = PLATES.share[this.src] ?? PLATES.other;
+    const toPlates = raw * share;
+    if (toPlates < e.plates) { e.plates -= toPlates; return body * PLATES.bleed; }
+    const left = (toPlates - e.plates) / toPlates;
+    e.plates = 0;
+    this.emit({ type: 'plateBreak', x: e.x, y: e.y - ENEMIES[e.kind].height * 0.6 });
+    return body * (PLATES.bleed + (1 - PLATES.bleed) * left);
+  }
+
   /** Who is dealing damage right now (for run statistics). */
   private src = 'other';
   private logDmg(v: number) {
@@ -1226,6 +1247,7 @@ export class Game {
     }
     pending.sort((a, b) => a.at - b.at);
     s.pending = [...s.pending, ...pending].sort((a, b) => a.at - b.at);
+    this.nightSpawns = s.pending.length;
     this.nightDeadline = (pending[pending.length - 1]?.at ?? 0) + NIGHT_GRACE;
     this.emit({ type: 'nightStart', night: s.night });
   }
@@ -1358,8 +1380,9 @@ export class Game {
       stun: 0, sinceStun: 99, rooted: 0, slow: 0, poison: 0, poisonTime: 0, marked: 0, burn: 0, vuln: 0, armorBreak: 0, web: 0, affix, jumpCd: 0, jumping: 0,
       attacking: false, lit: false, age: this.rand() * 3, hitFlash: 0,
       broodCd: (BROOD[kind]?.every ?? 5) * 0.6, kick: 0, dead: false,
-      layer: def.underground ? 'under' : def.air ? 'air' : 'ground', tunnel: 0, usedTunnel: false, fogged: false,
+      layer: def.underground ? 'under' : def.air ? 'air' : 'ground', tunnel: 0, usedTunnel: false, fogged: false, plates: 0, maxPlates: 0,
     };
+    if (def.plates) e.plates = e.maxPlates = Math.round(def.plates * hp / def.hp);
     if (DIGGERS.has(kind)) {
       // every digger drives a tunnel toward the trunk
       const tn: Tunnel = { id: s.nextId++, dir, entryX: NaN, headX: x, open: false, seal: 0, left: TUNNELS.capacity(s.night) };
@@ -1514,8 +1537,10 @@ export class Game {
     const mark = (fromNest && e.marked > 0 ? (k0.facets.includes('sp-mark') ? 1.45 : 1.25) : 1) * fury
       * (fromNest && k0.radianceT > 0 && k0.facets.includes('rd-nests') ? 1.25 : 1);
     const raw = amount * (worm ? WORM_LIGHT_MULT - (WORM_LIGHT_MULT - 1) * fog : 1) * mark * (1 + e.vuln);
-    const armor = e.armorBreak > 0 || pierceArmor ? 0 : def.armor + (e.affix === 'armored' ? ELITE.armor : 0) + (def.armor > 0 && HEAVY.has(e.kind) ? ENDLESS.heavyArmor(this.state.night) : 0);
-    const dmg = Math.max(raw * ARMOR_FLOOR, raw - armor);
+    const exposed = def.plates && e.plates <= 0;
+    const armor = e.armorBreak > 0 || pierceArmor || exposed ? 0 : def.armor + (e.affix === 'armored' ? ELITE.armor : 0) + (def.armor > 0 && HEAVY.has(e.kind) ? ENDLESS.heavyArmor(this.state.night) : 0);
+    let dmg = Math.max(raw * ARMOR_FLOOR, raw - armor) * (exposed ? 1 + PLATES.exposed : 1);
+    if (e.plates > 0) dmg = this.hitPlates(e, raw, dmg);
     this.logDmg(Math.min(dmg, Math.max(0, e.hp)));
     e.hp -= dmg;
     e.hitFlash = 0.12;
@@ -2256,8 +2281,10 @@ export class Game {
     const fog = this.fogLevel(e);
     const lit = def.worm && this.isLit(e.x, e.layer === 'under') ? WORM_LIGHT_MULT - (WORM_LIGHT_MULT - 1) * fog : 1;
     const mult = aura ? lit * (1 - (1 - FOG.aura) * fog) : lit;
-    this.logDmg(Math.min(amount * mult, Math.max(0, e.hp)));
-    e.hp -= amount * mult;
+    let dq = amount * mult;
+    if (e.plates > 0) dq = this.hitPlates(e, dq, dq);
+    this.logDmg(Math.min(dq, Math.max(0, e.hp)));
+    e.hp -= dq;
     if (e.hp <= 0) this.killEnemy(e);
   }
 

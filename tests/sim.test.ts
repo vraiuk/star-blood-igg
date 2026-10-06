@@ -15,7 +15,8 @@ describe('rush (Натиск)', () => {
     const g = new Game();
     while (g.choice) g.choose(0);
     g.callNight();
-    expect(g.canRush()).toBe(false); // creatures still to come
+    expect(g.canRush()).toBe(false); // too few creatures out yet
+    expect(g.rushProgress()).toBeLessThan(0.6);
     // keep the night's creatures alive and standing until all of them are out
     for (let i = 0; i < 60 * 120 && g.state.pending.length; i++) {
       g.step();
@@ -58,6 +59,25 @@ describe('facets for every rune', () => {
     expect(g.promoteRune('timestop')).toBe(true);
     g.buyProperty('ts-cheap');
     expect(g.facetOffers('timestop', 1)).toEqual(['ts-hush', 'ts-cold']);
+  });
+});
+
+describe('tyrant carapace', () => {
+  it('small hits barely scratch the carapace; heavy blows crack it and expose the body', () => {
+    const g = new Game();
+    const t = g.spawnEnemy('tyrant', 60, 1);
+    t.speedMul = 0;
+    expect(t.plates).toBeGreaterThan(0);
+    const hp0 = t.hp, p0 = t.plates;
+    g.damageEnemy(t, 100); // src 'other': 35% to the carapace, 10% bleed to the body
+    expect(p0 - t.plates).toBeCloseTo(35, 0);
+    expect(hp0 - t.hp).toBeLessThan(15);
+    t.plates = 10;
+    g.damageEnemy(t, 1000);
+    expect(t.plates).toBe(0);
+    const hp1 = t.hp;
+    g.damageEnemy(t, 100);
+    expect(hp1 - t.hp).toBeGreaterThan(100); // exposed: no armor, +25%
   });
 });
 

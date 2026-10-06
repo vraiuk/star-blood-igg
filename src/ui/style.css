@@ -462,3 +462,6 @@ body { display: grid; place-items: center; }
   font-family: Philosopher, serif; font-size: calc(6.5 * var(--u)); color: #c9c0e0; text-shadow: 0 0 calc(3 * var(--u)) #000, 0 var(--u) 0 #000; pointer-events: none; }
 #abilities .chord.on { color: #b8f0ff; }
 #abilities .chord.hidden { display: none; }
+/* no rune choice may show over the title screen (before a run starts) */
+#ui.title-mode .screen.modal { display: none !important; }
+#callnight.rush.wait { animation: none; opacity: 0.7; background: linear-gradient(180deg, #5a2a22, #2a1210); cursor: default; }

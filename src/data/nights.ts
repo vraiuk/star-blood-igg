@@ -98,11 +98,11 @@ export const NIGHTS: NightDef[] = [
   },
   {
     title: 'Девятая ночь', hpMul: 4.8,
-    hint: 'Черви подкапывали и убивали Великие Древа. Держи корни.',
+    hint: 'Черви подкапывали и убивали Великие Древа. Идёт Отродье Тирана: сперва сбей шипастый панцирь — Молотом и Звездопадом.',
     groups: [
       g(2, 'worm', 'B', 4, 3), g(6, 'guard', 'B', 2, 6), g(16, 'reaper', 'B', 2, 3), g(36, 'stalker', 'B', 2, 3), g(10, 'hound', 'B', 10, 0.6), g(18, 'stalker', 'B', 3, 3),
       g(24, 'spitter', 'B', 5, 1.8), g(30, 'forager', 'B', 14, 0.4), g(40, 'guard', 'B', 2, 5), g(46, 'stalker', 'B', 3, 3),
-      g(56, 'hound', 'B', 12, 0.4),
+      g(56, 'hound', 'B', 12, 0.4), g(26, 'tyrant', 'R', 1),
     ],
   },
   {
@@ -140,7 +140,7 @@ export const ENDLESS = {
   /** extra growth of underground worm groups per night */
   wormCount: 0.06,
   /** big Imago (Копатель, Страж) toughen faster after the campaign: hp, armor, bite */
-  heavyHp: (n: number) => 1 + 0.07 * Math.max(0, n - 9),
+  heavyHp: (n: number) => 1 + 0.1 * Math.max(0, n - 9),
   /** every Worm-kind creature toughens a bit more in the endless nights */
   wormHp: (n: number) => 1 + 0.03 * Math.max(0, n - 9),
   heavyArmor: (n: number) => 0.8 * Math.max(0, n - 9),
@@ -151,7 +151,7 @@ export const ENDLESS = {
 
 /** Threat cost of one creature (for the generator's budget). */
 const THREAT: Partial<Record<EnemyKind, number>> = {
-  hound: 1, forager: 1, moth: 1.4, bomber: 4.5, spitter: 2.5, stalker: 5, worm: 3.5, guard: 7, reaper: 9, jumper: 1.8, tunneler: 5,
+  hound: 1, forager: 1, moth: 1.4, bomber: 4.5, tyrant: 18, spitter: 2.5, stalker: 5, worm: 3.5, guard: 7, reaper: 9, jumper: 1.8, tunneler: 5,
 };
 /** Night index from which a kind appears in generated nights, and its weight. */
 const POOL: Array<{ kind: EnemyKind; from: number; w: number; size: [number, number] }> = [
@@ -160,7 +160,8 @@ const POOL: Array<{ kind: EnemyKind; from: number; w: number; size: [number, num
   { kind: 'spitter', from: 0, w: 2.5, size: [2, 4] },
   { kind: 'stalker', from: 0, w: 3.2, size: [2, 4] },
   { kind: 'worm', from: 0, w: 2, size: [2, 4] },
-  { kind: 'guard', from: 0, w: 1.8, size: [2, 4] },
+  { kind: 'guard', from: 0, w: 2.4, size: [2, 4] },
+  { kind: 'tyrant', from: 11, w: 1.1, size: [1, 2] },
   { kind: 'reaper', from: 0, w: 2.2, size: [1, 3] },
   { kind: 'jumper', from: 0, w: 2.2, size: [3, 6] },
   { kind: 'tunneler', from: 0, w: 1.6, size: [1, 3] },
@@ -203,9 +204,9 @@ interface Theme {
 
 const THEMES: Record<string, Theme> = {
   calm: { name: 'Тихая ночь', hint: 'Тьма переводит дух. Время строить и копить.', budget: 0.55, weights: { hound: 2, spitter: 1 }, rest: 0.2 },
-  worms: { name: 'Ночь Червей', hint: 'Имаго роют к корням толпой — держи паучий котёл у ствола.', budget: 1.35, weights: { worm: 6, guard: 6, forager: 1.5 }, rest: 0.25 },
+  worms: { name: 'Ночь Червей', hint: 'Имаго роют к корням толпой — держи паучий котёл у ствола.', budget: 1.35, weights: { worm: 6, guard: 6, forager: 1.5, tyrant: 1.5 }, rest: 0.25 },
   wolves: { name: 'Охота Найтволков', hint: 'Стаи найтволков несутся к Кругу со всех сторон.', budget: 1.1, weights: { hound: 6, spitter: 1.5 }, rest: 0.2 },
-  heavy: { name: 'Поступь Ледозубов', hint: 'Тяжёлые твари ломают гнёзда. Светожуки, держите строй!', budget: 1.15, weights: { stalker: 5, reaper: 1.5, hound: 1 }, rest: 0.2 },
+  heavy: { name: 'Поступь Ледозубов', hint: 'Тяжёлые твари ломают гнёзда. Светожуки, держите строй!', budget: 1.15, weights: { stalker: 5, reaper: 1.5, hound: 1, tyrant: 2.5 }, rest: 0.2 },
   swarm: { name: 'Рой Фуражиров', hint: 'Рой Имаго-Фуражиров. Чем шире Круг — тем больше сгорит.', budget: 1.1, weights: { forager: 7, worm: 1.5 }, rest: 0.15 },
   reap: { name: 'Жатва', hint: 'Имаго-Жнецы идут косить гнёзда.', budget: 1.2, weights: { reaper: 4, stalker: 2, spitter: 2 }, rest: 0.2 },
   flank: { name: 'Натиск с фланга', hint: 'Вся тьма давит на одну сторону Круга!', budget: 1.3, weights: {}, rest: 1, oneSide: true },

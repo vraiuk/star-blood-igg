@@ -295,7 +295,10 @@ function frame(now: number) {
   } else {
     acc = 0;
   }
+  hud.inRun = started;
   const events = game.drainEvents();
+  // the Ascended falls: back to normal speed so the moment isn't missed
+  if (speed !== 1 && events.some((e) => e.type === 'keeperDown')) { speed = 1; hud.setSpeed(1); }
   if (events.length) {
     renderer.onEvents(events, game);
     hud.onEvents(events);

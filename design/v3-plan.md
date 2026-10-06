@@ -151,3 +151,12 @@
   halves it, both clear it; drawn fainter accordingly.
 - Tunnel crawlers visible above the darkness (dotted passage, warm outline, trembling soil).
 - Keeper HP bar follows the Hammer leap; leftovers of the removed Feat (phase 'won') gone.
+
+## v4.7 — Отродье Тирана, Натиск раньше
+- Lore (book 5): «Тиран, чьё шипастое тело стало неприступной крепостью». New surface breaker
+  «Отродье Тирана» (from night 12, heavy/worm themes; campaign night 9): smashes nests, cleave,
+  fog, and a spiked carapace (extra pool): Hammer ×3, Starfall ×2.5, Spear ×1, the rest 35%;
+  the body takes 10% while plated; a broken carapace leaves it exposed (no armor, +25%).
+- Big worms toughen faster in endless (heavyHp 0.1/night), more Stражи in the generator.
+- «Натиск» opens once 60% of the night's creatures are out; a dim button shows the progress.
+- Speed resets to ×1 when the Keeper falls; no rune choice can show over the title screen.

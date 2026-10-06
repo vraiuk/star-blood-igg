@@ -71,7 +71,7 @@ export class Renderer {
       switch (e.type) {
         case 'hit': p.hit(e.x, e.y, e.crit); break;
         case 'enemyDied': {
-          const big = !!ENEMIES[e.kind].boss || e.kind === 'stalker' || e.kind === 'guard';
+          const big = !!ENEMIES[e.kind].boss || e.kind === 'stalker' || e.kind === 'guard' || e.kind === 'tyrant';
           const y = ENEMIES[e.kind].underground ? e.y : e.y - ENEMIES[e.kind].height * 0.5;
           p.death(e.x, y, !!ENEMIES[e.kind].boss);
           if (big) this.shake = Math.max(this.shake, ENEMIES[e.kind].boss ? 12 : 2);
@@ -85,6 +85,11 @@ export class Renderer {
         case 'cleave':
           p.addFx('ring', e.x, WORLD.groundY - 6, 0.25, e.r);
           p.emit(6, e.x, WORLD.groundY - 6, { speed: 60, max: 0.3, colors: ['#ffd070', '#c89a3a', '#5a3a1a'] });
+          break;
+        case 'plateBreak':
+          p.emit(18, e.x, e.y, { speed: 90, max: 0.7, colors: ['#b8c4d8', '#7a7a96', '#e8e8ff'], gravity: 160 });
+          p.addFx('ring', e.x, e.y, 0.35, 26);
+          this.shake = Math.max(this.shake, 4);
           break;
         case 'slam':
           p.addFx('ring', e.x, WORLD.groundY - 10, 0.45, 92 * (1 + game.mods.hammerRadius) * game.runeArea('hammer'));

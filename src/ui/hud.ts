@@ -1,4 +1,4 @@
-import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
+import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, ECONOMY, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
 import { MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   APOTHEOSIS_RANK, DEV_SLOTS, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
@@ -292,8 +292,10 @@ export class Hud {
 
   resetQuests() { this.questIdx = 0; this.questSig = ''; }
 
-  hideTitle() { this.title.classList.add('hidden'); this.root.classList.remove('title-mode'); }
-  showTitle() { this.title.classList.remove('hidden'); this.root.classList.add('title-mode'); }
+  hideTitle() { this.title.classList.add('hidden'); this.root.classList.remove('title-mode'); this.inRun = true; }
+  showTitle() { this.title.classList.remove('hidden'); this.root.classList.add('title-mode'); this.inRun = false; this.modal.classList.add('hidden'); this.modalSig = ''; }
+  /** a run is under way (the title is gone): only then may choices pop up */
+  inRun = false;
   setPaused(p: boolean) { this.pause.classList.toggle('hidden', !p); }
   setSpeed(x: number) { this.speedBtn.textContent = `×${x}`; }
   setSound(on: boolean) { this.soundBtn.textContent = on ? '♪' : '♪̸'; this.soundBtn.style.opacity = on ? '1' : '0.5'; }
@@ -376,6 +378,9 @@ export class Hud {
           break;
         case 'tunnelOpen':
           if (!this.once('tunnel', 'Червь прорыл Лаз! Твари ныряют в него и выходят за строем. Встань Хранителем на выход (красная метка) — он засыплет Лаз; Игг-Молот обрушит его сразу.')) this.say('Червь прорыл Лаз за строем!', true);
+          break;
+        case 'plateBreak':
+          if (!this.once('plates', 'Панцирь Тирана сбит! Тварь обнажена: броня пропала, урон по ней +25%.')) this.say('Панцирь Тирана сбит!');
           break;
         case 'tunnelSealed': if (e.by !== 'worn') this.say(e.by === 'hammer' ? 'Молот обрушил Лаз — твари внутри засыпаны.' : 'Хранитель засыпал Лаз.'); break;
         case 'devRune': this.say('С Червя выпала Малая Руна Развития! Открой ею 4-й слот руны [R].'); break;
@@ -875,7 +880,7 @@ export class Hud {
   private renderChoice() {
     const g = this.game();
     // nothing to choose while the title screen is up (the run hasn't started yet)
-    const c = this.title.classList.contains('hidden') ? g.choice : null;
+    const c = this.inRun && this.title.classList.contains('hidden') ? g.choice : null;
     if (!c || g.over) {
       if (!this.modal.classList.contains('hidden')) { this.modal.classList.add('hidden'); this.modalSig = ''; }
       return;
@@ -1001,7 +1006,7 @@ export class Hud {
     const total = g.campaignNights;
     if (s.phase === 'day') {
       this.nightInfo.innerHTML = `День · до ночи <span class="t">${Math.ceil(s.dayLeft)}с</span> · ночь ${s.night + 1}${s.night < total ? `/${total}` : ' · ∞'}`;
-      this.callBtn.classList.remove('hidden', 'rush');
+      this.callBtn.classList.remove('hidden', 'rush', 'wait');
       this.callBtn.title = '';
       this.callBtn.innerHTML = `Призвать ночь <span style="opacity:.75">[Пробел] +${Math.floor(s.dayLeft)}</span>`;
     } else {
@@ -1009,11 +1014,19 @@ export class Hud {
       this.nightInfo.innerHTML = s.phase === 'night' ? `${g.night(s.night).title}${s.night < total ? ` · ${s.night + 1}/${total}` : ' · ∞'} · тварей: <span class="t">${left}</span>${s.rushedDawns ? ` · <span style="color:#ffb070">Натиск ×${s.rushedDawns}</span>` : ''}${s.wrath > 1.01 ? ` · <span style="color:#ff8a8a">Гнев ×${s.wrath.toFixed(1)}</span>` : ''}` : '';
       if (g.canRush()) {
         const r = g.rushReward();
-        this.callBtn.classList.remove('hidden');
+        this.callBtn.classList.remove('hidden', 'wait');
         this.callBtn.classList.add('rush');
         const html = `Натиск: ночь ${s.night + 2} <span style="opacity:.8">[Пробел] +${r.amber}<img class="icon" src="${icon('amber')}"> +${r.star}<img class="icon" src="${icon('star')}"></span>`;
         if (this.callBtn.innerHTML !== html) this.callBtn.innerHTML = html;
         this.callBtn.title = 'Призвать следующую ночь, не добивая эту. Награда сразу, пропущенный рассвет (дар и выбор рун) придёт на ближайшем рассвете.';
+      } else if (s.phase === 'night' && s.pending.length > 0) {
+        // not yet: show how close «Натиск» is
+        this.callBtn.classList.remove('hidden');
+        this.callBtn.classList.add('rush', 'wait');
+        const pct = Math.round((g.rushProgress() / ECONOMY.rushOpen) * 100);
+        const html = `Натиск: ${Math.min(99, pct)}% <span style="opacity:.7">— вышло ${Math.round(g.rushProgress() * 100)}% тварей</span>`;
+        if (this.callBtn.innerHTML !== html) this.callBtn.innerHTML = html;
+        this.callBtn.title = `Натиск откроется, когда выйдет ${Math.round(ECONOMY.rushOpen * 100)}% тварей этой ночи.`;
       } else this.callBtn.classList.add('hidden');
     }
 
@@ -1137,6 +1150,7 @@ export class Hud {
   /** Context tips (the Observer's tutorial) for the first minutes. */
   private updateTips(g: Game) {
     const s = g.state;
+    if (s.enemies.some((e) => e.kind === 'tyrant')) this.once('tyrant', 'Отродье Тирана идёт на прорыв! Сперва сбей шипастый панцирь — Молот бьёт по нему втрое, Звездопад вдвое; мелкие укусы гнёзд его лишь царапают.');
     const done = (k: string) => this.tipsDone.has(k);
     const mark = (k: string) => this.tipsDone.add(k);
     if (s.structures.length > 0) mark('build');

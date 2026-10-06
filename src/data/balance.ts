@@ -24,7 +24,7 @@ export const WORLD = {
 export type EnemyKind =
   | 'hound' | 'stalker' | 'spitter'
   | 'forager' | 'worm' | 'guard' | 'larva' | 'reaper' | 'jumper' | 'tunneler' | 'tunnelerUp'
-  | 'moth' | 'bomber'
+  | 'moth' | 'bomber' | 'tyrant'
   | 'mother' | 'executioner';
 export type AbilityId = 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm' | 'timestop';
 
@@ -56,6 +56,8 @@ export interface EnemyDef {
   cleave?: number;
   /** «Туман Тьмы» radius: shields creatures inside from Igg-light and auras */
   fog?: number;
+  /** spiked carapace (extra hp pool) that has to be broken before the body is hurt */
+  plates?: number;
   ccMult: number;
   radius: number;
   height: number;
@@ -101,6 +103,10 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   tunnelerUp: E({
     name: 'Имаго-Землерой', hp: 260, armor: 4, speed: 26, damage: 18, attackRate: 1, amber: 10, star: 1, charge: 6,
     worm: true, smashesStructures: true, radius: 9, height: 14,
+  }),
+  tyrant: E({
+    name: 'Отродье Тирана', hp: 2200, plates: 2200, armor: 12, speed: 9, damage: 70, attackRate: 1.6, structureMult: 2.5, amber: 60, star: 8, devRune: 0.08, charge: 25,
+    worm: true, smashesStructures: true, ccMult: 0.2, radius: 20, height: 30, cleave: 30, fog: 50,
   }),
   moth: E({
     name: 'Тенекрыл', hp: 75, speed: 44, damage: 9, attackRate: 0.8, amber: 6, star: 0.2, charge: 3,
@@ -148,6 +154,16 @@ export const TUNNEL_SURFACE = 70;
  * out behind the defenses; ground creatures that reach the mouth dive in and skip the nests.
  * The Keeper seals a mouth by standing on it; the Igg-Hammer caves tunnels in at once.
  */
+/**
+ * Панцирь Тирана: carapace damage share per source — heavy blows crack it, small hits barely
+ * scratch it. While plated the body takes `bleed` of the hits; a broken carapace leaves the
+ * Tyrant exposed (no armor, +`exposed` damage taken).
+ */
+export const PLATES = {
+  share: { hammer: 3, starfall: 2.5, spear: 1, thorns: 0.5 } as Record<string, number>,
+  other: 0.35, bleed: 0.1, exposed: 0.25,
+} as const;
+
 /** «Туман Тьмы» around big worms: Igg-light can't burn inside, auras deal only this share. */
 export const FOG = { aura: 0.4, fromNight: 10 } as const;
 
@@ -373,6 +389,8 @@ export const ECONOMY = {
    * creature still alive; the skipped dawn (gift, roulette) arrives at the next real dawn.
    */
   rushGiftShare: 0.5, rushPerEnemy: 3, rushStar: 2,
+  /** share of the night's creatures that must be out before «Натиск» opens */
+  rushOpen: 0.6,
   dropLifeLit: 25,
   dropLifeDark: 12,
 } as const;
