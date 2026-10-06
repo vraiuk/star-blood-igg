@@ -19,7 +19,7 @@ export class Camera {
 
   /** Target width for a given light radius. */
   /** Widest view: beyond this pixels get too small; creatures then walk in from off-screen. */
-  static readonly MAX_W = 1120;
+  static readonly MAX_W = 1000;
   static widthFor(radius: number) {
     return Math.max(MIN_W, Math.min(Camera.MAX_W, WORLD.width, radius * 2 + 300));
   }

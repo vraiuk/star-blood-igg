@@ -7,7 +7,7 @@ import { Lighting } from './lighting';
 import { Particles } from './particles';
 import { type Ctx, PAL, makeCanvas, rect } from './pixel';
 import {
-  ROOT_SLOT_Y, drawAffix, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
+  ROOT_SLOT_Y, drawAffix, drawWeb, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
   drawCrownNest, drawCrownSlot, drawSoldier, drawStructure, drawWorker,
 } from './sprites';
 import { drawGrass, drawRoots, drawTree } from './tree';
@@ -27,6 +27,9 @@ export interface ViewState {
   /** ability currently aimed (shows a preview) */
   aiming: import('../data/balance').AbilityId | null;
 }
+
+/** Hard outlines around nests (off: readability comes from glow and warm colours instead). */
+const OUTLINE_NESTS = false;
 
 /**
  * Draws the world into a world-sized offscreen canvas (1 px = 1 art pixel), then
@@ -212,6 +215,7 @@ export class Renderer {
     this.particles.draw(c, true);
     for (const e of s.enemies) drawEnemyHp(c, e);
     for (const e of s.enemies) drawAffix(c, e, time);
+    for (const e of s.enemies) drawWeb(c, e);
     drawKeeperHp(c, s.keeper, game.keeperMaxHp());
     if (view.aiming) this.drawAim(c, game, view, time);
     if (view.preview) this.drawRangeRaw(c, view.preview.x, view.preview.r, view.preview.underground, true, view.preview.y);
@@ -253,6 +257,7 @@ export class Renderer {
   /** Draw nests with a 1px warm outline so they read against the night. */
   private drawNestsOutlined(c: Ctx, list: import('../sim/types').Structure[], time: number) {
     if (!list.length) return;
+    if (!OUTLINE_NESTS) { for (const st of list) drawStructure(c, st, time); return; }
     const n = this.nestCtx, r = this.rimCtx;
     n.clearRect(0, 0, WORLD.width, WORLD.height);
     for (const st of list) drawStructure(n, st, time);

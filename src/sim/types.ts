@@ -30,6 +30,8 @@ export interface Enemy {
   vuln: number;
   /** armour shattered (Сверхзвезда) while > 0 */
   armorBreak: number;
+  /** caught in weaver silk (slowed) while > 0 */
+  web: number;
   /** elite modifier */
   affix: import('../data/balance').Affix | null;
   /** jumper: cooldown and remaining airtime */

@@ -346,6 +346,14 @@ export function drawEnemyEyes(c: Ctx, e: Enemy, time: number) {
   }
 }
 
+/** Silk strands on creatures caught by a weaver. */
+export function drawWeb(c: Ctx, e: Enemy) {
+  if (e.web <= 0 || ENEMIES[e.kind].underground) return;
+  const h = ENEMIES[e.kind].height;
+  for (let i = -1; i <= 1; i++) line(c, e.x - 5, GY - 2 - (i + 1) * h * 0.25, e.x + 5, GY - 4 - (i + 1) * h * 0.2, 'rgba(230,226,255,0.55)');
+  line(c, e.x, GY, e.x, GY - h * 0.7, 'rgba(230,226,255,0.4)');
+}
+
 /** Elite aura and glyph so modifiers are readable. */
 export function drawAffix(c: Ctx, e: Enemy, time: number) {
   if (!e.affix) return;
@@ -433,13 +441,6 @@ export function drawStructure(c: Ctx, s: Structure, time: number) {
     c.beginPath();
     c.rect(s.x - 30, s.underground ? s.y - 20 : GY - 70 * build - 2, 60, 200);
     c.clip();
-  }
-  if (!s.underground) {
-    // soft ground halo so nests read against the dark background
-    for (let i = -10; i <= 10; i++) {
-      const k = 1 - Math.abs(i) / 11;
-      if (k > 0.2) rect(c, s.x + i, GY - 1, 1, 1, k > 0.6 ? 'rgba(255,214,120,0.55)' : 'rgba(255,190,90,0.3)');
-    }
   }
   switch (s.family) {
     case 'hive': hive(c, s, time, flash); break;
@@ -704,8 +705,7 @@ export function drawSlotMarker(c: Ctx, x: number, underground: boolean, time: nu
   const y = GY + 3;
   const col = hover ? PAL.gold5 : g > 0.5 ? PAL.gold4 : PAL.gold3;
   // a beam of light rising from the rune makes free build spots obvious
-  for (let i = 0; i < 18; i++) if ((i + Math.floor(time * 8)) % 3 !== 0) rect(c, x, y - 5 - i, 1, 1, `rgba(255,220,130,${0.6 - i * 0.03})`);
-  rect(c, x - 3, y - 4, 7, 7, 'rgba(0,0,0,0.5)');
+  for (let i = 0; i < 12; i++) if ((i + Math.floor(time * 6)) % 3 === 0) rect(c, x, y - 5 - i, 1, 1, `rgba(255,220,130,${0.45 - i * 0.03})`);
   // rune diamond
   rect(c, x, y - 3, 1, 1, col);
   rect(c, x - 1, y - 2, 1, 1, col);

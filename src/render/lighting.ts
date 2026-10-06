@@ -4,7 +4,7 @@ import type { Game } from '../sim/game';
 import { BAYER4, makeCanvas } from './pixel';
 
 /** Darkness/glow buffers are computed at half resolution, then upscaled pixel-perfect. */
-const CELL = 4;
+const CELL = 3;
 const LW = WORLD.width / CELL;
 const LH = WORLD.height / CELL;
 const GY = WORLD.groundY;
@@ -68,8 +68,12 @@ export class Lighting {
         out.push({ x: st.x, y: GY - 24, rx: ns.light!, ry: ns.light! * 0.75, k: 0.92, glow: st.spec === 'B' ? 0.5 : 0.75, layer: -1 });
       } else if (st.family === 'spider') {
         out.push({ x: st.x, y: st.y, rx: ns.light!, ry: ns.light! * 0.7, k: 0.75, glow: 0.35, layer: 1 });
-      } else if (st.family === 'hive') {
-        out.push({ x: st.x, y: GY - 36, rx: 18, ry: 16, k: 0.6, glow: 0.45, layer: -1 });
+      } else if (st.crown) {
+        out.push({ x: st.x, y: st.y, rx: 12, ry: 10, k: 0.5, glow: 0.5, layer: -1 });
+      } else {
+        // every nest gives off a small warm glow so it reads at night
+        const tall = st.family === 'hive' ? 36 : st.family === 'termite' ? 16 : 12;
+        out.push({ x: st.x, y: GY - tall, rx: 22, ry: 20, k: 0.55, glow: st.family === 'hive' ? 0.5 : 0.32, layer: -1 });
       }
     }
     for (const t of s.tempLights) {

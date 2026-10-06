@@ -1,3 +1,5 @@
+import { SHAPES } from './treeShape';
+
 /**
  * Core gameplay numbers. Rationale: design/game-brief.md, design/progression.md, design/v3-plan.md.
  * World units are art pixels of the 960×540 world; the camera shows 640×360 → 960×540.
@@ -145,10 +147,34 @@ export interface SlotDef {
 /** Crown slots: the Tree as a tower. Index i opens at stage 2 + i. Positions are drawn by the renderer. */
 export const CROWN_SLOTS = 5;
 export const CROWN_X = [-36, 36, -72, 72, 0] as const;
-/** Height of crown slots above the ground per tree stage, and sideways spread. */
-const CROWN_Y = [30, 46, 78, 108, 140, 175] as const;
+/**
+ * Crown slot anchors sit on real leaf clusters of the current stage's crown (so they never
+ * hang in the air): slot i aims at a point across the crown and takes the nearest free cluster.
+ */
+const crownCache = new Map<number, Array<{ x: number; y: number }>>();
 export function crownPos(stage: number, i: number): { x: number; y: number } {
-  return { x: WORLD.treeX + CROWN_X[i] * (0.7 + 0.32 * stage), y: WORLD.groundY - CROWN_Y[stage] - (i >= 2 ? -10 : 0) };
+  let list = crownCache.get(stage);
+  if (!list) {
+    const shape = SHAPES[stage];
+    const top = shape.height;
+    const width = Math.max(...shape.leaves.map((l) => Math.abs(l.x))) || 20;
+    const used = new Set<number>();
+    list = CROWN_X.map((dx) => {
+      const tx = (dx / 72) * width * 0.75;
+      const ty = -top * (Math.abs(dx) > 50 ? 0.55 : 0.68);
+      let best = 0, bd = Infinity;
+      shape.leaves.forEach((l, k) => {
+        if (used.has(k)) return;
+        const d = Math.abs(l.x - tx) + Math.abs(l.y - ty) * 0.7;
+        if (d < bd) { bd = d; best = k; }
+      });
+      used.add(best);
+      const l = shape.leaves[best];
+      return { x: WORLD.treeX + Math.round(l.x), y: WORLD.groundY + Math.round(l.y) + 3 };
+    });
+    crownCache.set(stage, list);
+  }
+  return list[i];
 }
 
 function CROWN_X_LIST(): number[] { return [-36, 36, -72, 72, 0]; }

@@ -957,7 +957,7 @@ export class Game {
     const e: Enemy = {
       id: s.nextId++, kind, x, y: def.underground ? WORLD.wormLaneY : WORLD.groundY, dir,
       hp, maxHp: hp, speedMul: 0.92 + this.rand() * 0.16, attackCd: 0.3 + this.rand() * 0.4,
-      stun: 0, sinceStun: 99, rooted: 0, slow: 0, poison: 0, poisonTime: 0, marked: 0, burn: 0, vuln: 0, armorBreak: 0, affix, jumpCd: 0, jumping: 0,
+      stun: 0, sinceStun: 99, rooted: 0, slow: 0, poison: 0, poisonTime: 0, marked: 0, burn: 0, vuln: 0, armorBreak: 0, web: 0, affix, jumpCd: 0, jumping: 0,
       attacking: false, lit: false, age: this.rand() * 3, hitFlash: 0,
       broodCd: (BROOD[kind]?.every ?? 5) * 0.6, kick: 0, dead: false,
     };
@@ -1128,6 +1128,7 @@ export class Game {
       e.hitFlash = Math.max(0, e.hitFlash - dt);
       e.marked = Math.max(0, e.marked - dt);
       e.armorBreak = Math.max(0, e.armorBreak - dt);
+      e.web = Math.max(0, e.web - dt);
       e.jumpCd = Math.max(0, e.jumpCd - dt);
       if (e.affix === 'regen') e.hp = Math.min(e.maxHp, e.hp + e.maxHp * ELITE.regen * dt);
       if (e.jumping > 0) {
@@ -1257,6 +1258,7 @@ export class Game {
     for (const t of this.state.tempLights) {
       if (t.slow && !def.underground && Math.abs(e.x - t.x) <= t.radius) slow = Math.max(slow, t.slow);
     }
+    if (e.web > 0) slow = Math.max(slow, 0.35);
     return Math.min(0.7, slow * (e.kind === 'mother' ? 0.5 : 1));
   }
 
@@ -1528,21 +1530,24 @@ export class Game {
     if (st.cd > 0) return;
     const s = this.state;
     const inReach = (e: Enemy) => !e.dead && e.jumping <= 0 && Math.hypot(e.x - st.x, (e.y - st.y) * 0.8) <= ns.range;
+    // silk shot straight up through the soil: surface creatures above the knot (horizontal reach)
+    const above = (e: Enemy) => !e.dead && e.jumping <= 0 && Math.abs(e.x - st.x) <= ns.range * 1.2;
     const worms = s.enemies.filter((e) => ENEMIES[e.kind].underground && inReach(e));
-    const surface = worms.length ? [] : s.enemies.filter((e) => !ENEMIES[e.kind].underground && inReach(e));
+    const surface = worms.length ? [] : s.enemies.filter((e) => !ENEMIES[e.kind].underground && above(e));
     const prey = worms.length ? worms : surface;
     if (!prey.length) return;
     prey.sort((a, b) => Math.abs(a.x - WORLD.treeX) - Math.abs(b.x - WORLD.treeX));
     st.cd = ns.rate;
     const t = prey[0];
-    const above = !ENEMIES[t.kind].underground;
-    const mult = above && !this.mods.spiderSurface ? 0.5 : 1;
+    const onSurface = !ENEMIES[t.kind].underground;
+    const mult = onSurface && !this.mods.spiderSurface ? 0.5 : 1;
     this.damageEnemy(t, ns.damage * mult, true, true);
-    if (ns.stun) t.rooted = Math.max(t.rooted, ns.stun * ENEMIES[t.kind].ccMult * (above ? 0.6 : 1));
+    if (onSurface) t.web = Math.max(t.web, 2);
+    if (ns.stun) t.rooted = Math.max(t.rooted, ns.stun * ENEMIES[t.kind].ccMult * (onSurface ? 0.6 : 1));
     if (ns.poison) {
       for (const e of prey) { e.poison = ns.poison * mult; e.poisonTime = ns.poisonTime ?? 4; }
     }
-    this.emit({ type: 'spikeStrike', x: st.x, y: st.y, tx: t.x, ty: above ? t.y - 4 : t.y, web: !!ns.stun });
+    this.emit({ type: 'spikeStrike', x: st.x, y: st.y, tx: t.x, ty: onSurface ? t.y - 4 : t.y, web: !!ns.stun || onSurface });
   }
 
   /** Damage-over-time without spamming hit events. */

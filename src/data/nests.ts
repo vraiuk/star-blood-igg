@@ -164,7 +164,7 @@ export const NESTS: Record<Family, FamilyDef> = {
   },
   spider: {
     name: 'Паук-ткач', creature: 'паук-ткач',
-    desc: 'Из корневого котла кусает Червей, а без них — тварей на земле над собой (½ урона)', underground: true, blocks: false,
+    desc: 'Из корневого котла бьёт Червей, а без них — стреляет нитью вверх по тварям на земле: укус и паутина (замедление)', underground: true, blocks: false,
     levels: [
       { hp: 180, damage: 16, rate: 0.8, range: 50, light: 38 },
       { hp: 280, damage: 26, rate: 0.75, range: 58, light: 44 },
