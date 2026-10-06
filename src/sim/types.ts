@@ -224,6 +224,19 @@ export interface Keeper {
   timeStopT: number;
   timeStopMax: number;
   timeStopNights: number;
+  /** Прыжок Молота: seconds left in the air, the flight, and the slam's power */
+  leapT: number;
+  leapDur: number;
+  leapFrom: number;
+  leapTo: number;
+  leapMult: number;
+  /** Созвучие stacks, time left on the window, and the last rune cast */
+  chord: number;
+  chordT: number;
+  lastCast: string | null;
+  /** Перегрев: consecutive spear throws and the window to the next one */
+  heat: number;
+  heatT: number;
   /** chosen rune facets (Грани) */
   facets: string[];
   /** runes the Keeper has learned (bought or gifted by the Observer) */
@@ -328,6 +341,7 @@ export type GameEvent =
   | { type: 'lostLoot'; x: number; y: number }
   | { type: 'emerge'; x: number }
   | { type: 'tunnelOpen'; x: number }
+  | { type: 'slam'; x: number }
   | { type: 'cleave'; x: number; r: number }
   | { type: 'tunnelSealed'; x: number; by: 'keeper' | 'hammer' | 'worn' }
   | { type: 'blast'; x: number; y: number }
@@ -362,6 +376,18 @@ export interface Stats {
   starCollected: number;
   amberToTree: number;
   time: number;
+  /** damage dealt by source (ability, nest family, tree, keeper…) — for run logs */
+  dmg: Record<string, number>;
+  /** casts per ability */
+  casts: Record<string, number>;
+  /** kills per creature kind */
+  killsBy: Record<string, number>;
+  /** damage taken by the Tree per creature kind */
+  treeDmgBy: Record<string, number>;
+  keeperDeaths: number;
+  rushes: number;
+  /** per-night snapshots */
+  nights: Array<{ night: number; time: number; treeDmg: number; kills: number; amber: number; star: number; wrath: number; rushed: boolean }>;
 }
 
 export interface GameState {

@@ -130,3 +130,15 @@
 - Rune slots: 4th by a Lesser Rune of Development, 5th/6th forged for 1500/120 and 4000/300.
 - Pierce-beam spear form: 6 s minimum cooldown.
 - Meta: «Кольца памяти» — endless Coin sinks after the whole Igg-Tree is awakened.
+
+## v4.5 — журнал забегов, Созвучие, Прыжок Молота
+- Run logs (localStorage, last 100): damage by source, casts, kills, tree damage by kind,
+  keeper build, nests, per-night snapshots; title → «Статистика» with charts + JSON export.
+- Созвучие: rotating different runes within 6 s stacks (max 3): +15% power, −10% Light each.
+  Перегрев: 3rd+ consecutive spear throw within 2.5 s costs +10% Light per throw.
+- Игг-Молот reworked into Прыжок Молота: leap to the cursor (200 × area), slam on landing,
+  breaks armor 4 s; cd 8 s, damage 95. Radiance cd 26 s, Swarm cd 20 s / heal 35%.
+- Pierce-beam spear is sustained: holds while Light lasts (drain 1.6× cost/s), press again
+  to let go; damage falls off with distance (full to 120 px, 25% at ~620 px).
+- Keeper death pauses the game until the player picks revive / «держать Круг без него».
+- NaN fixed in nest cards for families without damage.

@@ -1,5 +1,5 @@
 import {
-  ABILITIES, ABILITY_STAGE_SCALING, AFFIXES, ARMOR_FLOOR, ATTR_MAX, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
+  ABILITIES, ABILITY_STAGE_SCALING, CHORD, AFFIXES, ARMOR_FLOOR, ATTR_MAX, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
   SLOT_MARGIN, SLOTS, crownPos, ringsForCrownSlot, WORLD, WORM_LIGHT_MULT, FOG,
   type AbilityId, type AttrId, type EnemyKind, type SlotDef,
 } from '../data/balance';
@@ -32,6 +32,8 @@ const STING = { drones: 2, reach: 2.6, share: 0.22 } as const;
 const HIVE_BEAM = { time: 1.6, tick: 0.1, total: 1.0 } as const;
 /** Families whose reach grows with the Circle (not hives — their beams are long enough). */
 const REACH_FAMILIES = new Set<Family>(['dragonfly', 'beetle', 'termite', 'mender']);
+/** Run statistics: who owns a projectile's damage. */
+const PROJ_SRC: Record<string, string> = { arrow: 'hive', spark: 'tree', spear: 'spear', meteor: 'starfall', wave: 'hammer', acid: 'other', beam: 'hive' };
 const DIGGERS = new Set<EnemyKind>(['worm', 'guard', 'tunneler']);
 
 /** Seconds after the last spawn before dawn burns remaining creatures. */
@@ -40,6 +42,10 @@ export const NIGHT_GRACE = 60;
 
 /** Piercing Beam channel time (seconds) and damage tick. */
 export const BEAM_CHANNEL = 1.6;
+/** Piercing Beam damage share by distance from the Ascended. */
+export const beamFalloff = (d: number) => Math.max(0.25, 1 - Math.max(0, d - 120) / 500);
+/** the sustained beam drains this many × the spear's Light cost per second */
+const BEAM_DRAIN = 1.6;
 const BEAM_TICK = 0.2;
 
 /** Fixed simulation step in seconds. */
@@ -95,7 +101,8 @@ export class Game {
         x: WORLD.treeX - 28, dir: 1, hp: KEEPER.hp, alive: true, respawn: 0, light: KEEPER.startLight, move: 0,
         cooldowns: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0, timestop: 0 },
         cdMax: { spear: 1, hammer: 1, starfall: 1, radiance: 1, swarm: 1, timestop: 1 }, charge: 0, rank: 0,
-        timeStopT: 0, timeStopMax: 0, timeStopNights: 0,
+        timeStopT: 0, timeStopMax: 0, timeStopNights: 0, chord: 0, chordT: 0, lastCast: null, heat: 0, heatT: 0,
+        leapT: 0, leapDur: 0, leapFrom: 0, leapTo: 0, leapMult: 1,
         radianceT: 0, swarmT: 0, swarmX: 0, channel: 0, channelDir: 1, channelDps: 0,
         props: { spear: [], hammer: [], starfall: [], radiance: [], swarm: [], timestop: [], light: [] },
         slots: { spear: BASE_SLOTS, hammer: BASE_SLOTS, starfall: BASE_SLOTS, radiance: BASE_SLOTS, swarm: BASE_SLOTS, timestop: BASE_SLOTS, light: BASE_SLOTS }, boons: [],
@@ -111,7 +118,7 @@ export class Game {
         branches: [], shield: 0, shieldUsed: false, secondWindUsed: false, rings: 0,
       },
       pending: [], choices: [], events: [],
-      stats: { kills: 0, amberCollected: 0, starCollected: 0, amberToTree: 0, time: 0 },
+      stats: { kills: 0, amberCollected: 0, starCollected: 0, amberToTree: 0, time: 0, dmg: {}, casts: {}, killsBy: {}, treeDmgBy: {}, keeperDeaths: 0, rushes: 0, nights: [] },
       nextId: 1, time: 0,
     };
     this.recalc();
@@ -232,8 +239,11 @@ export class Game {
       : id === 'swarm' && this.propCount('swarm', 'sw-cheap') ? -0.35
       : id === 'timestop' ? -0.35 * this.propCount('timestop', 'ts-cheap') : 0;
     const facet = id === 'spear' && this.state?.keeper?.facets.includes('sp-swift') ? -0.25 : 0;
-    const rank = this.state ? runeRankLight(this.state.keeper.runeRank[id]) : 1;
-    return Math.round(ABILITIES[id].cost * Math.max(0.3, 1 + this.mods.abilityCost + own + facet) * rank);
+    const k = this.state?.keeper;
+    const rank = k ? runeRankLight(k.runeRank[id]) : 1;
+    const chord = k && k.chordT > 0 ? 1 - CHORD.discount * k.chord : 1;
+    const heat = k && id === 'spear' && k.heatT > 0 ? 1 + Math.min(CHORD.heatMax, CHORD.heat * Math.max(0, k.heat + 2 - CHORD.heatFree)) : 1;
+    return Math.round(ABILITIES[id].cost * Math.max(0.3, 1 + this.mods.abilityCost + own + facet) * rank * chord * heat);
   }
 
   /** The Keeper knows this rune and can cast it. */
@@ -258,7 +268,8 @@ export class Game {
     const own = id === 'spear' ? this.mods.spearDamage : id === 'hammer' ? this.mods.hammerDamage : id === 'starfall' ? this.mods.starfallDamage : 0;
     return (1 + ABILITY_STAGE_SCALING * this.state.tree.stage + this.mods.abilityDamage + own)
       * KEEPER_RANKS[this.state.keeper.rank].power * (1 + 0.08 * this.state.keeper.attrs.might)
-      * runeRankPower(this.state.keeper.runeRank[id]);
+      * runeRankPower(this.state.keeper.runeRank[id])
+      * (this.state.keeper.chordT > 0 ? 1 + CHORD.power * this.state.keeper.chord : 1);
   }
 
   /** Keeper Light regen factor by distance from the trunk: ×1.8 at the trunk → ×0.3 at the Circle edge. */
@@ -333,6 +344,15 @@ export class Game {
   // ───────────────────────────── commands ────────────────────────────
 
   setMove(dir: -1 | 0 | 1) { this.state.keeper.move = dir; }
+  /** The sustained beam goes out: now its cooldown starts. */
+  private endChannel() {
+    const k = this.state.keeper;
+    k.channel = 0;
+    const cd = this.abilityCooldown('spear');
+    k.cooldowns.spear = cd;
+    k.cdMax.spear = cd;
+  }
+
   /** Is the Ascended channelling the Piercing Beam (rooted in place)? */
   channelling() { return this.state.keeper.channel > 0; }
   /** Turn the Ascended without moving (the spear flies where he faces). */
@@ -692,6 +712,8 @@ export class Game {
     const r = this.rushReward();
     s.amber += r.amber;
     s.star += r.star;
+    this.snapNight(true);
+    s.stats.rushes++;
     this.adaptWrath(s.night);
     s.night++;
     s.rushedDawns++;
@@ -720,6 +742,8 @@ export class Game {
     const k = s.keeper;
     if (this.over || !k.alive) return false;
     if (!this.abilityUnlocked(id)) return this.deny(this.abilityAvailable(id) ? `Изучи руну «${ABILITIES[id].name}» в Скрижали [R]` : `Руна откроется на стадии Древа ${ABILITIES[id].unlockStage}`);
+    // pressing the spear again lets go of the sustained beam
+    if (id === 'spear' && k.channel > 0) { this.endChannel(); return true; }
     if (k.cooldowns[id] > 0) return false;
     if (id === 'timestop' && k.timeStopNights > 0) return this.deny(`Остановка Времени восстановится через ${k.timeStopNights} ноч.`);
     if (id === 'timestop' && s.phase !== 'night') return this.deny('Время останавливают ночью');
@@ -738,15 +762,25 @@ export class Game {
     void def;
     void form;
     const cd = this.abilityCooldown(id);
+    s.stats.casts[id] = (s.stats.casts[id] ?? 0) + 1;
+    // Созвучие grows when the runes are rotated; Перегрев when the spear is spammed
+    if (id === 'spear') { k.heat = k.heatT > 0 ? k.heat + 1 : 0; k.heatT = CHORD.heatWindow; }
+    const chordGain = k.lastCast !== null && k.lastCast !== id && k.chordT > 0;
+    this.src = id;
     k.cooldowns[id] = cd;
     k.cdMax[id] = cd;
     k.castAnim = 0;
     if (id === 'spear') this.castSpear(tx, this.abilityMult('spear'));
-    else if (id === 'hammer') this.castHammer(this.abilityMult('hammer'));
+    else if (id === 'hammer') this.leapHammer(tx, this.abilityMult('hammer'));
     else if (id === 'radiance') this.castRadiance();
     else if (id === 'swarm') this.castSwarm();
     else if (id === 'timestop') this.castTimeStop();
     else this.castStarfall(tx, this.abilityMult('starfall'));
+    // the stack applies from the next cast on
+    if (chordGain) k.chord = Math.min(CHORD.max, k.chord + 1);
+    else if (k.chordT <= 0) k.chord = 0;
+    k.chordT = CHORD.window;
+    k.lastCast = id;
     this.emit({ type: 'cast', ability: id, x: k.x, tx });
     return true;
   }
@@ -830,11 +864,14 @@ export class Game {
     const airMult = this.facet('sp-sky') ? 1.8 : 1;
     const before = s.projectiles.length;
     if (form === 'B') {
-      // Пронзающий луч: the Ascended stands still and channels a beam to the edge of the world
-      k.channel = BEAM_CHANNEL;
+      // Пронзающий луч: the Ascended stands still and holds a beam to the edge of the world
+      // for as long as the Light lasts (press again to let go); the cooldown starts after
+      k.channel = 0.001;
       k.channelDir = dir;
       k.channelDps = (def.damage * 2.2 * mult) / BEAM_CHANNEL;
       k.move = 0;
+      k.cooldowns.spear = 0.25;
+      k.cdMax.spear = 0.25;
       return;
     }
     if (form === 'A') {
@@ -862,6 +899,23 @@ export class Game {
       }
     }
   }
+
+  /** Прыжок Молота: fly to the target (within reach) and slam on landing. */
+  private leapHammer(tx: number, mult: number) {
+    const k = this.state.keeper;
+    const def = ABILITIES.hammer;
+    const reach = def.leap * this.runeArea('hammer');
+    const to = Math.max(8, Math.min(WORLD.width - 8, k.x + Math.max(-reach, Math.min(reach, tx - k.x))));
+    if (Math.abs(to - k.x) < 12) { this.castHammer(mult); return; }
+    k.dir = to > k.x ? 1 : -1;
+    k.leapFrom = k.x;
+    k.leapTo = to;
+    k.leapDur = k.leapT = def.leapTime;
+    k.leapMult = mult;
+    k.channel = 0;
+  }
+  /** Is the Ascended mid-leap (for the renderer: 0..1 of the flight, or -1)? */
+  leapProgress() { const k = this.state.keeper; return k.leapT > 0 ? 1 - k.leapT / k.leapDur : -1; }
 
   private castHammer(mult: number, echo = false) {
     const s = this.state;
@@ -922,6 +976,7 @@ export class Game {
       hits++;
       const stun = def.stun * (this.facet('hm-tremor') ? 1.6 : 1);
       if (under) { this.damageEnemy(e, def.damage * mult * (this.facet('hm-deep') ? 2 : 1)); this.stunEnemy(e, stun); continue; }
+      e.armorBreak = Math.max(e.armorBreak, def.armorBreak);
       this.damageEnemy(e, def.damage * mult);
       this.stunEnemy(e, stun);
       if (e.kind !== 'mother') e.kick = this.facet('hm-pull') ? -Math.sign(d) * Math.min(Math.abs(d) * 2.5, def.knockback * 3) : Math.sign(d || -e.dir) * def.knockback * 3;
@@ -997,6 +1052,22 @@ export class Game {
       const x = tx + (i - (n - 1) / 2) * ((def.spread * area * 2) / (n - 1)) + (this.rand() - 0.5) * 10;
       this.meteor(x, 0.7 + i * 0.12, def.damage * mult, def.impactRadius * area);
     }
+  }
+
+  /** Who is dealing damage right now (for run statistics). */
+  private src = 'other';
+  private logDmg(v: number) {
+    const d = this.state.stats.dmg;
+    d[this.src] = (d[this.src] ?? 0) + v;
+  }
+  private killsAtNight = 0;
+  private snapNight(rushed: boolean) {
+    const s = this.state;
+    s.stats.nights.push({
+      night: s.night + 1, time: Math.round(s.stats.time), treeDmg: Math.round(this.nightTreeDmg), kills: s.stats.kills - this.killsAtNight,
+      amber: s.amber, star: s.star, wrath: +s.wrath.toFixed(2), rushed,
+    });
+    this.killsAtNight = s.stats.kills;
   }
 
   /** Delayed sim actions (e.g. the Hammer's echo). */
@@ -1153,6 +1224,7 @@ export class Game {
 
   private endNight() {
     const s = this.state;
+    this.snapNight(false);
     const finished = s.night;
     s.night++;
     if (s.night === this.campaignNights) {
@@ -1296,6 +1368,10 @@ export class Game {
     const s = this.state;
     const k = s.keeper;
     k.castAnim += dt;
+    k.chordT = Math.max(0, k.chordT - dt);
+    if (k.chordT <= 0) k.chord = 0;
+    k.heatT = Math.max(0, k.heatT - dt);
+    if (k.heatT <= 0) k.heat = 0;
     k.radianceT = Math.max(0, k.radianceT - dt);
     k.swarmT = Math.max(0, k.swarmT - dt);
     if (k.radianceT > 0 && this.propCount('radiance', 'rd-heal')) {
@@ -1331,16 +1407,38 @@ export class Game {
       }
       return;
     }
+    if (k.leapT > 0) {
+      // in the air: untouchable, lands with the slam
+      k.leapT = Math.max(0, k.leapT - dt);
+      const p = 1 - k.leapT / k.leapDur;
+      k.x = k.leapFrom + (k.leapTo - k.leapFrom) * p;
+      if (k.leapT <= 0) {
+        k.x = k.leapTo;
+        this.src = 'hammer';
+        this.castHammer(k.leapMult);
+        this.emit({ type: 'slam', x: k.x });
+      }
+      return;
+    }
+    this.src = 'spear';
     if (k.channel > 0) {
       const before = k.channel;
-      k.channel = Math.max(0, k.channel - dt);
+      k.channel += dt;
+      // the beam feeds on Light; when it runs dry the beam goes out
+      const drain = this.abilityCost('spear') * BEAM_DRAIN * dt;
+      if (k.freeCast <= 0) {
+        if (k.light < drain) { this.endChannel(); k.walkT = 0; return; }
+        k.light -= drain;
+      }
       // damage ticks every BEAM_TICK seconds along the whole line
       if (Math.floor(before / BEAM_TICK) !== Math.floor(k.channel / BEAM_TICK)) {
         const apo = this.apotheosis('spear');
         for (const e of s.enemies) {
           if (e.dead || (e.layer === 'under') || (e.x - k.x) * k.channelDir < 0) continue;
-          this.damageEnemy(e, k.channelDps * BEAM_TICK);
-          if (apo) { e.marked = Math.max(e.marked, 3); this.damageQuiet(e, k.channelDps * BEAM_TICK * 0.4); }
+          // the beam scatters with distance: full power up close, a quarter at the far end
+          const fall = beamFalloff(Math.abs(e.x - k.x));
+          this.damageEnemy(e, k.channelDps * BEAM_TICK * fall);
+          if (apo) { e.marked = Math.max(e.marked, 3); this.damageQuiet(e, k.channelDps * BEAM_TICK * 0.4 * fall); }
         }
       }
       k.walkT = 0;
@@ -1353,6 +1451,7 @@ export class Game {
     }
     if (this.isLit(k.x, false)) k.hp = Math.min(this.keeperMaxHp(), k.hp + KEEPER.regenLit * (1 + k.rank) * dt);
     // radiance: the Ascended burns creatures pressing against him
+    this.src = 'keeper';
     const aura = this.keeperAura();
     for (const e of s.enemies) {
       if (e.dead || e.layer !== 'ground' || Math.abs(e.x - k.x) > ENEMIES[e.kind].radius + 14) continue;
@@ -1363,7 +1462,7 @@ export class Game {
   private damageKeeper(amount: number) {
     const s0 = this.state;
     const k = s0.keeper;
-    if (!k.alive) return;
+    if (!k.alive || k.leapT > 0) return;
     k.hp -= amount * (1 - this.keeperGuard());
     k.hitFlash = 0.15;
     this.emit({ type: 'keeperHit' });
@@ -1371,6 +1470,7 @@ export class Game {
       k.hp = 0;
       k.alive = false;
       k.channel = 0;
+      s0.stats.keeperDeaths++;
       // no free resurrection: wait for dawn, pay the Tree, or sacrifice to Eternity
       k.respawn = s0.phase === 'night' ? Infinity : KEEPER.respawn;
       k.charge = 0;
@@ -1404,6 +1504,7 @@ export class Game {
     const raw = amount * (worm ? WORM_LIGHT_MULT : 1) * mark * (1 + e.vuln);
     const armor = e.armorBreak > 0 || pierceArmor ? 0 : def.armor + (e.affix === 'armored' ? ELITE.armor : 0) + (def.armor > 0 && HEAVY.has(e.kind) ? ENDLESS.heavyArmor(this.state.night) : 0);
     const dmg = Math.max(raw * ARMOR_FLOOR, raw - armor);
+    this.logDmg(Math.min(dmg, Math.max(0, e.hp)));
     e.hp -= dmg;
     e.hitFlash = 0.12;
     this.emit({ type: 'hit', x: e.x, y: e.layer === 'under' ? e.y : e.y - def.height * 0.6, amount: dmg, crit: worm });
@@ -1416,6 +1517,7 @@ export class Game {
     e.dead = true;
     if (e.tunnel && DIGGERS.has(e.kind)) s.tunnels = s.tunnels.filter((t) => t.id !== e.tunnel || t.open);
     s.stats.kills++;
+    s.stats.killsBy[e.kind] = (s.stats.killsBy[e.kind] ?? 0) + 1;
     const def = ENEMIES[e.kind];
     const k = s.keeper;
     if (this.abilityUnlocked('starfall')) {
@@ -1495,25 +1597,30 @@ export class Game {
       e.slow = this.slowAt(e);
       e.vuln = this.vulnAt(e);
       e.attackCd -= dt;
+      this.src = 'tree';
       if (def.worm && e.lit && !e.fogged) {
         // Igg-light burns worms: «личинка сгорает за одну-две секунды»
         const flare = s.keeper.radianceT > 0 ? ABILITIES.radiance.burn : 1;
         e.hp -= this.stageDef.wormBurn * (1 + this.mods.wormBurn) * flare * (def.boss ? 0.5 : 1) * dt;
         if (e.hp <= 0) { this.killEnemy(e); continue; }
       }
+      this.src = 'spider';
       if (e.poisonTime > 0) {
         e.poisonTime -= dt;
         this.damageQuiet(e, e.poison * dt, false);
         if (e.dead) continue;
       }
+      this.src = 'starfall';
       for (const b of s.burns) {
         if (e.layer === 'ground' && Math.abs(e.x - b.x) <= b.halfWidth) this.damageQuiet(e, b.dps * dt);
       }
+      this.src = 'hammer';
       for (const t of s.tempLights) {
         if (t.dps && e.layer !== 'under' && Math.abs(e.x - t.x) <= t.radius) this.damageQuiet(e, t.dps * dt);
       }
       if (e.dead) continue;
 
+      this.src = 'thorns';
       if (this.frozen(e)) { e.attacking = false; continue; }
       if (e.kick !== 0) {
         e.x += e.kick * dt;
@@ -1922,6 +2029,7 @@ export class Game {
       st.haste = Math.max(0, st.haste - dt);
       st.intercept = Math.max(0, st.intercept - dt);
       st.cd -= dt * this.hasteMult(st);
+      this.src = st.family;
       const ns = this.nestStats(st);
       switch (st.family) {
         case 'hive': this.tickHive(st, ns, dt); break;
@@ -2131,6 +2239,7 @@ export class Game {
     if (e.dead) return;
     const def = ENEMIES[e.kind];
     const mult = e.fogged ? (aura ? FOG.aura : 1) : def.worm && this.isLit(e.x, e.layer === 'under') ? WORM_LIGHT_MULT : 1;
+    this.logDmg(Math.min(amount * mult, Math.max(0, e.hp)));
     e.hp -= amount * mult;
     if (e.hp <= 0) this.killEnemy(e);
   }
@@ -2150,6 +2259,7 @@ export class Game {
   private damageTree(amount: number, by: EnemyKind, attacker?: Enemy) {
     const t = this.state.tree;
     this.nightTreeDmg += amount;
+    this.state.stats.treeDmgBy[by] = (this.state.stats.treeDmgBy[by] ?? 0) + amount;
     let dmg = amount;
     if (t.shield > 0) {
       const absorbed = Math.min(t.shield, dmg);
@@ -2195,6 +2305,7 @@ export class Game {
   }
 
   private updateTree(dt: number) {
+    this.src = 'tree';
     const s = this.state;
     const t = s.tree;
     t.hitFlash = Math.max(0, t.hitFlash - dt);
@@ -2281,6 +2392,7 @@ export class Game {
     for (const p of s.projectiles) {
       p.age += dt;
       p.life -= dt;
+      this.src = PROJ_SRC[p.kind];
       if (p.kind === 'acid') {
         p.vy += 260 * dt;
         p.x += p.vx * dt;
@@ -2571,6 +2683,7 @@ export class Game {
    * hatch again after `respawn` seconds.
    */
   private updateSoldiers(dt: number) {
+    this.src = 'termite';
     const s = this.state;
     const mounds = s.structures.filter((x) => x.family === 'termite');
     s.soldiers = s.soldiers.filter((u) => mounds.some((m) => m.id === u.nestId));

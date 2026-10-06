@@ -325,9 +325,10 @@ export const ABILITIES = {
     damage: 52, pierce: 3, falloff: 0.2, speed: 420, range: 320,
   },
   hammer: {
-    name: 'Игг-Молот', desc: '«Сияние»: удар вокруг Хранителя, оглушает и отбрасывает, зажигает свет.',
-    cost: 34, cooldown: 11, unlockStage: 2, learn: 4, key: '2',
-    damage: 70, radius: 92, stun: 1.6, knockback: 50, lightTime: 6, lightRadius: 80, restunWindow: 4,
+    name: 'Игг-Молот', desc: 'Прыжок Молота: Хранитель прыгает к курсору и бьёт в точке приземления — оглушает, отбрасывает, ломает броню, рушит Лазы, зажигает свет.',
+    cost: 34, cooldown: 8, unlockStage: 2, learn: 4, key: '2',
+    leap: 200, leapTime: 0.35, armorBreak: 4,
+    damage: 95, radius: 92, stun: 1.6, knockback: 50, lightTime: 6, lightRadius: 80, restunWindow: 4,
   },
   starfall: {
     name: 'Звездопад', desc: 'Заряжается убийствами. Пять огромных звёзд падают у курсора: оглушают, рвут броню и выжигают землю.',
@@ -336,13 +337,13 @@ export const ABILITIES = {
   },
   radiance: {
     name: 'Сияние Игг', desc: 'Древо вспыхивает: Круг шире на 25%, Игг-свет жжёт Червей втрое, освещённые твари получают +30% урона.',
-    cost: 45, cooldown: 35, unlockStage: 3, learn: 12, key: '4',
+    cost: 45, cooldown: 26, unlockStage: 3, learn: 12, key: '4',
     duration: 8, radius: 0.25, burn: 3, vuln: 0.3,
   },
   swarm: {
     name: 'Зов Роя', desc: 'Гнёзда рядом с Восходящим 6 с атакуют на 60% быстрее и сразу чинятся на 25%.',
-    cost: 40, cooldown: 28, unlockStage: 2, learn: 8, key: '5',
-    duration: 6, reach: 170, haste: 0.6, heal: 0.25,
+    cost: 40, cooldown: 20, unlockStage: 2, learn: 8, key: '5',
+    duration: 6, reach: 170, haste: 0.6, heal: 0.35,
   },
   timestop: {
     name: 'Остановка Времени', desc: 'Руна-Заклинание: время в Круге застывает — твари замирают (боссы вдвое короче), новые не выходят из тьмы. Восстанавливается за ночи, а не секунды.',
@@ -353,6 +354,12 @@ export const ABILITIES = {
 
 /** Ability damage multiplier per tree stage above the first. */
 export const ABILITY_STAGE_SCALING = 0.08;
+/**
+ * Созвучие: casting a different rune within `window` seconds of the last one adds a stack
+ * (up to `max`); each stack makes the next casts stronger and cheaper. Rotating runes beats
+ * spamming one. Перегрев: the Spear thrown again within `heatWindow` costs more each time.
+ */
+export const CHORD = { window: 6, max: 3, power: 0.15, discount: 0.1, heatWindow: 2.5, heat: 0.1, heatMax: 1, heatFree: 2 } as const;
 export const RESTUN_FACTOR = 0.5;
 
 export const ECONOMY = {

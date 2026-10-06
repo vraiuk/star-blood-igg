@@ -7,6 +7,8 @@ import { Game, STEP } from './sim/game';
 import { hasStartRune, loadSave, metaPatches, writeSave } from './state/save';
 import { Hud, type MenuTarget } from './ui/hud';
 import { openMetaTree } from './ui/metaTree';
+import { buildRunLog, saveRunLog } from './state/runlog';
+import { openStats } from './ui/stats';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -43,6 +45,7 @@ const titleInfo = () => {
 const hud: Hud = new Hud(uiRoot, () => game, {
   onStart() {
     game = newGame();
+    logged = false;
     hud.resetQuests();
     renderer.resetCamera(game.state.tree.radius);
     started = true;
@@ -51,12 +54,18 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     hud.hideTitle();
   },
   onRestart() {
+    logQuit();
     hud.hideEnd();
     hud.closeMenu();
     game = newGame();
+    logged = false;
     hud.resetQuests();
     renderer.resetCamera(game.state.tree.radius);
     endShown = false;
+  },
+  onOpenStats() {
+    metaOpen = true;
+    openStats(uiRoot, () => { metaOpen = false; });
   },
   onOpenMeta() {
     metaOpen = true;
@@ -112,7 +121,8 @@ function setPaused(p: boolean) {
 /** Abilities that need a target point enter aim mode on click; the hammer casts at once. */
 function beginAim(id: AbilityId) {
   hud.closeMenu();
-  if (id !== 'starfall') { game.cast(id, game.state.keeper.x); return; }
+  // the Starfall and the Hammer's leap are aimed with the next click
+  if (id !== 'starfall' && id !== 'hammer') { game.cast(id, game.state.keeper.x); return; }
   hud.aiming = id;
   view.aiming = id;
 }
@@ -150,7 +160,11 @@ window.addEventListener('keydown', (e) => {
     game.cast(ABILITY_KEYS[k], view.mouseX, view.mouseY);
     cancelAim();
   }
-  if (k === ' ') { e.preventDefault(); game.callNight(); }
+  if (k === ' ') {
+    e.preventDefault();
+    if (hud.deathPause) hud.releaseDeath();
+    else game.callNight();
+  }
   if (k === 'f') { speed = nextSpeed(); hud.setSpeed(speed); }
   if (k === 'm') hud.setSound(audio.toggle());
   if (k === 'r' || k === 'b') hud.togglePanel('keeper');
@@ -232,8 +246,18 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ───────────────────────────── run end ─────────────────────────────
 
+/** Record a run that was left unfinished (restart / closing the tab). */
+let logged = false;
+function logQuit() {
+  if (!started || logged || game.over || game.state.night === 0) return;
+  logged = true;
+  saveRunLog(buildRunLog(game, 'quit'));
+}
+window.addEventListener('pagehide', logQuit);
+
 function finishRun() {
   const s = game.state;
+  if (!logged) { logged = true; saveRunLog(buildRunLog(game, 'lost')); }
   const stars = game.stars();
   const coins = Math.round(coinsForRun(s.night, stars, game.path + 1) * (game.retired ? 1.5 : 1));
   const prevBest = save.bestNight[game.path] ?? 0;
@@ -260,7 +284,7 @@ function frame(now: number) {
   last = now;
   time += dt;
   // choices (dawn rune, tree branch) pause the world
-  const frozen = !started || paused || game.over || !!game.choice || metaOpen || hud.tabletOpen;
+  const frozen = !started || paused || game.over || !!game.choice || metaOpen || hud.tabletOpen || hud.deathPause;
   if (!frozen) {
     acc += dt * speed;
     while (acc >= STEP) {

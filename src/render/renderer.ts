@@ -1,5 +1,5 @@
-import { ENEMIES, SLOTS, WORLD, crownPos, treeScale } from '../data/balance';
-import type { Game } from '../sim/game';
+import { ABILITIES, ENEMIES, SLOTS, WORLD, crownPos, treeScale } from '../data/balance';
+import { beamFalloff, type Game } from '../sim/game';
 import type { GameEvent } from '../sim/types';
 import { type Backdrop, buildBackdrop } from './background';
 import { Camera } from './camera';
@@ -86,6 +86,12 @@ export class Renderer {
           p.addFx('ring', e.x, WORLD.groundY - 6, 0.25, e.r);
           p.emit(6, e.x, WORLD.groundY - 6, { speed: 60, max: 0.3, colors: ['#ffd070', '#c89a3a', '#5a3a1a'] });
           break;
+        case 'slam':
+          p.addFx('ring', e.x, WORLD.groundY - 10, 0.45, 92 * (1 + game.mods.hammerRadius) * game.runeArea('hammer'));
+          p.goldBurst(e.x, WORLD.groundY - 10, 40);
+          p.dust(e.x - 10, WORLD.groundY - 2); p.dust(e.x + 10, WORLD.groundY - 2);
+          this.shake = Math.max(this.shake, 5);
+          break;
         case 'tunnelOpen': p.dust(e.x, WORLD.groundY - 2); p.dust(e.x - 6, WORLD.groundY - 2); this.shake = Math.max(this.shake, 2); break;
         case 'tunnelSealed':
           p.dust(e.x, WORLD.groundY - 2); p.dust(e.x + 8, WORLD.groundY - 2); p.dust(e.x - 8, WORLD.groundY - 2);
@@ -135,6 +141,7 @@ export class Renderer {
           break;
         case 'cast':
           if (e.ability === 'hammer') {
+            if (game.leapProgress() >= 0) { p.dust(e.x, WORLD.groundY - 2); break; } // the slam comes on landing
             p.addFx('ring', e.x, WORLD.groundY - 10, 0.45, 92 * (1 + game.mods.hammerRadius));
             p.goldBurst(e.x, WORLD.groundY - 10, 30);
             this.shake = Math.max(this.shake, 3);
@@ -224,7 +231,14 @@ export class Renderer {
     for (const tn of s.tunnels) if (tn.open) drawTunnelMouths(c, tn, time);
     for (const e of s.enemies) if (e.layer !== 'under') drawFog(c, e, time, s.night);
     for (const e of s.enemies) if (e.layer !== 'under') drawEnemy(c, e, time);
+    // Прыжок Молота: the Ascended arcs through the air
+    const lp = game.leapProgress();
+    if (lp >= 0) { c.save(); c.translate(0, -Math.round(Math.sin(lp * Math.PI) * 46)); }
     drawKeeper(c, s.keeper, time);
+    if (lp >= 0) {
+      c.restore();
+      if (Math.random() < 0.7) this.particles.emit(1, s.keeper.x, WORLD.groundY - 10 - Math.sin(lp * Math.PI) * 46, { speed: 15, max: 0.35, colors: [PAL.gold5, PAL.gold3], glow: true });
+    }
     for (const w of s.workers) drawWorker(c, w, time);
     for (const u of s.soldiers) drawSoldier(c, u);
     this.particles.draw(c, false);
@@ -359,12 +373,20 @@ export class Renderer {
     const k01 = Math.min(1, k.channel / 0.25);
     const wob = Math.sin(time * 40) > 0 ? 1 : 0;
     const col = runeColor(game.state.keeper.runeRank.spear);
-    c.fillStyle = 'rgba(255,200,90,0.35)';
-    c.fillRect(Math.min(x0, x1), y - 3 - wob, Math.abs(x1 - x0), 6 + wob * 2);
-    c.fillStyle = col;
-    c.fillRect(Math.min(x0, x1), y - 1, Math.abs(x1 - x0), 2);
-    c.fillStyle = PAL.white;
-    c.fillRect(Math.min(x0, x1), y, Math.abs(x1 - x0), 1);
+    // the beam thins out with distance (its damage falls off too)
+    const len = Math.abs(x1 - x0);
+    for (let d = 0; d < len; d += 12) {
+      const f = beamFalloff(d);
+      const x = x0 + k.channelDir * d - (k.channelDir < 0 ? 12 : 0);
+      c.globalAlpha = 0.25 + 0.75 * f;
+      c.fillStyle = 'rgba(255,200,90,0.35)';
+      const h = Math.max(2, Math.round((6 + wob * 2) * f));
+      c.fillRect(x, y - h / 2, 12, h);
+      c.fillStyle = col;
+      c.fillRect(x, y - 1, 12, f > 0.5 ? 2 : 1);
+      if (f > 0.4) { c.fillStyle = PAL.white; c.fillRect(x, y, 12, 1); }
+    }
+    c.globalAlpha = 1;
     disc(c, x0, y, 3 + wob * k01, PAL.white);
     if (Math.random() < 0.6) this.particles.emit(1, x0 + k.channelDir * Math.random() * 300, y, { speed: 20, max: 0.3, colors: [PAL.white, col], glow: true });
   }
@@ -495,7 +517,15 @@ export class Renderer {
       for (let i = -46; i <= 46; i += 3) rect(c, x + i, WORLD.groundY + 1, 2, 1, g ? 'rgba(255,140,90,0.85)' : 'rgba(255,220,120,0.7)');
       for (let y = 20; y < WORLD.groundY; y += 8) rect(c, x - 30 + y * 0.12, y, 1, 3, 'rgba(255,200,120,0.35)');
     } else if (view.aiming === 'hammer') {
-      for (let i = -84; i <= 84; i += 4) rect(c, k.x + i, WORLD.groundY + 1, 2, 1, 'rgba(255,230,150,0.7)');
+      // leap arc to the cursor (clamped to the reach) and the slam's footprint
+      const reach = ABILITIES.hammer.leap * game.runeArea('hammer');
+      const to = k.x + Math.max(-reach, Math.min(reach, view.mouseX - k.x));
+      for (let i = 0; i <= 20; i++) {
+        const p = i / 20;
+        rect(c, k.x + (to - k.x) * p, WORLD.groundY - 10 - Math.sin(p * Math.PI) * 46, 1, 1, g ? 'rgba(255,240,180,0.8)' : 'rgba(255,200,90,0.6)');
+      }
+      const r = ABILITIES.hammer.radius * (1 + game.mods.hammerRadius) * game.runeArea('hammer');
+      for (let i = -r; i <= r; i += 4) rect(c, to + i, WORLD.groundY + 1, 2, 1, 'rgba(255,230,150,0.7)');
     }
   }
 }

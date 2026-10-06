@@ -1,4 +1,4 @@
-import { ABILITIES, ATTR_MAX, ATTRIBUTES, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
+import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
 import { MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   APOTHEOSIS_RANK, DEV_SLOTS, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
@@ -25,6 +25,7 @@ export interface HudCallbacks {
   onStart(): void;
   onRestart(): void;
   onOpenMeta(): void;
+  onOpenStats(): void;
   onCast(id: AbilityId): void;
   onCallNight(): void;
   onToggleSpeed(): void;
@@ -81,6 +82,7 @@ export class Hud {
   private stageCount!: HTMLElement;
   private nightInfo!: HTMLElement;
   private abTip!: HTMLElement;
+  private chordEl!: HTMLElement;
   private abEls = {} as Record<AbilityId, { box: HTMLElement; cd: HTMLElement; lock: HTMLElement; charge: HTMLElement; cdt: HTMLElement; wasReady: boolean }>;
   private callBtn!: HTMLButtonElement;
   private speedBtn!: HTMLButtonElement;
@@ -191,6 +193,8 @@ export class Hud {
       this.abEls[id] = { box, cd: box.querySelector('.cd')!, lock: box.querySelector('.lock')!, charge: box.querySelector('.charge')!, cdt: box.querySelector('.cdt')!, wasReady: false };
     });
     r.appendChild(abs);
+    this.chordEl = el('div', 'chord hidden');
+    abs.appendChild(this.chordEl);
     this.abTip = el('div', 'abtip hidden');
     r.appendChild(this.abTip);
 
@@ -271,17 +275,19 @@ export class Hud {
         <p>«Каждое Игг-Древо — это форпост людей в борьбе против Червей.»<br>Восходящий, посади Семя у границы Теней, вырасти его в Великое Игг-Древо и держи Круг — сколько сможешь.</p>
         <div class="keys">
           <span><b>A / D</b> — ходить, собирать Янтарь и Кровь</span><span><b>Клик</b> по руне у земли — призвать гнездо</span>
-          <span><b>1 2 3</b> — Копьё, Молот, Звездопад</span><span><b>Клик</b> по Древу — стадии и рост</span>
+          <span><b>1–6</b> — руны Хранителя</span><span><b>Клик</b> по Древу — стадии и рост</span>
           <span><b>R</b> — Скрижаль: руны и лавка Наблюдателя</span><span><b>Пробел</b> — призвать ночь · <b>F</b> ×2 · <b>Esc</b></span>
         </div>
         <div class="row">
           <button class="btn gold" data-a="start">Хранить Древо</button>
           <button class="btn" data-a="meta"><img class="icon" src="${icon('tree')}"> Древо Игг · ${coins} Монет</button>
+          <button class="btn" data-a="stats">Статистика</button>
         </div>
         <div class="stat">${pathName}</div>
       </div>`;
     this.title.querySelector('[data-a=start]')!.addEventListener('click', () => this.cb.onStart());
     this.title.querySelector('[data-a=meta]')!.addEventListener('click', () => this.cb.onOpenMeta());
+    this.title.querySelector('[data-a=stats]')!.addEventListener('click', () => this.cb.onOpenStats());
   }
 
   resetQuests() { this.questIdx = 0; this.questSig = ''; }
@@ -406,11 +412,11 @@ export class Hud {
     const rows: Array<[string, string]> = [];
     const n0 = (v: number) => String(Math.round(v));
     if (id === 'spear') {
-      if (form === 'B') rows.push(['Урон луча', `${n0(ABILITIES.spear.damage * 2.2 * mult)} за 1.6 с`]);
+      if (form === 'B') rows.push(['Урон луча', `${n0((ABILITIES.spear.damage * 2.2 * mult) / 1.6)} в секунду`], ['Тянет Света', `${n0(g.abilityCost('spear') * 1.6)} в секунду`]);
       else if (form === 'A') rows.push(['Урон', `${n0(ABILITIES.spear.damage * 0.8 * mult)} × 5 копий`]);
       else rows.push(['Урон', n0(ABILITIES.spear.damage * mult)], ['Пробивает', `${ABILITIES.spear.pierce + g.mods.spearPierce + (rr >= 1 ? 1 : 0) + (rr >= 3 ? 1 : 0)} тварей`]);
     } else if (id === 'hammer') {
-      rows.push(['Урон', n0(ABILITIES.hammer.damage * mult)], ['Радиус', n0(ABILITIES.hammer.radius * (1 + g.mods.hammerRadius) * g.runeArea('hammer'))], ['Оглушение', `${ABILITIES.hammer.stun} с`]);
+      rows.push(['Прыжок', `до ${n0(ABILITIES.hammer.leap * g.runeArea('hammer'))} (к курсору)`], ['Урон', n0(ABILITIES.hammer.damage * mult)], ['Радиус', n0(ABILITIES.hammer.radius * (1 + g.mods.hammerRadius) * g.runeArea('hammer'))], ['Оглушение', `${ABILITIES.hammer.stun} с`], ['Ломает броню', `${ABILITIES.hammer.armorBreak} с`]);
     } else if (id === 'starfall') {
       rows.push(['Урон звезды', n0(ABILITIES.starfall.damage * mult)], ['Звёзд', String(ABILITIES.starfall.meteors + g.mods.starfallMeteors)], ['Заряд', `${Math.floor(k.charge)}/${ABILITIES.starfall.chargeMax} (убийства)`]);
     } else if (id === 'radiance') {
@@ -450,6 +456,12 @@ export class Hud {
   // ───────────────────────────── ring menu ───────────────────────────
 
   get menuOpen() { return this.menuTarget !== null || this.panelKind !== null; }
+  /** The Ascended just fell: time stands until the player chooses. */
+  private deathHold = false;
+  private deathSeen = false;
+  get deathPause() { return this.deathHold; }
+  releaseDeath() { this.deathHold = false; this.reviveSig = ''; }
+
   /** The Keeper's Tablet freezes time so runes can be bought calmly in a crowded night. */
   get tabletOpen() { return this.panelKind === 'keeper'; }
   get target() { return this.menuTarget; }
@@ -487,7 +499,7 @@ export class Hud {
   }
 
   private statDelta(label: string, a: number | undefined, b: number | undefined, unit = '', fmt = (v: number) => String(Math.round(v))) {
-    if (b === undefined && a === undefined) return '';
+    if (b === undefined && !a) return '';
     if (a === undefined || a === 0) return `<div>${label}: <b class="up">${fmt(b!)}${unit}</b></div>`;
     if (b === undefined || Math.abs(a - b) < 0.01) return `<div>${label}: <b>${fmt(a)}${unit}</b></div>`;
     return `<div>${label}: <b>${fmt(a)}${unit}</b> → <b class="up">${fmt(b)}${unit}</b></div>`;
@@ -497,7 +509,7 @@ export class Hud {
     const f = (v: number) => (v < 10 ? v.toFixed(1) : String(Math.round(v)));
     const pct = (v: number) => `${Math.round(v * 100)}`;
     const rows = [
-      fam !== 'beetle' || next.damage ? this.statDelta('Урон', cur?.damage, next.damage || undefined, '', f) : '',
+      next.damage || cur?.damage ? this.statDelta('Урон', cur?.damage || undefined, next.damage || undefined, '', f) : '',
       next.rate ? this.statDelta('Раз в', cur?.rate, next.rate, ' с', (v) => v.toFixed(2)) : '',
       next.range && fam !== 'beetle' ? this.statDelta(fam === 'caterpillar' || fam === 'termite' ? 'Охват' : 'Дальность', cur?.range, next.range) : '',
       next.light ? this.statDelta('Свет', cur?.light, next.light) : '',
@@ -1013,6 +1025,17 @@ export class Hud {
       } else this.callBtn.classList.add('hidden');
     }
 
+    // Созвучие: rotating runes stacks power; Перегрев: spamming the spear costs more
+    const kp = s.keeper;
+    const chordTxt = kp.chordT > 0 && kp.chord > 0
+      ? `Созвучие ${'●'.repeat(kp.chord)}${'○'.repeat(CHORD.max - kp.chord)} +${Math.round(CHORD.power * kp.chord * 100)}% силы · −${Math.round(CHORD.discount * kp.chord * 100)}% Света`
+      : kp.chordT > 0 && kp.lastCast ? 'Созвучие: примени другую руну' : '';
+    const heatPct = Math.round(Math.min(CHORD.heatMax, CHORD.heat * Math.max(0, kp.heat + 2 - CHORD.heatFree)) * 100);
+    const heatTxt = kp.heatT > 0 && heatPct > 0 ? ` · Перегрев Копья +${heatPct}% Света` : '';
+    const ct = chordTxt + heatTxt;
+    if (this.chordEl.textContent !== ct) this.chordEl.textContent = ct;
+    this.chordEl.classList.toggle('hidden', !ct);
+    this.chordEl.classList.toggle('on', kp.chord > 0);
     for (const id of AB_IDS) {
       const el = this.abEls[id];
       const { box, cd, lock, charge, cdt } = el;
@@ -1093,20 +1116,24 @@ export class Hud {
     const k = s.keeper;
     const show = !k.alive && s.phase === 'night' && !g.over;
     this.reviveBox.classList.toggle('show', show);
-    if (!show) { this.reviveSig = ''; return; }
+    if (!show) { this.reviveSig = ''; this.deathHold = false; this.deathSeen = false; return; }
+    // the moment the Ascended falls, time stops so the choice can be made calmly
+    if (!this.deathSeen) { this.deathSeen = true; this.deathHold = true; this.reviveSig = ''; }
     const cost = g.reviveCost();
     const t = g.sacrificeTarget();
     const tdesc = t ? (t.kind === 'rank' ? `ранг руны «${KEEPER_RUNES[t.rune].name}» (${RUNE_RANKS[k.runeRank[t.rune]]} → ${RUNE_RANKS[k.runeRank[t.rune] - 1]})` : `Свойство из руны «${KEEPER_RUNES[t.rune].name}»`) : '';
-    const sig = `${cost}|${s.amber >= cost}|${tdesc}`;
+    const sig = `${cost}|${s.amber >= cost}|${tdesc}|${this.deathHold}`;
     if (sig === this.reviveSig) return;
     this.reviveSig = sig;
     this.reviveBox.innerHTML = `<h4>Восходящий пал</h4>
       <div class="sub">Без него Круг держится до рассвета. Вернуть сейчас:</div>
       <button class="btn gold" data-a="amber" ${s.amber >= cost ? '' : 'disabled'}>Воскрешение Древом <img class="icon" src="${icon('amber')}"> ${cost} <span class="k">[V]</span></button>
       ${t ? `<button class="btn" data-a="sac">Жертва Вечности: ${tdesc} <span class="k">[G]</span></button>` : ''}
-      <div class="sub">…или ждать рассвета (бесплатно).</div>`;
+      <div class="sub">…или ждать рассвета (бесплатно).</div>
+      ${this.deathHold ? `<div class="sub" style="color:#8fd0ff">⏸ Время стоит, пока ты решаешь</div><button class="btn" data-a="wait">Держать Круг без него <span class="k">[Пробел]</span></button>` : ''}`;
     this.reviveBox.querySelector('[data-a=amber]')?.addEventListener('click', () => { g.revive('amber'); });
     this.reviveBox.querySelector('[data-a=sac]')?.addEventListener('click', () => { g.revive('sacrifice'); });
+    this.reviveBox.querySelector('[data-a=wait]')?.addEventListener('click', () => { this.releaseDeath(); });
   }
 
   private bump(n: HTMLElement) {
