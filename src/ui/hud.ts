@@ -4,7 +4,7 @@ import {
   APOTHEOSIS_RANK, DEV_SLOTS, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
   runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, FACETS, FACET_RANKS, type FormId, type KeeperRuneId,
 } from '../data/runes';
-import { PATH_CAPSTONE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, pathCounts, type TreePath } from '../data/tree';
+import { PATH_CAPSTONE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
 import type { Game } from '../sim/game';
 import type { GameEvent } from '../sim/types';
 import { icon } from './icons';
@@ -738,10 +738,16 @@ export class Hud {
       }
       // ── Уклоны Древа
       const counts = pathCounts(s.tree.branches);
-      html += `<div class="sub">Уклон Древа (${PATH_CAPSTONE} ветви одного пути — особое Древо):</div><div class="runes small">${(Object.keys(TREE_PATHS) as TreePath[]).map((p) => {
+      html += `<div class="sub">Уклон Древа — ${PATH_CAPSTONE} ветви одного пути превращают его в особое Древо:</div><div class="paths">${(Object.keys(TREE_PATHS) as TreePath[]).map((p) => {
         const d = TREE_PATHS[p];
-        const done = counts[p] >= PATH_CAPSTONE;
-        return `<div class="rune" style="--c:${d.color};${done ? '' : 'opacity:0.75'}"><div><b>${done ? d.tree : d.name} ${'●'.repeat(Math.min(counts[p], PATH_CAPSTONE))}${'○'.repeat(Math.max(0, PATH_CAPSTONE - counts[p]))}</b><small>${d.capstone}</small></div></div>`;
+        const n = counts[p];
+        const done = n >= PATH_CAPSTONE;
+        const mine = s.tree.branches.map((id) => branchById(id)).filter((b) => b && b.path === p).map((b) => b!.name);
+        return `<div class="pathc ${done ? 'done' : ''}" style="--c:${d.color}">
+          <div class="ph"><b>${d.name}</b><span>${'●'.repeat(Math.min(n, PATH_CAPSTONE))}${'○'.repeat(Math.max(0, PATH_CAPSTONE - n))}</span></div>
+          <div class="pb">${mine.length ? mine.join(' · ') : 'ветвей пока нет'}</div>
+          <div class="pc"><i>${done ? `✦ ${d.tree}` : `→ ${d.tree}`}</i>${d.capstone.split(', ').map((x) => `<span>${x}</span>`).join('')}</div>
+        </div>`;
       }).join('')}</div>`;
       // ── reference: the whole ladder (current at the top of the list, compact)
       html += `<div class="sub">Все стадии:</div><div class="ladder">`;

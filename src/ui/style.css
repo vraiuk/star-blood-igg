@@ -465,3 +465,16 @@ body { display: grid; place-items: center; }
 /* no rune choice may show over the title screen (before a run starts) */
 #ui.title-mode .screen.modal { display: none !important; }
 #callnight.rush.wait { animation: none; opacity: 0.7; background: linear-gradient(180deg, #5a2a22, #2a1210); cursor: default; }
+
+/* v4.7: Уклоны Древа — compact 2×2 cards in the tree panel */
+.paths { display: grid; grid-template-columns: 1fr 1fr; gap: calc(3 * var(--u)); margin: calc(2 * var(--u)) 0 calc(5 * var(--u)); }
+.pathc { border: var(--u) solid color-mix(in srgb, var(--c) 55%, transparent); background: rgba(255, 255, 255, 0.03); padding: calc(3 * var(--u)) calc(4 * var(--u)); display: flex; flex-direction: column; gap: calc(1.5 * var(--u)); min-width: 0; }
+.pathc.done { border-color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); box-shadow: 0 0 calc(5 * var(--u)) color-mix(in srgb, var(--c) 40%, transparent); }
+.pathc .ph { display: flex; justify-content: space-between; align-items: baseline; gap: calc(3 * var(--u)); }
+.pathc .ph b { font-family: var(--serif); color: var(--c); font-size: calc(7.5 * var(--u)); }
+.pathc .ph span { color: var(--c); font-size: calc(6 * var(--u)); letter-spacing: 0.1em; white-space: nowrap; }
+.pathc .pb { font-size: calc(5.5 * var(--u)); color: #d8d0c0; opacity: 0.85; line-height: 1.25; }
+.pathc .pc { display: flex; flex-direction: column; gap: calc(0.5 * var(--u)); font-size: calc(5.5 * var(--u)); line-height: 1.25; color: #b8b0c8; border-top: var(--u) solid rgba(255, 255, 255, 0.06); padding-top: calc(1.5 * var(--u)); }
+.pathc .pc i { font-style: normal; color: var(--c); opacity: 0.9; }
+.pathc .pc span::before { content: '• '; color: var(--c); }
+.pathc.done .pc span { color: #f0e8d8; }
