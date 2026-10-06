@@ -18,7 +18,7 @@ import { VERSION } from '../version';
  */
 
 /** Same build only: a different simulation would desync at once. */
-const LOBBY_ID = `star-blood-igg-coop-${VERSION.replace(/\W/g, '-')}`;
+const LOBBY_ID = `star-blood-igg-coop-${VERSION.replace(/\W/g, '-')}${import.meta.env?.DEV ? '-dev' : ''}`;
 /** Ticks between state digests. */
 const DIGEST_EVERY = 120;
 /** A guest keeps this many ticks in hand against network jitter. */
@@ -28,6 +28,14 @@ const CONNECT_TIMEOUT = 9000;
 /** The signalling server drops a socket now and then (often right after another one closed): retry. */
 const NET_RETRIES = 4;
 const isNetError = (t: string) => t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed';
+/**
+ * Our own peer id for guests. Without one PeerJS first fetches an id over HTTP from the
+ * signalling server — a request ad/tracker blockers and some networks cut ("server-error");
+ * with it only the WebSocket is needed, same as for the host.
+ */
+const guestId = () => `igg-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)}`;
+/** What went wrong, for the lobby line (the type alone says little). */
+const why = (err: { type: string; message?: string }) => `${err.type}${err.message ? `: ${err.message}` : ''}`;
 
 /** What a run is started with — the same on every peer. */
 export interface StartInfo {
@@ -110,20 +118,21 @@ export class Coop {
   private retries = 0;
 
   /** Retry a flaky signalling step a few times before falling back to solo play. */
-  private retryOr(type: string, again: () => void) {
-    if (isNetError(type) && this.retries < NET_RETRIES) {
+  private retryOr(err: { type: string; message?: string }, again: () => void) {
+    if (isNetError(err.type) && this.retries < NET_RETRIES) {
       this.retries++;
+      this.setNote('connecting', `Сигнальный сервер не отвечает, пробуем ещё раз (${this.retries}/${NET_RETRIES})…`);
       setTimeout(again, 400 * this.retries + Math.random() * 300);
       return;
     }
-    this.offline(`Сеть недоступна (${type}). Можно играть одному.`);
+    this.offline(`Сеть недоступна (${why(err)}). Проверь блокировщик рекламы для 0.peerjs.com. Можно играть одному.`);
   }
 
   /** Find the shared lobby: join its host or become it. */
   connect() {
     this.reset();
     this.setNote('connecting', 'Ищем лобби…');
-    const me = new Peer({ debug: 1 });
+    const me = new Peer(guestId(), { debug: 1 });
     this.peer = me;
     let settled = false;
     const timer = setTimeout(() => {
@@ -144,7 +153,7 @@ export class Coop {
       settled = true;
       clearTimeout(timer);
       me.destroy();
-      this.retryOr(err.type, () => this.connect());
+      this.retryOr(err, () => this.connect());
     });
     me.on('open', () => {
       const conn = me.connect(LOBBY_ID, { reliable: true, serialization: 'json' });
@@ -153,6 +162,7 @@ export class Coop {
         settled = true;
         clearTimeout(timer);
         this.host = conn;
+        this.retries = 0;
         this.role = 'guest';
         this.setNote('guest', 'В лобби. Ждём, когда хост начнёт.');
       });
@@ -167,6 +177,7 @@ export class Coop {
     this.peer = p;
     p.on('open', () => {
       this.role = 'host';
+      this.retries = 0;
       this.lobbyIds = [p.id];
       this.you = 0;
       this.setNote('host', 'Ты хост лобби. Остальные подключатся, открыв эту же страницу.');
@@ -178,7 +189,7 @@ export class Coop {
         setTimeout(() => this.connect(), 300 + Math.random() * 700);
         return;
       }
-      if (this.role === 'connecting') { p.destroy(); this.retryOr(err.type, () => this.becomeHost()); }
+      if (this.role === 'connecting') { p.destroy(); this.retryOr(err, () => this.becomeHost()); }
     });
     p.on('disconnected', () => { if (!p.destroyed) p.reconnect(); });
     p.on('connection', (conn) => {
