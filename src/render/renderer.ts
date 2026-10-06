@@ -135,12 +135,6 @@ export class Renderer {
     for (const b of s.burns) this.drawBurn(c, b.x, b.halfWidth, time);
     drawGrass(c, s.tree.radius, time, lanterns);
 
-    if (!game.over) {
-      for (const sl of SLOTS) {
-        if (!game.slotUnlocked(sl) || game.structureAt(sl.id)) continue;
-        drawSlotMarker(c, sl.x, sl.underground, time, view.hoverSlot === sl.id || view.selectedSlot === sl.id);
-      }
-    }
     for (const st of s.structures) if (st.underground) drawStructure(c, st, time);
     for (const e of s.enemies) if (ENEMIES[e.kind].underground) drawEnemy(c, e, time);
     drawTree(c, s.tree.stage, time, this.treeHurt, this.growPulse);
@@ -162,6 +156,13 @@ export class Renderer {
 
     // ── above darkness: eyes, light, drops, projectiles
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
+    // build runes and root nodes sit above the darkness so they stay readable at night
+    if (!game.over) {
+      for (const sl of SLOTS) {
+        if (!game.slotUnlocked(sl) || game.structureAt(sl.id)) continue;
+        drawSlotMarker(c, sl.x, sl.underground, time, view.hoverSlot === sl.id || view.selectedSlot === sl.id);
+      }
+    }
     for (const d of s.drops) drawDrop(c, d, time);
     for (const p of s.projectiles) drawProjectile(c, p);
     this.particles.draw(c, true);

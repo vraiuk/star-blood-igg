@@ -513,8 +513,28 @@ function spider(c: Ctx, s: Structure, time: number) {
 // ───────────────────────────── slots ───────────────────────────────
 
 export function drawSlotMarker(c: Ctx, x: number, underground: boolean, time: number, hover: boolean) {
-  const y = underground ? ROOT_SLOT_Y : GY + 3;
   const g = 0.5 + 0.5 * Math.sin(time * 3 + x);
+  if (underground) {
+    // a root knot: dark hollow in the roots with a pulsing golden ring and a «+»
+    const y = ROOT_SLOT_Y;
+    ellipse(c, x, y, 9, 6, '#07050c');
+    ellipse(c, x, y, 7, 4, '#140d1c');
+    const rr = 8 + g * 1.5 + (hover ? 2 : 0);
+    for (let a = 0; a < 24; a++) {
+      if (a % 2 && !hover) continue;
+      const ang = (a / 24) * Math.PI * 2 + time * 0.6;
+      rect(c, x + Math.cos(ang) * rr, y + Math.sin(ang) * rr * 0.65, 1, 1, hover ? PAL.gold5 : g > 0.5 ? PAL.gold3 : PAL.gold2);
+    }
+    const col = hover ? PAL.gold5 : PAL.gold4;
+    rect(c, x - 2, y, 5, 1, col);
+    rect(c, x, y - 2, 1, 5, col);
+    // little root tendrils reaching into the knot
+    line(c, x - 12, y - 4, x - 8, y - 1, PAL.gold1);
+    line(c, x + 12, y - 3, x + 8, y - 1, PAL.gold1);
+    if (hover) line(c, x, y - 12, x, y - 20, 'rgba(255,230,140,0.6)');
+    return;
+  }
+  const y = GY + 3;
   const col = hover ? PAL.gold5 : g > 0.5 ? PAL.gold3 : PAL.gold2;
   // rune diamond
   rect(c, x, y - 3, 1, 1, col);
@@ -525,10 +545,8 @@ export function drawSlotMarker(c: Ctx, x: number, underground: boolean, time: nu
   rect(c, x - 1, y, 1, 1, col);
   rect(c, x + 1, y, 1, 1, col);
   rect(c, x, y + 1, 1, 1, col);
-  if (hover) {
-    rect(c, x, y - 1, 1, 1, PAL.gold5);
-    line(c, x, y - 4, x, y - 10, 'rgba(255,230,140,0.5)');
-  }
+  rect(c, x, y - 1, 1, 1, g > 0.7 || hover ? PAL.gold5 : PAL.gold1);
+  if (hover) line(c, x, y - 4, x, y - 10, 'rgba(255,230,140,0.5)');
 }
 
 // ───────────────────────────── drops & projectiles ─────────────────
