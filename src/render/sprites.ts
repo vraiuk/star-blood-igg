@@ -748,9 +748,7 @@ export function drawStructure(c: Ctx, s: Structure, time: number) {
       }
     }
   }
-  // tier pips (gold for base levels, crimson for Star Blood specialization levels)
-  const py = s.underground ? s.y + 12 : GY + 3;
-  for (let i = 0; i <= s.tier; i++) rect(c, s.x - s.tier * 1.5 + i * 3 - 1, py, 2, 1, i >= 2 ? PAL.blood2 : PAL.gold3);
+  // (the level is shown in the nest menu; stars above a nest mean Слияние only)
 }
 
 /** A tiny glowing firefly orbiting a point. */
@@ -1162,7 +1160,7 @@ export function drawCrownNest(c: Ctx, s: Structure, time: number) {
       }
     }
   }
-  for (let i = 0; i <= s.tier; i++) rect(c, x - s.tier * 1.5 + i * 3 - 1, y + 11, 2, 1, i >= 2 ? PAL.blood2 : PAL.gold3);
+
 }
 
 /** An empty crown slot: a glowing hollow in the branches. */

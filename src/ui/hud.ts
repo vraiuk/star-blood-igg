@@ -666,9 +666,10 @@ export class Hud {
       icon: icon('sell'), title: 'Отпустить', sub: 'Вернуть 60% вложенного · с клавиатуры — нажми 4 дважды', key: '4', danger: true,
       body: '', price: sv, ok: true, pos: 3, act: () => { if (g.sell(st.id)) this.closeMenu(); },
     });
-    const name = (st.spec ? `${def.name}: ${def.specs[st.spec].name}` : def.name) + (st.merge ? ` ${'★'.repeat(st.merge)}` : '') + (st.ascend ? ` +${st.ascend}` : '');
+    // one notation each: «ур. N (+A)» for the level, ★ for merges
+    const name = (st.spec ? `${def.name}: ${def.specs[st.spec].name}` : def.name) + (st.merge ? ` ${'★'.repeat(st.merge)}` : '');
     const y = st.underground || st.crown ? st.y : WORLD.groundY - (st.family === 'beetle' ? 12 : 26);
-    return { x: st.x, y, title: `${name} · ур. ${st.tier + 1}`, opts };
+    return { x: st.x, y, title: `${name} · ур. ${st.tier + 1}${st.ascend ? ` +${st.ascend}` : ''}`, opts };
   }
 
   private renderRing() {
@@ -872,7 +873,7 @@ export class Hud {
           if (p) {
             const rc = removeCost(p);
             actions.push(() => { g.removeProperty(rid, i); });
-            html += `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}">${p.name}<button class="rm ${s.star >= rc ? '' : 'no'}" data-i="${actions.length - 1}" title="Вынуть Свойство за ${rc} Звёздной Крови">✕${rc}</button></span>`;
+            html += `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}">${p.name}<button class="rm ${s.star >= rc ? '' : 'no'}" data-i="${actions.length - 1}" title="Вынуть Свойство за ${rc} Звёздной Крови">✕ ${rc} <img class="icon" src="${icon('star')}"></button></span>`;
           } else html += `<span class="slot">пусто</span>`;
         }
         if (cap < DEV_SLOTS) html += `<span class="slot locked" title="Нужна Малая Руна Развития">+</span>`;

@@ -490,3 +490,4 @@ body { display: grid; place-items: center; }
 .gloss-tip b { display: block; color: #ffe58a; font-size: calc(7 * var(--u)); margin-bottom: calc(1.5 * var(--u)); }
 .gloss-tip.hidden { display: none; }
 .ropt.locked { opacity: 0.45; border-style: dashed; cursor: help; box-shadow: none; }
+.slot .rm .icon { width: calc(5 * var(--u)); height: calc(5 * var(--u)); vertical-align: middle; }
