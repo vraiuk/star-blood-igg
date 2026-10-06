@@ -157,20 +157,20 @@ describe('upgrade previews', () => {
   });
 });
 
-describe('build at a chosen level', () => {
-  it('builds straight to level 4 with a spec for the summed price', () => {
+describe('build with merge stars', () => {
+  it('a nest born with ★★ costs 9 builds and fights like a twice-merged nest', () => {
     const g = new Game();
-    g.state.amber = 5000; g.state.star = 100;
-    const price = g.priceTo('hive', 3, 'B');
-    const a0 = g.state.amber, s0 = g.state.star;
-    expect(g.buildTo('R0', 'hive', 3, 'B')).toBe(true);
+    g.state.amber = 5000;
+    const one = g.buildPrice('hive').amber;
+    expect(g.priceStars('hive', 2).amber).toBe(one * 9);
+    const a0 = g.state.amber;
+    expect(g.buildStars('R0', 'hive', 2)).toBe(true);
     const st = g.structureAt('R0')!;
-    expect(st.tier).toBe(3);
-    expect(st.spec).toBe('B');
-    expect(a0 - g.state.amber).toBe(price.amber);
-    expect(s0 - g.state.star).toBe(price.star);
-    g.state.amber = 0;
-    expect(g.buildTo('L0', 'hive', 1, null)).toBe(false); // can't afford: nothing is built
+    expect(st.merge).toBe(2);
+    expect(st.tier).toBe(0);
+    expect(a0 - g.state.amber).toBe(one * 9);
+    g.state.amber = one * 2;
+    expect(g.buildStars('L0', 'hive', 1)).toBe(false); // can't afford: nothing is built
     expect(g.structureAt('L0')).toBeUndefined();
   });
 });

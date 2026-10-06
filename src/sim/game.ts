@@ -238,25 +238,27 @@ export class Game {
 
   specPrice(st: Structure, spec: SpecId): Price { return this.scalePrice(NESTS[st.family].specs[spec].costs[0]); }
 
-  /** Total price to raise a new nest straight to `tier` (with `spec` for tiers 3–4). */
-  priceTo(family: Family, tier: number, spec: SpecId | null): Price {
-    const fam = NESTS[family];
-    const parts: Price[] = [fam.costs[0]];
-    if (tier >= 1) parts.push(fam.costs[1]);
-    if (tier >= 2 && spec) parts.push(fam.specs[spec].costs[0]);
-    if (tier >= 3 && spec) parts.push(fam.specs[spec].costs[1]);
-    return parts.map((p) => this.scalePrice(p)).reduce((a, b) => ({ amber: a.amber + b.amber, star: a.star + b.star }), { amber: 0, star: 0 });
+  /** Price of a new nest born already merged: ★n costs as much as the 3ⁿ nests it replaces. */
+  priceStars(family: Family, stars: number): Price {
+    const p = this.buildPrice(family);
+    const k = Math.pow(3, stars);
+    return { amber: p.amber * k, star: p.star * k };
   }
 
-  /** Build a nest and raise it to the chosen level in one go (pays every step). */
-  buildTo(slotId: string, family: Family, tier: number, spec: SpecId | null): boolean {
-    if (tier >= 2 && !spec) return false;
-    if (!this.canPay(this.priceTo(family, tier, spec))) return this.deny('Не хватает на гнездо такого уровня');
+  /** Build a nest with merge stars right away (no need to plant three and fuse them). */
+  buildStars(slotId: string, family: Family, stars: number): boolean {
+    const price = this.priceStars(family, stars);
+    if (!this.canPay(price)) return this.deny('Не хватает Янтаря на гнездо со звёздами');
+    const extra = { amber: price.amber - this.buildPrice(family).amber, star: price.star - this.buildPrice(family).star };
     if (!this.build(slotId, family)) return false;
-    const st = this.structureAt(slotId)!;
-    if (tier >= 1) this.upgrade(st.id);
-    if (tier >= 2 && spec) this.specialize(st.id, spec);
-    if (tier >= 3) this.upgrade(st.id);
+    if (stars > 0) {
+      const st = this.structureAt(slotId)!;
+      this.pay(extra);
+      st.spentAmber += extra.amber;
+      st.spentStar += extra.star;
+      st.merge = stars;
+      st.hp = st.maxHp = this.nestStats(st).hp;
+    }
     return true;
   }
 
