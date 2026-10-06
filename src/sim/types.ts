@@ -47,6 +47,8 @@ export interface Structure {
   family: Family;
   slotId: string;
   x: number;
+  /** anchor y (root knot for underground nests) */
+  y: number;
   underground: boolean;
   /** 0..2 base levels; 3..4 = specialization levels */
   tier: number;
@@ -215,8 +217,8 @@ export type GameEvent =
   | { type: 'ram'; x: number; dir: number }
   | { type: 'acidSplash'; x: number; y: number }
   | { type: 'structureHit'; id: number; x: number }
-  | { type: 'structureLost'; family: Family; x: number; underground: boolean }
-  | { type: 'built'; family: Family; x: number; underground: boolean; tier: number }
+  | { type: 'structureLost'; family: Family; x: number; y: number; underground: boolean }
+  | { type: 'built'; family: Family; x: number; y: number; underground: boolean; tier: number }
   | { type: 'sold'; x: number }
   | { type: 'pickup'; kind: DropKind; x: number; y: number; value: number }
   | { type: 'treeHit'; amount: number; by: EnemyKind }
@@ -233,7 +235,7 @@ export type GameEvent =
   | { type: 'polaria'; x: number; y: number; tx: number; ty: number }
   | { type: 'cast'; ability: AbilityId; x: number; tx: number }
   | { type: 'meteor'; x: number }
-  | { type: 'spikeStrike'; x: number; tx: number; web: boolean }
+  | { type: 'spikeStrike'; x: number; y: number; tx: number; ty: number; web: boolean }
   | { type: 'nightStart'; night: number }
   | { type: 'dawn'; night: number; gift: number }
   | { type: 'brood'; x: number }

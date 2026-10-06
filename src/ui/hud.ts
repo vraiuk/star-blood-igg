@@ -5,7 +5,6 @@ import {
   RUNE_RANK_POWER, boonById, propertyById, type FormId, type KeeperRuneId,
 } from '../data/runes';
 import { TREE_BRANCHES, TREE_STAGES } from '../data/tree';
-import { ROOT_SLOT_Y } from '../render/sprites';
 import type { Game } from '../sim/game';
 import type { GameEvent } from '../sim/types';
 import { icon } from './icons';
@@ -19,7 +18,7 @@ export type MenuTarget =
   | { kind: 'tree' };
 
 /** Range preview the renderer draws while hovering a ring option. */
-export interface RangePreview { x: number; r: number; underground: boolean; }
+export interface RangePreview { x: number; r: number; underground: boolean; y?: number; }
 
 export interface HudCallbacks {
   onStart(): void;
@@ -459,11 +458,11 @@ export class Hud {
         opts.push({
           icon: icon(fam), title: def.name, sub: def.desc, key: String(i + 1),
           body: this.statsBlock(fam, null, stats), price, ok: g.canPay(price),
-          preview: { x: slot.x, r: fam === 'dragonfly' ? stats.light! : stats.range, underground: slot.underground },
+          preview: { x: slot.x, r: fam === 'dragonfly' ? stats.light! : stats.range, underground: slot.underground, y: slot.y },
           act: () => { if (g.build(t.slotId, fam)) this.closeMenu(); },
         });
       });
-      return { x: slot.x, y: slot.underground ? ROOT_SLOT_Y : WORLD.groundY - 10, title: slot.underground ? 'Корневой узел' : 'Руна призыва', opts };
+      return { x: slot.x, y: slot.underground ? slot.y : WORLD.groundY - 10, title: slot.underground ? 'Корневой узел' : 'Руна призыва', opts };
     }
     if (t.kind !== 'structure') return null;
     const st = s.structures.find((q) => q.id === t.id);
@@ -478,7 +477,7 @@ export class Hud {
         icon: icon('upgrade'), title: st.tier === 3 ? `Мастерство: ${def.specs[st.spec!].name}` : `Уровень ${st.tier + 2}`,
         sub: st.tier === 3 ? 'Высшая форма специализации' : 'Сильнее и крепче', key: 'U',
         body: this.statsBlock(st.family, cur, next), price, ok: g.canPay(price),
-        preview: { x: st.x, r: rng(next), underground: st.underground },
+        preview: { x: st.x, r: rng(next), underground: st.underground, y: st.y },
         act: () => { g.upgrade(st.id); },
       });
     }
@@ -490,7 +489,7 @@ export class Hud {
         opts.push({
           icon: icon(st.family), title: spec.name, sub: `${spec.desc} · <i>${spec.perk}</i>`, key: sp === 'A' ? 'Q' : 'E',
           body: this.statsBlock(st.family, cur, next), price, ok: g.canPay(price),
-          preview: { x: st.x, r: rng(next), underground: st.underground },
+          preview: { x: st.x, r: rng(next), underground: st.underground, y: st.y },
           act: () => { g.specialize(st.id, sp); },
         });
       });
@@ -501,7 +500,7 @@ export class Hud {
       body: '', price: sv, ok: true, act: () => { if (g.sell(st.id)) this.closeMenu(); },
     });
     const name = st.spec ? `${def.name}: ${def.specs[st.spec].name}` : def.name;
-    const y = st.underground ? ROOT_SLOT_Y : WORLD.groundY - (st.family === 'beetle' ? 12 : 26);
+    const y = st.underground ? st.y : WORLD.groundY - (st.family === 'beetle' ? 12 : 26);
     return { x: st.x, y, title: `${name} · ур. ${st.tier + 1}`, opts };
   }
 

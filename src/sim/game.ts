@@ -1,6 +1,6 @@
 import {
   ABILITIES, ABILITY_STAGE_SCALING, ARMOR_FLOOR, ATTR_MAX, BROOD, RINGS, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
-  ROOT_SLOT_REACH, SLOT_MARGIN, SLOTS, WORLD, WORM_LIGHT_MULT,
+  SLOT_MARGIN, SLOTS, WORLD, WORM_LIGHT_MULT,
   type AbilityId, type AttrId, type EnemyKind, type SlotDef,
 } from '../data/balance';
 import { PATHS } from '../data/meta';
@@ -213,7 +213,8 @@ export class Game {
 
   slotUnlocked(slot: SlotDef): boolean {
     const r = this.treeRadius();
-    return slot.underground ? slot.offset <= r * ROOT_SLOT_REACH : slot.offset <= r - SLOT_MARGIN;
+    if (slot.underground) return this.state.tree.stage + 1 >= (slot.unlockStage ?? 1);
+    return slot.offset <= r - SLOT_MARGIN;
   }
   structureAt(slotId: string): Structure | undefined { return this.state.structures.find((s) => s.slotId === slotId); }
 
@@ -249,6 +250,8 @@ export class Game {
   // ───────────────────────────── commands ────────────────────────────
 
   setMove(dir: -1 | 0 | 1) { this.state.keeper.move = dir; }
+  /** Turn the Ascended without moving (the spear flies where he faces). */
+  face(dir: -1 | 1) { this.state.keeper.dir = dir; }
 
   build(slotId: string, family: Family): boolean {
     const s = this.state;
@@ -261,13 +264,13 @@ export class Game {
     if (!this.canPay(price)) return this.deny('Не хватает Янтаря');
     this.pay(price);
     const st: Structure = {
-      id: s.nextId++, family, slotId, x: slot.x, underground: slot.underground, tier: 0, spec: null,
+      id: s.nextId++, family, slotId, x: slot.x, y: slot.y, underground: slot.underground, tier: 0, spec: null,
       hp: 0, maxHp: 0, cd: 0.4, spentAmber: price.amber, spentStar: price.star, hitFlash: 0, age: 0,
       aim: slot.x < WORLD.treeX ? -1 : 1, haste: 0,
     };
     st.maxHp = st.hp = this.nestStats(st).hp;
     s.structures.push(st);
-    this.emit({ type: 'built', family, x: slot.x, underground: slot.underground, tier: 0 });
+    this.emit({ type: 'built', family, x: slot.x, y: slot.y, underground: slot.underground, tier: 0 });
     return true;
   }
 
@@ -301,7 +304,7 @@ export class Game {
     const hp = this.nestStats(st).hp;
     st.hp += hp - st.maxHp;
     st.maxHp = hp;
-    this.emit({ type: 'built', family: st.family, x: st.x, underground: st.underground, tier });
+    this.emit({ type: 'built', family: st.family, x: st.x, y: st.y, underground: st.underground, tier });
   }
 
   sellValue(st: Structure): Price {
@@ -528,8 +531,9 @@ export class Game {
     const s = this.state;
     const k = s.keeper;
     const def = ABILITIES.spear;
-    const dir = tx >= k.x ? 1 : -1;
-    k.dir = dir;
+    // the spear always flies where the Ascended faces (direction of movement)
+    const dir = k.dir;
+    void tx;
     const form = k.forms.spear;
     const range = def.range * this.runeArea('spear');
     if (form === 'B') {
@@ -792,12 +796,12 @@ export class Game {
       if (this.structureAt(g.slotId)) continue;
       const slot = SLOTS.find((x) => x.id === g.slotId)!;
       const st: Structure = {
-        id: s.nextId++, family: 'beetle', slotId: g.slotId, x: slot.x, underground: false, tier: g.tier, spec: g.spec,
+        id: s.nextId++, family: 'beetle', slotId: g.slotId, x: slot.x, y: slot.y, underground: false, tier: g.tier, spec: g.spec,
         hp: 0, maxHp: 0, cd: 0, spentAmber: 0, spentStar: 0, hitFlash: 0, age: 0, aim: slot.x < WORLD.treeX ? -1 : 1, haste: 0,
       };
       st.hp = st.maxHp = this.nestStats(st).hp;
       s.structures.push(st);
-      this.emit({ type: 'built', family: 'beetle', x: slot.x, underground: false, tier: g.tier });
+      this.emit({ type: 'built', family: 'beetle', x: slot.x, y: slot.y, underground: false, tier: g.tier });
     }
     this.graveyard = [];
     if (!s.keeper.alive) s.keeper.respawn = 0.5;
@@ -1073,7 +1077,7 @@ export class Game {
     const def = ENEMIES[e.kind];
     // worms gnaw through spider nests in their way
     const nest = this.state.structures.find((st) => st.underground && (st.x - e.x) * e.dir >= -def.radius
-      && Math.abs(st.x - e.x) <= def.radius + 6);
+      && Math.hypot(st.x - e.x, st.y - e.y) <= def.radius + 8);
     if (nest) {
       e.attacking = true;
       if (e.attackCd <= 0) {
@@ -1188,7 +1192,7 @@ export class Game {
     if (st.hp <= 0) {
       s.structures = s.structures.filter((x) => x !== st);
       if (st.family === 'beetle' && this.mods.beetleRevive) this.graveyard.push({ slotId: st.slotId, tier: st.tier, spec: st.spec });
-      this.emit({ type: 'structureLost', family: st.family, x: st.x, underground: st.underground });
+      this.emit({ type: 'structureLost', family: st.family, x: st.x, y: st.y, underground: st.underground });
     }
   }
 
@@ -1324,7 +1328,7 @@ export class Game {
   private tickSpider(st: Structure, ns: NestStats) {
     if (st.cd > 0) return;
     const s = this.state;
-    const prey = s.enemies.filter((e) => !e.dead && Math.abs(e.x - st.x) <= ns.range
+    const prey = s.enemies.filter((e) => !e.dead && Math.hypot(e.x - st.x, (e.y - st.y) * 0.8) <= ns.range
       && (ENEMIES[e.kind].underground || (this.mods.spiderSurface && ENEMIES[e.kind].worm)));
     if (!prey.length) return;
     prey.sort((a, b) => Math.abs(a.x - WORLD.treeX) - Math.abs(b.x - WORLD.treeX));
@@ -1335,7 +1339,7 @@ export class Game {
     if (ns.poison) {
       for (const e of prey) { e.poison = ns.poison; e.poisonTime = ns.poisonTime ?? 4; }
     }
-    this.emit({ type: 'spikeStrike', x: st.x, tx: t.x, web: !!ns.stun });
+    this.emit({ type: 'spikeStrike', x: st.x, y: st.y, tx: t.x, ty: t.y, web: !!ns.stun });
   }
 
   /** Damage-over-time without spamming hit events. */

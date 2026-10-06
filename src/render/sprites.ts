@@ -384,7 +384,7 @@ export function drawStructure(c: Ctx, s: Structure, time: number) {
   c.save();
   if (build < 1) {
     c.beginPath();
-    c.rect(s.x - 30, s.underground ? ROOT_SLOT_Y - 20 : GY - 70 * build - 2, 60, 200);
+    c.rect(s.x - 30, s.underground ? s.y - 20 : GY - 70 * build - 2, 60, 200);
     c.clip();
   }
   switch (s.family) {
@@ -397,12 +397,12 @@ export function drawStructure(c: Ctx, s: Structure, time: number) {
   c.restore();
   if (s.hp < s.maxHp || s.family === 'beetle') {
     const w = 16;
-    const y = s.family === 'spider' ? ROOT_SLOT_Y - 14 : s.family === 'beetle' ? GY - 24 - s.tier * 2 : s.family === 'dragonfly' ? GY - 44 : GY - 52;
+    const y = s.family === 'spider' ? s.y - 14 : s.family === 'beetle' ? GY - 24 - s.tier * 2 : s.family === 'dragonfly' ? GY - 44 : GY - 52;
     rect(c, s.x - w / 2, y, w, 2, '#10070c');
     rect(c, s.x - w / 2, y, Math.max(1, (w * s.hp) / s.maxHp), 1, s.hp / s.maxHp < 0.35 ? '#ff5a4a' : '#ffd25a');
   }
   // tier pips (gold for base levels, crimson for Star Blood specialization levels)
-  const py = s.underground ? ROOT_SLOT_Y + 12 : GY + 3;
+  const py = s.underground ? s.y + 12 : GY + 3;
   for (let i = 0; i <= s.tier; i++) rect(c, s.x - s.tier * 1.5 + i * 3 - 1, py, 2, 1, i >= 3 ? PAL.blood2 : PAL.gold3);
 }
 
@@ -558,7 +558,7 @@ export function drawWorker(c: Ctx, w: import('../sim/types').Worker, time: numbe
 }
 
 function spider(c: Ctx, s: Structure, time: number) {
-  const x = Math.round(s.x), y = ROOT_SLOT_Y;
+  const x = Math.round(s.x), y = s.y;
   // root hollow with web strands
   ellipse(c, x, y, 9 + s.tier, 6 + s.tier * 0.5, PAL.dirt0);
   const web = s.spec === 'A' ? 6 + s.tier : 4 + s.tier;
@@ -586,11 +586,11 @@ function spider(c: Ctx, s: Structure, time: number) {
 
 // ───────────────────────────── slots ───────────────────────────────
 
-export function drawSlotMarker(c: Ctx, x: number, underground: boolean, time: number, hover: boolean) {
+export function drawSlotMarker(c: Ctx, x: number, underground: boolean, time: number, hover: boolean, slotY = ROOT_SLOT_Y) {
   const g = 0.5 + 0.5 * Math.sin(time * 3 + x);
   if (underground) {
     // a root knot: dark hollow in the roots with a pulsing golden ring and a «+»
-    const y = ROOT_SLOT_Y;
+    const y = slotY;
     ellipse(c, x, y, 9, 6, '#07050c');
     ellipse(c, x, y, 7, 4, '#140d1c');
     const rr = 8 + g * 1.5 + (hover ? 2 : 0);

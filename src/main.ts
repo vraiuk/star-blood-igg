@@ -2,7 +2,6 @@ import { Audio } from './audio/audio';
 import { ABILITIES, SLOTS, WORLD, type AbilityId } from './data/balance';
 import { PATHS, coinsForRun } from './data/meta';
 import { Renderer, type ViewState } from './render/renderer';
-import { ROOT_SLOT_Y } from './render/sprites';
 import { treeHeight } from './render/tree';
 import { Game, STEP } from './sim/game';
 import { hasStartRune, loadSave, metaPatches, writeSave } from './state/save';
@@ -111,7 +110,7 @@ function setPaused(p: boolean) {
 /** Abilities that need a target point enter aim mode on click; the hammer casts at once. */
 function beginAim(id: AbilityId) {
   hud.closeMenu();
-  if (id === 'hammer') { game.cast('hammer', game.state.keeper.x); return; }
+  if (id === 'hammer' || id === 'spear') { game.cast(id, game.state.keeper.x); return; }
   hud.aiming = id;
   view.aiming = id;
 }
@@ -174,13 +173,13 @@ function pick(mx: number, my: number): MenuTarget | null {
   const s = game.state;
   for (const st of s.structures) {
     if (Math.abs(mx - st.x) > 10) continue;
-    if (st.underground ? Math.abs(my - ROOT_SLOT_Y) < 13 : my > WORLD.groundY - 55 && my < WORLD.groundY + 6) {
+    if (st.underground ? Math.abs(my - st.y) < 12 : my > WORLD.groundY - 55 && my < WORLD.groundY + 6) {
       return { kind: 'structure', id: st.id };
     }
   }
   for (const sl of SLOTS) {
     if (!game.slotUnlocked(sl) || game.structureAt(sl.id) || Math.abs(mx - sl.x) > 10) continue;
-    if (sl.underground ? Math.abs(my - ROOT_SLOT_Y) < 13 : my > WORLD.groundY - 30 && my < WORLD.groundY + 10) {
+    if (sl.underground ? Math.abs(my - sl.y) < 12 : my > WORLD.groundY - 30 && my < WORLD.groundY + 10) {
       return { kind: 'slot', slotId: sl.id };
     }
   }

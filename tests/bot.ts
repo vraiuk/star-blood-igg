@@ -129,6 +129,7 @@ function act(g: Game, plan: BotPlan) {
   if (close.length) {
     const t = close.sort((a, b) => Math.abs(a.x - k.x) - Math.abs(b.x - k.x))[0];
     if (close.filter((e) => Math.abs(e.x - k.x) < 60).length >= 3) g.cast('hammer', k.x);
+    g.face(t.x >= k.x ? 1 : -1);
     g.cast('spear', t.x);
     const big = close.find((e) => e.kind === 'stalker' || e.kind === 'mother');
     if (big) {
@@ -151,7 +152,7 @@ function buildDefense(g: Game, plan: BotPlan, coreOnly: boolean) {
   }
   if (s.night >= 1) {
     for (const sl of SLOTS.filter((x) => x.underground && g.slotUnlocked(x))) {
-      if (coreOnly && sl.id.slice(-1) !== '0') continue;
+      if (coreOnly && (sl.unlockStage ?? 1) > 1) continue;
       if (!g.structureAt(sl.id)) g.build(sl.id, 'spider');
     }
   }

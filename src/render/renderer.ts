@@ -23,7 +23,7 @@ export interface ViewState {
   mouseX: number;
   mouseY: number;
   /** range preview while hovering a ring option */
-  preview: { x: number; r: number; underground: boolean } | null;
+  preview: { x: number; r: number; underground: boolean; y?: number } | null;
   /** ability currently aimed (shows a preview) */
   aiming: import('../data/balance').AbilityId | null;
 }
@@ -67,7 +67,7 @@ export class Renderer {
           break;
         }
         case 'acidSplash': p.acid(e.x, e.y); break;
-        case 'structureLost': p.dust(e.x, e.underground ? ROOT_SLOT_Y : WORLD.groundY - 6); this.shake = Math.max(this.shake, 3); break;
+        case 'structureLost': p.dust(e.x, e.underground ? e.y : WORLD.groundY - 6); this.shake = Math.max(this.shake, 3); break;
         case 'beam': p.addFx('beam', e.x, e.y, 0.25, 0, e.tx, e.ty); break;
         case 'polaria': p.chain([[e.x, e.y], [e.tx, e.ty]]); break;
         case 'devRune': p.goldBurst(e.x, WORLD.groundY - 20, 40); p.addFx('ring', e.x, WORLD.groundY - 20, 0.8, 30); break;
@@ -84,7 +84,7 @@ export class Renderer {
         case 'shield': p.addFx('ring', WORLD.treeX, WORLD.groundY - 50, 0.9, 60); p.goldBurst(WORLD.treeX, WORLD.groundY - 50, 50); break;
         case 'secondWind': p.goldBurst(WORLD.treeX, WORLD.groundY - 60, 120); this.shake = 8; break;
         case 'rankUp': p.goldBurst(game.state.keeper.x, WORLD.groundY - 12, 50); p.addFx('ring', game.state.keeper.x, WORLD.groundY - 10, 0.6, 40); break;
-        case 'built': p.dust(e.x, e.underground ? ROOT_SLOT_Y : WORLD.groundY - 2); p.goldBurst(e.x, e.underground ? ROOT_SLOT_Y : WORLD.groundY - 10, 10); break;
+        case 'built': p.dust(e.x, e.underground ? e.y : WORLD.groundY - 2); p.goldBurst(e.x, e.underground ? e.y : WORLD.groundY - 10, 10); break;
         case 'sold': p.dust(e.x, WORLD.groundY - 4); break;
         case 'pickup': p.pickup(e.x, e.y, e.kind === 'star'); break;
         case 'treeHit': this.treeHurt = 0.12; if (e.amount >= 20) this.shake = Math.max(this.shake, 2); break;
@@ -103,7 +103,7 @@ export class Renderer {
             p.emit(6, e.x, WORLD.groundY - 12, { speed: 40, max: 0.3, glow: true });
           }
           break;
-        case 'spikeStrike': p.addFx(e.web ? 'web' : 'spikeThrust', e.x, ROOT_SLOT_Y, e.web ? 0.6 : 0.3, 0, e.tx, WORLD.wormLaneY - 4); break;
+        case 'spikeStrike': p.addFx(e.web ? 'web' : 'spikeThrust', e.x, e.y, e.web ? 0.6 : 0.3, 0, e.tx, e.ty - 2); break;
         case 'brood': p.acid(e.x, WORLD.groundY - 10); break;
         case 'keeperDown': p.goldBurst(game.state.keeper.x, WORLD.groundY - 10, 20); break;
         case 'keeperBack': p.goldBurst(WORLD.treeX, WORLD.groundY - 10, 20); break;
@@ -171,7 +171,7 @@ export class Renderer {
     if (!game.over) {
       for (const sl of SLOTS) {
         if (!game.slotUnlocked(sl) || game.structureAt(sl.id)) continue;
-        drawSlotMarker(c, sl.x, sl.underground, time, view.hoverSlot === sl.id || view.selectedSlot === sl.id);
+        drawSlotMarker(c, sl.x, sl.underground, time, view.hoverSlot === sl.id || view.selectedSlot === sl.id, sl.y);
       }
     }
     for (const d of s.drops) drawDrop(c, d, time);
@@ -181,11 +181,11 @@ export class Renderer {
     for (const e of s.enemies) drawEnemyHp(c, e);
     drawKeeperHp(c, s.keeper, game.keeperMaxHp());
     if (view.aiming) this.drawAim(c, game, view, time);
-    if (view.preview) this.drawRangeRaw(c, view.preview.x, view.preview.r, view.preview.underground, true);
+    if (view.preview) this.drawRangeRaw(c, view.preview.x, view.preview.r, view.preview.underground, true, view.preview.y);
     else if (view.selectedSlot) {
       const sl = SLOTS.find((x) => x.id === view.selectedSlot);
       const st = game.structureAt(view.selectedSlot);
-      if (sl && st) this.drawRange(c, game, st, sl.x, sl.underground);
+      if (sl && st) this.drawRange(c, game, st, sl.x, sl.underground, sl.y);
     }
     c.restore();
     this.blit(s.phase === 'night');
@@ -270,14 +270,22 @@ export class Renderer {
     }
   }
 
-  private drawRange(c: Ctx, game: Game, st: import('../sim/types').Structure, x: number, underground: boolean) {
+  private drawRange(c: Ctx, game: Game, st: import('../sim/types').Structure, x: number, underground: boolean, y?: number) {
     const ns = game.nestStats(st);
-    this.drawRangeRaw(c, x, st.family === 'dragonfly' ? ns.light! : ns.range, underground, false);
+    this.drawRangeRaw(c, x, st.family === 'dragonfly' ? ns.light! : ns.range, underground, false, y);
   }
 
-  private drawRangeRaw(c: Ctx, x: number, r: number, underground: boolean, bright: boolean) {
+  private drawRangeRaw(c: Ctx, x: number, r: number, underground: boolean, bright: boolean, slotY?: number) {
     if (!r) return;
-    const y = underground ? ROOT_SLOT_Y + 2 : WORLD.groundY + 1;
+    if (underground && slotY !== undefined) {
+      // spiders reach in a circle around their root knot
+      for (let i = 0; i < 48; i++) {
+        const a = (i / 48) * Math.PI * 2;
+        rect(c, x + Math.cos(a) * r, slotY + Math.sin(a) * r / 0.8, 1, 1, bright ? 'rgba(255,230,150,0.75)' : 'rgba(255,214,120,0.55)');
+      }
+      return;
+    }
+    const y = underground ? (slotY ?? ROOT_SLOT_Y) + 2 : WORLD.groundY + 1;
     for (let i = -r; i <= r; i += 3) rect(c, x + i, y, 1, 1, 'rgba(255,214,120,0.75)');
     rect(c, x - r, y - 3, 1, 4, PAL.gold3);
     rect(c, x + r, y - 3, 1, 4, PAL.gold3);
@@ -296,7 +304,7 @@ export class Renderer {
     if (!k.alive) return;
     const g = Math.sin(time * 10) > 0;
     if (view.aiming === 'spear') {
-      const dir = view.mouseX >= k.x ? 1 : -1;
+      const dir = k.dir;
       for (let i = 8; i < 270; i += 6) rect(c, k.x + dir * i, WORLD.groundY - 11, 2, 1, g ? 'rgba(255,240,180,0.7)' : 'rgba(255,200,90,0.5)');
     } else if (view.aiming === 'starfall') {
       const x = view.mouseX;

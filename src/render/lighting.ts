@@ -2,7 +2,6 @@ import { WORLD } from '../data/balance';
 import { TREE } from '../data/tree';
 import type { Game } from '../sim/game';
 import { BAYER4, makeCanvas } from './pixel';
-import { ROOT_SLOT_Y } from './sprites';
 
 /** Darkness/glow buffers are computed at half resolution, then upscaled pixel-perfect. */
 const CELL = 3;
@@ -68,7 +67,7 @@ export class Lighting {
       if (st.family === 'dragonfly') {
         out.push({ x: st.x, y: GY - 24, rx: ns.light!, ry: ns.light! * 0.75, k: 0.92, glow: st.spec === 'B' ? 0.5 : 0.75, layer: -1 });
       } else if (st.family === 'spider') {
-        out.push({ x: st.x, y: ROOT_SLOT_Y, rx: ns.light!, ry: ns.light! * 0.7, k: 0.75, glow: 0.35, layer: 1 });
+        out.push({ x: st.x, y: st.y, rx: ns.light!, ry: ns.light! * 0.7, k: 0.75, glow: 0.35, layer: 1 });
       } else if (st.family === 'hive') {
         out.push({ x: st.x, y: GY - 36, rx: 18, ry: 16, k: 0.6, glow: 0.45, layer: -1 });
       }

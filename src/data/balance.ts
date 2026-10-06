@@ -102,23 +102,39 @@ export const ARMOR_FLOOR = 0.25;
 export interface SlotDef {
   id: string;
   x: number;
+  /** nest anchor y (ground line for surface slots, root knot for underground) */
+  y: number;
   underground: boolean;
-  /** distance from the trunk (used for unlocking by Circle radius) */
+  /** distance from the trunk (surface slots unlock by Circle radius) */
   offset: number;
+  /** root nodes unlock by tree stage (1-based) */
+  unlockStage?: number;
 }
 
 const SURFACE_OFFSETS = [42, 76, 112, 150, 190, 232, 276, 322, 370, 420];
-const ROOT_OFFSETS = [50, 104, 160, 220, 284, 350];
+/**
+ * Root nodes form two arcs (a bowl) around the root ball, so several weavers can bite a
+ * worm gnawing at the trunk at once; the outer arc meets worms on their way in.
+ * [arc radius, angle in degrees (0 = right, 90 = straight down), unlock stage]
+ */
+const ROOT_ARC: Array<[number, number, number]> = [
+  [60, 90, 1], [60, 55, 1], [60, 125, 2], [60, 22, 2], [60, 158, 3],
+  [118, 72, 3], [118, 108, 4], [118, 40, 4], [118, 140, 5], [118, 14, 5], [118, 166, 6],
+];
 
 export const SLOTS: SlotDef[] = [
   ...SURFACE_OFFSETS.flatMap((o, i) => [
-    { id: `L${i}`, x: WORLD.treeX - o, underground: false, offset: o },
-    { id: `R${i}`, x: WORLD.treeX + o, underground: false, offset: o },
+    { id: `L${i}`, x: WORLD.treeX - o, y: WORLD.groundY, underground: false, offset: o },
+    { id: `R${i}`, x: WORLD.treeX + o, y: WORLD.groundY, underground: false, offset: o },
   ]),
-  ...ROOT_OFFSETS.flatMap((o, i) => [
-    { id: `UL${i}`, x: WORLD.treeX - o, underground: true, offset: o },
-    { id: `UR${i}`, x: WORLD.treeX + o, underground: true, offset: o },
-  ]),
+  ...ROOT_ARC.map(([r, deg, st], i) => {
+    const a = (deg * Math.PI) / 180;
+    const x = Math.round(WORLD.treeX + Math.cos(a) * r * 1.25);
+    return {
+      id: `U${i}`, x, y: Math.round(WORLD.groundY + 16 + Math.sin(a) * r * 0.62), underground: true,
+      offset: Math.abs(x - WORLD.treeX), unlockStage: st,
+    };
+  }),
 ];
 /** A slot opens when the Circle reaches it (surface: offset ≤ radius − margin; roots: offset ≤ radius × reach). */
 export const SLOT_MARGIN = 14;
@@ -181,7 +197,7 @@ export interface AbilityDef {
  */
 export const ABILITIES = {
   spear: {
-    name: 'Копьё Игг-Света', desc: 'Пронзающий луч игг-сияния к курсору: пробивает 3 тварей, бьёт и во тьме.',
+    name: 'Копьё Игг-Света', desc: 'Пронзающий луч игг-сияния туда, куда смотрит Восходящий: пробивает 3 тварей, бьёт и во тьме.',
     cost: 14, cooldown: 0.55, unlockStage: 1, key: '1',
     damage: 52, pierce: 3, falloff: 0.2, speed: 420, range: 320,
   },

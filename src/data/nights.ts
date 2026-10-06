@@ -137,7 +137,7 @@ export const ENDLESS = {
   /** extra growth of underground worm groups per night */
   wormCount: 0.06,
   /** threat budget of a generated night */
-  budget: (n: number) => 90 + 11 * n,
+  budget: (n: number) => 120 + 14 * n,
 } as const;
 
 /** Threat cost of one creature (for the generator's budget). */
@@ -176,42 +176,74 @@ function rng(seed: number) {
   };
 }
 
-/** Procedural night (deterministic per index). */
+/** Night themes give the endless mode a rhythm: breathers, themed pushes, spikes. */
+interface Theme {
+  name: string;
+  hint: string;
+  budget: number;
+  /** weight multipliers per kind (missing kinds keep their base weight × `rest`) */
+  weights: Partial<Record<EnemyKind, number>>;
+  rest?: number;
+  /** all groups come from one flank */
+  oneSide?: boolean;
+}
+
+const THEMES: Record<string, Theme> = {
+  calm: { name: 'Тихая ночь', hint: 'Тьма переводит дух. Время строить и копить.', budget: 0.55, weights: { hound: 2, spitter: 1 }, rest: 0.2 },
+  worms: { name: 'Ночь Червей', hint: 'Имаго роют к корням толпой — держи паучий котёл у ствола.', budget: 1.25, weights: { worm: 6, guard: 4, forager: 2 }, rest: 0.25 },
+  wolves: { name: 'Охота Найтволков', hint: 'Стаи найтволков несутся к Кругу со всех сторон.', budget: 1.1, weights: { hound: 6, spitter: 1.5 }, rest: 0.2 },
+  heavy: { name: 'Поступь Ледозубов', hint: 'Тяжёлые твари ломают гнёзда. Светожуки, держите строй!', budget: 1.15, weights: { stalker: 5, reaper: 1.5, hound: 1 }, rest: 0.2 },
+  swarm: { name: 'Рой Фуражиров', hint: 'Рой Имаго-Фуражиров. Чем шире Круг — тем больше сгорит.', budget: 1.1, weights: { forager: 7, worm: 1.5 }, rest: 0.15 },
+  reap: { name: 'Жатва', hint: 'Имаго-Жнецы идут косить гнёзда.', budget: 1.2, weights: { reaper: 4, stalker: 2, spitter: 2 }, rest: 0.2 },
+  flank: { name: 'Натиск с фланга', hint: 'Вся тьма давит на одну сторону Круга!', budget: 1.3, weights: {}, rest: 1, oneSide: true },
+  mixed: { name: '', hint: '', budget: 1, weights: {}, rest: 1 },
+};
+const MEDIUM = ['mixed', 'wolves', 'swarm', 'heavy', 'reap', 'mixed'];
+const SPIKES = ['worms', 'flank', 'heavy', 'worms', 'reap'];
+
+/** Procedural night (deterministic per index). Cycle of 5: breather → medium → medium → spike → boss. */
 export function generateNight(n: number): NightDef {
   const r = rng(9001 + n * 7919);
   const groups: SpawnGroup[] = [];
-  let budget = ENDLESS.budget(n);
-  const bossNight = (n + 1) % 5 === 0;
+  const pos = (n + 1) % 5;
+  const bossNight = pos === 0;
+  const themeId = bossNight ? 'mixed' : pos === 1 ? 'calm' : pos === 4 ? SPIKES[Math.floor(r() * SPIKES.length)] : MEDIUM[Math.floor(r() * MEDIUM.length)];
+  const theme = THEMES[themeId];
+  let budget = ENDLESS.budget(n) * theme.budget * (pos === 4 ? 1.3 : 1);
   if (bossNight) {
     const extra = Math.floor((n + 1) / 20);
     const kinds: EnemyKind[] = (n + 1) % 10 === 0 ? ['executioner', 'mother'] : ['mother'];
     for (const k of kinds) groups.push(g(8, k, r() > 0.5 ? 'L' : 'R', 1 + extra, 12));
     budget *= 0.7;
   }
+  const flank: Side = r() > 0.5 ? 'L' : 'R';
+  const oneSide = theme.oneSide || (themeId === 'worms' && r() < 0.6);
   let t = 2;
   const pool = POOL.filter((p) => n >= p.from);
   // bigger packs as nights go on (fewer, meatier groups keep nights ~1–2 minutes)
   const sizeMul = 1 + n * 0.04;
+  const wOf = (q: (typeof pool)[number]) => q.w * (theme.weights[q.kind] ?? theme.rest ?? 1)
+    * (q.kind === 'worm' || q.kind === 'guard' ? 1 + n * 0.05 : 1);
+  const tot = pool.reduce((a, q) => a + wOf(q), 0);
   while (budget > 0) {
-    // worm-kinds get more common as nights go on
-    const wOf = (q: (typeof pool)[number]) => q.w * (q.kind === 'worm' || q.kind === 'guard' ? 1 + n * 0.05 : 1);
-    const tot = pool.reduce((a, q) => a + wOf(q), 0);
     let pick = r() * tot;
     let p = pool[0];
     for (const q of pool) { pick -= wOf(q); if (pick <= 0) { p = q; break; } }
     const size = Math.max(1, Math.round((p.size[0] + r() * (p.size[1] - p.size[0])) * sizeMul));
-    const side: Side = r() < 0.4 ? 'B' : r() < 0.5 ? 'L' : 'R';
+    const side: Side = oneSide ? flank : r() < 0.4 ? 'B' : r() < 0.5 ? 'L' : 'R';
     const flanks = side === 'B' ? 2 : 1;
     groups.push(g(t, p.kind, side, size, Math.max(0.35, 1.4 - n * 0.02)));
     budget -= (THREAT[p.kind] ?? 2) * size * flanks;
-    t += 2.5 + r() * 3;
+    t += (themeId === 'calm' ? 4 : 2.5) + r() * 3;
   }
+  const bossName = (n + 1) % 10 === 0 ? 'Палач и Матерь' : 'Охота Матерей';
+  const label = bossNight ? bossName : theme.name;
   return {
-    title: bossNight ? `Ночь ${n + 1}: ${(n + 1) % 10 === 0 ? 'Палач и Матерь' : 'Охота Матерей'}` : `Ночь ${n + 1}`,
+    title: label ? `Ночь ${n + 1}: ${label}` : `Ночь ${n + 1}`,
     hpMul: ENDLESS.hp(n),
     hint: bossNight
       ? ((n + 1) % 10 === 0 ? 'Имаго-Палач и Матерь идут вместе.' : 'Имаго-Матерь ведёт рой.')
-      : LORE_HINTS[n % LORE_HINTS.length],
+      : theme.hint ? `${theme.hint}${oneSide ? (flank === 'L' ? ' (слева)' : ' (справа)') : ''}` : LORE_HINTS[n % LORE_HINTS.length],
     groups,
   };
 }
