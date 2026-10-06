@@ -60,6 +60,7 @@ export const PROPERTIES: PropertyDef[] = [
   P({ id: 'hm-cheap', rune: 'hammer', type: 'Уменьшение', name: 'Уменьшение: Молот', desc: 'Молот на 35% дешевле и перезаряжается на 25% быстрее', rank: 1, price: 7, stack: 2, mods: { hammerCost: -0.35 } }),
   P({ id: 'hm-quake', rune: 'hammer', type: 'Изменение', name: 'Сотрясение Тверди', desc: 'Молот бьёт и Червей под землёй, радиус +25%', rank: 2, price: 10, stack: 1, mods: { hammerQuake: true, hammerRadius: 0.25 } }),
   P({ id: 'hm-refund', rune: 'hammer', type: 'Изменение', name: 'Солнечный откат', desc: '+5 Света за каждую задетую тварь', rank: 1, price: 7, stack: 1, mods: { hammerRefund: true } }),
+  P({ id: 'hm-haste', rune: 'hammer', type: 'Ускорение', name: 'Ускорение: Молот', desc: 'Откат Молота −12%', rank: 1, price: 8, stack: 3, mods: {} }),
   P({ id: 'hm-eclipse', rune: 'hammer', type: 'Изменение', name: 'Затмение', desc: 'После удара 5 с держится поле: −35% скорости тварей', rank: 2, price: 9, stack: 1, mods: { hammerEclipse: true } }),
   // ── Звездопад
   P({ id: 'sf-power', rune: 'starfall', type: 'Усиление', name: 'Усиление: Звездопад', desc: '+35% урона звёзд', rank: 2, price: 8, stack: 4, mods: { starfallDamage: 0.35 } }),
@@ -70,12 +71,14 @@ export const PROPERTIES: PropertyDef[] = [
   P({ id: 'rd-long', rune: 'radiance', type: 'Усиление', name: 'Долгое сияние', desc: 'Сияние длится на 50% дольше', rank: 1, price: 7, stack: 4, mods: {} }),
   P({ id: 'rd-heal', rune: 'radiance', type: 'Изменение', name: 'Целящий свет', desc: 'Во время Сияния Древо лечится 20 HP/с', rank: 2, price: 9, stack: 1, mods: {} }),
   P({ id: 'rd-cheap', rune: 'radiance', type: 'Уменьшение', name: 'Уменьшение: Сияние', desc: 'Сияние на 35% дешевле и перезаряжается на 20% быстрее', rank: 1, price: 7, stack: 2, mods: {} }),
+  P({ id: 'rd-haste', rune: 'radiance', type: 'Ускорение', name: 'Ускорение: Сияние', desc: 'Откат Сияния −12%', rank: 1, price: 8, stack: 3, mods: {} }),
   P({ id: 'rd-wide', rune: 'radiance', type: 'Усиление', name: 'Широкое сияние', desc: 'Во время Сияния Круг шире ещё на 15%', rank: 2, price: 9, stack: 4, mods: {} }),
   // ── Зов Роя
   P({ id: 'sw-wide', rune: 'swarm', type: 'Усиление', name: 'Широкий зов', desc: 'Охват Зова Роя +40%', rank: 1, price: 6, stack: 4, mods: {} }),
   P({ id: 'sw-fury', rune: 'swarm', type: 'Изменение', name: 'Ярость роя', desc: 'Гнёзда под Зовом наносят +40% урона', rank: 2, price: 10, stack: 1, mods: {} }),
   P({ id: 'sw-cheap', rune: 'swarm', type: 'Уменьшение', name: 'Уменьшение: Зов', desc: 'Зов Роя на 35% дешевле и перезаряжается на 20% быстрее', rank: 1, price: 7, stack: 2, mods: {} }),
   P({ id: 'sw-long', rune: 'swarm', type: 'Усиление', name: 'Долгий зов', desc: 'Зов Роя длится на 50% дольше', rank: 1, price: 7, stack: 4, mods: {} }),
+  P({ id: 'sw-haste', rune: 'swarm', type: 'Ускорение', name: 'Ускорение: Зов', desc: 'Откат Зова Роя −12%', rank: 1, price: 8, stack: 3, mods: {} }),
   P({ id: 'sw-shield', rune: 'swarm', type: 'Изменение', name: 'Хитиновый зов', desc: 'Гнёзда под Зовом получают на 30% меньше урона', rank: 2, price: 10, stack: 1, mods: {} }),
   // ── Остановка Времени
   P({ id: 'ts-long', rune: 'timestop', type: 'Усиление', name: 'Долгий миг', desc: 'Время стоит на 25% дольше', rank: 1, price: 9, stack: 4, mods: {} }),

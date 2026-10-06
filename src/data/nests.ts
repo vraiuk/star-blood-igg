@@ -293,6 +293,18 @@ export const NESTS: Record<Family, FamilyDef> = {
  * «Возвышение»: endless levels after mastery, exponentially priced; glow colour changes
  * every few levels.
  */
+/** One-line role of every nest family — what it is for (shown on build cards). */
+export const NEST_ROLE: Record<Family, string> = {
+  hive: 'Стрелок: светляки жалят тварей на земле и в воздухе',
+  beetle: 'Стена: держит строй, отбрасывает и оглушает',
+  dragonfly: 'Подсветка: высвечивает тварей (+урон от всего), жалит, сбивает летунов',
+  spider: 'Подземный страж: бьёт Червей под землёй, паутиной — тварей сверху',
+  termite: 'Отряд: воины держат край Круга и сами бьются',
+  caterpillar: 'Сборщики: таскают Янтарь и Кровь к Древу',
+  honeycomb: 'Доход: сам приносит Янтарь (и Кровь)',
+  mender: 'Лекарь: чинит гнёзда и Древо',
+};
+
 export const MERGE = { power: 1.1, hp: 1.0, range: 0.06 } as const;
 export const ASCEND = {
   power: 0.12,

@@ -233,3 +233,20 @@
   roots ×1.4 — space is tight there), a halo coloured by progress (gold level 2, warm amber
   branch A, cool blue branch B) and a spark crown at Mastery (level 4).
 - «Натиск» has no gate any more: any moment of the night, as many times in a row as you dare.
+
+## v0.5.x — по фидбеку плейтеста (старая версия)
+- Speeds 1 · 1.25 · 1.5 · 2 · 5.
+- Meta tree: clicking an awakened leaf node gives it back with its Coins.
+- Build cards show each nest's role; glossary explains nests (Улей, Светожук, Стрекозы, Паук,
+  Термитник, Кокон) and Рассвет.
+- Hold-to-cast: a held rune key fires again as soon as the rune is ready; the Piercing Beam is
+  held while its key is down. New «Ускорение» Properties (−12% cooldown, ×3) for Hammer,
+  Radiance and Swarm.
+- Enemies get a thin violet-rose rim (outline pass, camera-clipped).
+- Incoming waves: at the view edge of the side creatures come from, the Darkness thickens
+  and red eyes blink (pending in the next 6 s + creatures beyond the edge).
+- Music: the sawtooth night drone is gone; a quiet generative score — soft pad drifting
+  through chords every 8 s, sparse echoed plucks (D pentatonic by day, A minor at night),
+  a faint heartbeat at night.
+- Range preview: a soft dome instead of a rectangle; unaffordable build options are dimmed;
+  the ring's pop-in animation plays only when it opens on a node (no blinking on +/−).

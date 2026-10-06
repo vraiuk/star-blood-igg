@@ -59,6 +59,18 @@ export function buyNode(s: MetaSave, id: string): boolean {
   return true;
 }
 
+/** Give back one awakened node (and its Coins) — only a leaf: nothing bought may depend on it. */
+export function canRefund(s: MetaSave, id: string): boolean {
+  return s.nodes.includes(id) && !META_NODES.some((n) => n.requires === id && s.nodes.includes(n.id));
+}
+export function refundNode(s: MetaSave, id: string): boolean {
+  if (!canRefund(s, id)) return false;
+  s.coins += nodeById(id)?.cost ?? 0;
+  s.nodes = s.nodes.filter((x) => x !== id);
+  writeSave(s);
+  return true;
+}
+
 /** The whole Igg-Tree is awakened: the endless rings open. */
 export function treeComplete(s: MetaSave) { return META_NODES.every((n) => s.nodes.includes(n.id)); }
 

@@ -33,7 +33,7 @@ const audio = new Audio();
 const renderer = new Renderer(ctx);
 const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null };
 let endShown = false;
-const SPEEDS = [1, 2, 5];
+const SPEEDS = [1, 1.25, 1.5, 2, 5];
 const nextSpeed = () => SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
 let lastRecord = false;
 
@@ -181,6 +181,8 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   const k = ALIAS[e.key.toLowerCase()] ?? e.key.toLowerCase();
   held.delete(k);
+  // releasing the spear key lets go of the Piercing Beam
+  if (ABILITY_KEYS[k] === 'spear') game.releaseBeam();
   updateMove();
 });
 window.addEventListener('blur', () => { held.clear(); updateMove(); });
@@ -310,6 +312,15 @@ function frame(now: number) {
   last = now;
   time += dt;
   // choices (dawn rune, tree branch) pause the world
+  // hold-to-cast: a held rune key fires again as soon as the rune is ready;
+  // the Piercing Beam is held while its key is down
+  if (started && !paused && !game.over && !game.choice && !hud.target && !hud.tabletOpen) {
+    for (const [key, id] of Object.entries(ABILITY_KEYS)) {
+      if (!held.has(key)) continue;
+      if (id === 'spear' && game.state.keeper.forms.spear === 'B') continue;
+      if (game.abilityReady(id)) game.cast(id, view.mouseX, view.mouseY);
+    }
+  }
   const frozen = !started || paused || game.over || !!game.choice || metaOpen || hud.tabletOpen || hud.ringOpen || hud.deathPause;
   if (!frozen) {
     acc += dt * speed;

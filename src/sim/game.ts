@@ -877,6 +877,19 @@ export class Game {
     return true;
   }
 
+  /** Could this rune be cast right now (no messages)? Used for hold-to-cast. */
+  abilityReady(id: AbilityId): boolean {
+    const s = this.state, k = s.keeper;
+    if (this.over || !k.alive || !this.abilityUnlocked(id) || k.cooldowns[id] > 0) return false;
+    if (id === 'starfall') return k.charge >= ABILITIES.starfall.chargeMax;
+    if (id === 'timestop' && (k.timeStopNights > 0 || s.phase !== 'night')) return false;
+    return k.freeCast > 0 || k.light >= this.abilityCost(id);
+  }
+  /** Is the Piercing Beam being held? */
+  beamHeld() { return this.state.keeper.channel > 0; }
+  /** Let go of the Piercing Beam (key released). */
+  releaseBeam() { if (this.state.keeper.channel > 0) this.endChannel(); }
+
   /** Cooldown of an ability after rank, form, properties, facets and tree mods. */
   abilityCooldown(id: AbilityId): number {
     const k = this.state.keeper;
@@ -885,6 +898,9 @@ export class Game {
     if (id === 'spear' && k.forms.spear === 'B') cd = Math.max(cd, 6 * runeRankCd(k.runeRank[id]));
     if (id === 'spear' && k.forms.spear === 'A') cd = Math.max(cd, 1.1 * runeRankCd(k.runeRank[id]));
     if (id === 'spear' && this.facet('sp-swift')) cd *= this.fx('sp-swift', 0.65, -0.07, 1);
+    // «Ускорение» Properties: −12% cooldown each
+    const haste = id === 'hammer' ? 'hm-haste' : id === 'radiance' ? 'rd-haste' : id === 'swarm' ? 'sw-haste' : '';
+    if (haste) cd *= 1 - 0.12 * this.propCount(id, haste);
     return cd * Math.max(0.4, 1 + this.mods.abilityCd);
   }
 

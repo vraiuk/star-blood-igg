@@ -1,5 +1,5 @@
 import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
-import { MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
+import { NEST_ROLE, MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   APOTHEOSIS_RANK, DEV_SLOTS, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
   runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, FACETS, FACET_MAX, FACET_RANKS, type FormId, type KeeperRuneId,
@@ -519,6 +519,7 @@ export class Hud {
   }
 
   closeMenu() {
+    this.ringAnimKey = '';
     const had = this.menuTarget !== null || this.panelKind !== null;
     this.menuTarget = null;
     this.ring.classList.remove('show');
@@ -531,6 +532,8 @@ export class Hud {
 
   /** Keyboard shortcut for the ring: key matches an option's hotkey. */
   private sellArmed = -1e9;
+  /** the node the ring last opened on (its pop-in animation plays once per node) */
+  private ringAnimKey = '';
   /** merge stars a new nest of each family is built with (the − ★N + steppers) */
   private buildStars: Partial<Record<Family, number>> = {};
   ringKey(key: string): boolean {
@@ -606,7 +609,7 @@ export class Hud {
         const stats = g.nestStats({ family: fam, tier: 0, spec: null, merge: stars });
         opts.push({
           fam, icon: icon(fam), title: def.name + (stars ? ` ${'★'.repeat(stars)}` : ''),
-          sub: stars ? `${def.desc} · сразу со ${'★'.repeat(stars)} — как ${Math.pow(3, stars)} гнёзд, слитых в одно` : def.desc, key: String(i + 1),
+          sub: `<b class="role">${NEST_ROLE[fam]}</b><br>${def.desc}${stars ? ` · сразу со ${'★'.repeat(stars)} — как ${Math.pow(3, stars)} гнёзд, слитых в одно` : ''}`, key: String(i + 1),
           body: this.statsBlock(fam, null, stats), price, ok: g.canPay(price),
           preview: { x: slot.x, r: fam === 'dragonfly' ? stats.light! : stats.range, underground: slot.underground, y: slot.y },
           // after building, stay on the same node: its upgrade menu opens right away
@@ -741,6 +744,11 @@ export class Hud {
           <button data-fam="${o.fam}" data-d="1" title="Больше звёзд: каждая ★ — как 3 гнезда, слитых в одно">+</button>
           <button data-fam="${o.fam}" data-d="-1" ${n0 > 0 ? '' : 'disabled'} title="Меньше звёзд">−</button></div>`;
       });
+      // the pop-in animation plays only when the menu opens on a new node — re-renders
+      // (prices, ★ steppers, affordability) must not make every button blink
+      const key = JSON.stringify(this.menuTarget);
+      this.ring.classList.toggle('still', key === this.ringAnimKey);
+      this.ringAnimKey = key;
       this.ring.innerHTML = html;
       this.ring.querySelectorAll<HTMLButtonElement>('.starstep button').forEach((b) => {
         b.addEventListener('mousedown', (ev) => ev.stopPropagation());
