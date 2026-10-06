@@ -64,7 +64,7 @@ export const PROPERTIES: PropertyDef[] = [
   // ── Звездопад
   P({ id: 'sf-power', rune: 'starfall', type: 'Усиление', name: 'Усиление: Звездопад', desc: '+35% урона звёзд', rank: 2, price: 8, stack: 4, mods: { starfallDamage: 0.35 } }),
   P({ id: 'sf-charge', rune: 'starfall', type: 'Уменьшение', name: 'Звёздный след', desc: 'Заряжается на 45% быстрее', rank: 1, price: 7, stack: 2, mods: { chargeGain: 0.45 } }),
-  P({ id: 'sf-rain', rune: 'starfall', type: 'Изменение', name: 'Ливень', desc: '+3 звезды', rank: 3, price: 14, stack: 1, mods: { starfallMeteors: 3 } }),
+  P({ id: 'sf-rain', rune: 'starfall', type: 'Изменение', name: 'Ливень', desc: '+3 звезды (Сверхзвезду сопровождают 3 звезды, Звёздный ливень — +6)', rank: 3, price: 14, stack: 1, mods: { starfallMeteors: 3 } }),
   P({ id: 'sf-scorch', rune: 'starfall', type: 'Изменение', name: 'Выжженная земля', desc: 'Пламя от звёзд жжёт вдвое сильнее', rank: 2, price: 9, stack: 1, mods: { starfallBurn: 1 } }),
   // ── Сияние Игг
   P({ id: 'rd-long', rune: 'radiance', type: 'Усиление', name: 'Долгое сияние', desc: 'Сияние длится на 50% дольше', rank: 1, price: 7, stack: 4, mods: {} }),

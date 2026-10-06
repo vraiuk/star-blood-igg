@@ -34,6 +34,9 @@ const HIVE_BEAM = { time: 1.6, tick: 0.1, total: 1.0 } as const;
 const REACH_FAMILIES = new Set<Family>(['dragonfly', 'beetle', 'termite', 'mender']);
 /** Run statistics: who owns a projectile's damage. */
 const PROJ_SRC: Record<string, string> = { arrow: 'hive', spark: 'tree', spear: 'spear', meteor: 'starfall', wave: 'hammer', acid: 'other', beam: 'hive' };
+/** Big and giant worms: termites can't hold them, dragonflies barely sting through the hide. */
+const GIANTS = new Set<EnemyKind>(['worm', 'guard', 'reaper', 'tyrant', 'mother', 'executioner']);
+const GIANT = { small: 0.35, trample: 1.5 } as const;
 const DIGGERS = new Set<EnemyKind>(['worm', 'guard', 'tunneler']);
 
 /** Seconds after the last spawn before dawn burns remaining creatures. */
@@ -831,10 +834,20 @@ export class Game {
     k.timeStopMax = k.timeStopT = def.duration * this.runeArea('timestop') * (1 + 0.25 * this.propCount('timestop', 'ts-long')) + (this.facet('ts-eternal') ? 3 : 0);
     k.timeStopNights = Math.max(1, def.nights - this.propCount('timestop', 'ts-quick'));
   }
+  /** A giant walks over termite soldiers, crushing them as it goes. */
+  private trample(e: Enemy, dt: number) {
+    const def = ENEMIES[e.kind];
+    for (const u of this.state.soldiers) {
+      if (u.hp <= 0 || Math.abs(u.x - e.x) > def.radius + 4) continue;
+      this.damageSoldier(u, def.damage * this.enemyDamageMul(e.kind) * GIANT.trample * dt, e);
+    }
+  }
+
   /** Is this creature held by frozen time? (bosses break free at half time) */
   frozen(e: Enemy) {
     const k = this.state.keeper;
-    return k.timeStopT > (ENEMIES[e.kind].boss ? k.timeStopMax * 0.5 : 0);
+    // giants thaw early: they stay frozen for 50% + 50% × ccMult of the time
+    return k.timeStopT > k.timeStopMax * (1 - (0.5 + 0.5 * ENEMIES[e.kind].ccMult));
   }
 
   /** Зов Роя: nests around the Ascended rally. */
@@ -1039,14 +1052,19 @@ export class Game {
     if (form === 'A') {
       // Сверхзвезда: one giant star
       this.meteor(tx, 1.1, def.damage * 4.5 * mult, def.impactRadius * 1.9 * area, {
-        stun: 2.5, breakArmor: apo ? 20 : 8, burnTime: apo ? 8 : def.burnTime,
+        stun: 2.5, breakArmor: apo ? 20 : 8, burnTime: apo ? 8 : def.burnTime, giant: true,
       });
-      if (this.facet('sf-storm')) for (let i = 0; i < 4; i++) this.meteor(tx + (i - 1.5) * 40, 1.3 + i * 0.1, def.damage * mult, def.impactRadius * area);
+      // extra stars (Ливень, Звёздная буря) escort the giant one and land around its crater
+      const escort = this.mods.starfallMeteors + (this.facet('sf-storm') ? 4 : 0);
+      for (let i = 0; i < escort; i++) {
+        const side = i % 2 ? 1 : -1;
+        this.meteor(tx + side * (40 + (i >> 1) * 28), 1.3 + i * 0.08, def.damage * mult, def.impactRadius * area);
+      }
       return;
     }
     if (form === 'B') {
       // Звёздный ливень: stars rain over the whole Circle for a few seconds
-      const n = (apo ? 35 : 20) + (this.facet('sf-storm') ? 8 : 0);
+      const n = (apo ? 35 : 20) + (this.facet('sf-storm') ? 8 : 0) + this.mods.starfallMeteors * 2;
       const targets = s.enemies.filter((e) => !e.dead && !(e.layer === 'under') && e.lit);
       for (let i = 0; i < n; i++) {
         let x: number;
@@ -1731,6 +1749,7 @@ export class Game {
       }
       if (e.rooted > 0) { e.rooted -= dt; continue; }
       e.x += e.dir * def.speed * e.speedMul * (e.affix === 'swift' ? ELITE.speed : 1) * (1 - e.slow) * dt;
+      if (GIANTS.has(e.kind)) this.trample(e, dt);
     }
   }
 
@@ -1922,10 +1941,11 @@ export class Game {
     for (const t of this.state.tempLights) {
       if (t.slow && e.layer !== 'under' && Math.abs(e.x - t.x) <= t.radius) slow = Math.max(slow, t.slow);
     }
-    if (e.web > 0) slow = Math.max(slow, 0.35);
+    if (e.web > 0) slow = Math.max(slow, 0.35 * ENEMIES[e.kind].ccMult);
     if (this.state.keeper.coldT > 0) slow = Math.max(slow, 0.4);
     if (e.lit && this.state.keeper.radianceT > 0 && this.facet('rd-dawn')) slow = Math.max(slow, 0.3);
-    return Math.min(0.7, slow * (e.kind === 'mother' ? 0.5 : 1));
+    // big creatures shrug off slows by their size (ccMult)
+    return Math.min(0.7, slow * ENEMIES[e.kind].ccMult);
   }
 
   /** Enemy damage grows with the night (fatter and meaner) and with the Darkness' wrath. */
@@ -1984,6 +2004,8 @@ export class Game {
     }
 
     for (const u of s.soldiers) {
+      // giants don't stop for termites — they trample them on the way (see updateEnemies)
+      if (GIANTS.has(e.kind)) break;
       if (u.hp <= 0 || !ahead(u.x)) continue;
       if (Math.abs(u.x - e.x) <= contact + 2) return { kind: 'soldier', u, x: u.x };
     }
@@ -2222,13 +2244,14 @@ export class Game {
     if (!foe) {
       foe = s.enemies
         .filter((e) => !e.dead && e.layer !== 'under' && e.lit && Math.abs(e.x - st.x) <= reach)
-        .sort((a, b) => Math.abs(a.x - st.x) - Math.abs(b.x - st.x))[0];
+        // stings barely pierce giant hides: the swarm goes for smaller prey first
+        .sort((a, b) => Math.abs(a.x - st.x) + (GIANTS.has(a.kind) ? 1000 : 0) - Math.abs(b.x - st.x) - (GIANTS.has(b.kind) ? 1000 : 0))[0];
       st.stingTo = foe?.id ?? 0;
     }
-    if (foe) this.damageQuiet(foe, ns.burn! * STING.share * this.dragonflyDrones(st) * (foe.layer === 'air' ? DRAGONFLY_VS_AIR : 1) * dt, false);
+    if (foe) this.damageQuiet(foe, ns.burn! * STING.share * this.dragonflyDrones(st) * (foe.layer === 'air' ? DRAGONFLY_VS_AIR : 1) * (GIANTS.has(foe.kind) ? GIANT.small : 1) * dt, false);
     for (const e of s.enemies) {
       if (e.dead || (e.layer === 'under') || Math.abs(e.x - st.x) > r) continue;
-      this.damageQuiet(e, ns.burn! * dt * (e.layer === 'air' ? DRAGONFLY_VS_AIR : 1));
+      this.damageQuiet(e, ns.burn! * dt * (e.layer === 'air' ? DRAGONFLY_VS_AIR : 1) * (GIANTS.has(e.kind) ? GIANT.small : 1));
     }
     if (!ns.chain || st.cd > 0) return;
     let cur: Enemy | undefined = s.enemies
@@ -2241,7 +2264,7 @@ export class Game {
     for (let i = 0; i < ns.chain && cur; i++) {
       hit.add(cur.id);
       pts.push([cur.x, cur.y - ENEMIES[cur.kind].height * 0.6]);
-      this.damageEnemy(cur, ns.damage * (1 - i * 0.1) * (cur.layer === 'air' ? DRAGONFLY_VS_AIR : 1), true, true);
+      this.damageEnemy(cur, ns.damage * (1 - i * 0.1) * (cur.layer === 'air' ? DRAGONFLY_VS_AIR : 1) * (GIANTS.has(cur.kind) ? GIANT.small : 1), true, true);
       const from: Enemy = cur;
       cur = s.enemies
         .filter((e) => !e.dead && !hit.has(e.id) && !(e.layer === 'under') && e.lit && Math.abs(e.x - from.x) <= 70)
@@ -2471,14 +2494,29 @@ export class Game {
         if (p.life <= 0) {
           const def = ABILITIES.starfall;
           for (const e of s.enemies) {
-            if (e.dead || (e.layer === 'under') || Math.abs(e.x - p.tx) > (p.radius ?? def.impactRadius) + ENEMIES[e.kind].radius) continue;
+            // the giant star punches through the soil and hits worms below too
+            if (e.dead || (e.layer === 'under' && !p.giant) || Math.abs(e.x - p.tx) > (p.radius ?? def.impactRadius) + ENEMIES[e.kind].radius) continue;
             if (p.breakArmor) e.armorBreak = p.breakArmor;
             this.damageEnemy(e, p.damage * (e.layer === 'air' && this.facet('sf-sky') ? 2 : 1));
             this.stunEnemy(e, p.stun ?? def.stun);
             if (e.dead && this.facet('sf-refund')) k.charge = Math.min(def.chargeMax, k.charge + 4);
           }
-          s.burns.push({ x: p.tx, halfWidth: (p.radius ?? def.impactRadius) * 0.7, dps: def.burnDps * this.abilityMult('starfall') * (1 + this.mods.starfallBurn), life: (p.burnTime ?? def.burnTime) * (this.facet('sf-ash') ? 2 : 1) });
-          this.emit({ type: 'meteor', x: p.tx });
+          const life = (p.burnTime ?? def.burnTime) * (this.facet('sf-ash') ? 2 : 1);
+          s.burns.push({ x: p.tx, halfWidth: (p.radius ?? def.impactRadius) * 0.7, dps: def.burnDps * this.abilityMult('starfall') * (1 + this.mods.starfallBurn) * (p.shard ? 0.4 : 1), life: p.shard ? life * 0.4 : life, crater: p.giant, maxLife: life });
+          if (p.giant) {
+            // the star bursts: burning shards fly out of the crater
+            for (let i = 0; i < 8; i++) {
+              const side = i % 2 ? 1 : -1;
+              const tx2 = p.tx + side * (30 + (i >> 1) * 22 + this.rand() * 14);
+              const fall = 0.35 + this.rand() * 0.3;
+              spawned.push({
+                id: s.nextId++, kind: 'meteor', x: p.tx, y: WORLD.groundY - 14, vx: (tx2 - p.tx) / fall, vy: 14 / fall,
+                damage: p.damage * 0.12, targetId: 0, tx: tx2, ty: WORLD.groundY, pierce: 0, hit: [], life: fall, age: 0,
+                radius: def.impactRadius * 0.55, stun: 0.4, shard: true, burnTime: 2,
+              });
+            }
+          }
+          this.emit({ type: 'meteor', x: p.tx, giant: p.giant, shard: p.shard });
         }
         continue;
       }
@@ -2770,7 +2808,7 @@ export class Game {
           if (fd <= ENEMIES[foe.kind].radius + 5 && u.cd <= 0) {
             u.cd = ns.rate;
             const clich = s.keeper.swarmT > 0 && this.facet('sw-termite') && Math.abs(u.x - s.keeper.swarmX) <= this.swarmReach() ? 1.5 : 1;
-            this.damageEnemy(foe, ns.damage * clich, true, true);
+            this.damageEnemy(foe, ns.damage * clich * (GIANTS.has(foe.kind) ? GIANT.small : 1), true, true);
           }
         }
         const dx = goal - u.x;

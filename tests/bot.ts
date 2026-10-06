@@ -44,6 +44,7 @@ export interface BotResult {
 /** Plays one full level with a scripted heuristic player. */
 export function runBot(planName: keyof typeof PLANS, seed = 1, maxMinutes = 30, log?: (line: string) => void, opts: GameOptions = {}, maxNights = 10): BotResult {
   const plan = PLANS[planName];
+  castTick = 0;
   const g = new Game({ seed, ...opts });
   const s = g.state;
   let think = 0;
@@ -77,6 +78,7 @@ let castTick = 0;
 /** Same as runBot but yields to the event loop regularly (keeps test runners responsive). */
 export async function runBotAsync(planName: keyof typeof PLANS, seed = 1, maxMinutes = 30, log?: (line: string) => void, opts: GameOptions = {}, maxNights = 10): Promise<BotResult> {
   const plan = PLANS[planName];
+  castTick = 0;
   const g = new Game({ seed, ...opts });
   const s = g.state;
   let think = 0;

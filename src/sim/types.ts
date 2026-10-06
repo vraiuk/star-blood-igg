@@ -149,6 +149,10 @@ export interface Projectile {
   burnTime?: number;
   /** hits underground creatures too (wave) */
   deep?: boolean;
+  /** Сверхзвезда: huge, hits underground, leaves a crater and bursts into shards */
+  giant?: boolean;
+  /** a shard of a burst star (small, flies out of the crater) */
+  shard?: boolean;
 }
 
 export type DropKind = 'amber' | 'star';
@@ -188,7 +192,7 @@ export interface TempLight {
   heal?: number;
 }
 
-export interface GroundBurn { x: number; halfWidth: number; dps: number; life: number; }
+export interface GroundBurn { x: number; halfWidth: number; dps: number; life: number; /** Сверхзвезда's crater */ crater?: boolean; maxLife?: number; }
 
 export interface Keeper {
   x: number;
@@ -359,7 +363,7 @@ export type GameEvent =
   | { type: 'heal'; x: number; y: number; amount: number }
   | { type: 'polaria'; x: number; y: number; tx: number; ty: number }
   | { type: 'cast'; ability: AbilityId; x: number; tx: number }
-  | { type: 'meteor'; x: number }
+  | { type: 'meteor'; x: number; giant?: boolean; shard?: boolean }
   | { type: 'spikeStrike'; x: number; y: number; tx: number; ty: number; web: boolean }
   | { type: 'nightStart'; night: number }
   | { type: 'rush'; night: number; amber: number; star: number }

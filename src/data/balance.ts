@@ -82,15 +82,15 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   }),
   worm: E({
     name: 'Имаго-Копатель', hp: 210, speed: 17, damage: 14, attackRate: 1, amber: 10, star: 2, devRune: 0.006, charge: 5,
-    worm: true, underground: true, radius: 12, height: 10, cleave: 18, fog: 30,
+    worm: true, underground: true, ccMult: 0.6, radius: 12, height: 10, cleave: 18, fog: 30,
   }),
   guard: E({
     name: 'Имаго-Страж', hp: 520, armor: 10, speed: 12, damage: 22, attackRate: 1.2, amber: 19, star: 4, devRune: 0.03, charge: 9,
-    worm: true, underground: true, ccMult: 0.6, radius: 14, height: 12, cleave: 26, fog: 48,
+    worm: true, underground: true, ccMult: 0.45, radius: 14, height: 12, cleave: 26, fog: 48,
   }),
   reaper: E({
     name: 'Имаго-Жнец', hp: 900, armor: 9, speed: 24, damage: 46, attackRate: 1.3, structureMult: 1.3, amber: 28, star: 1,
-    charge: 10, worm: true, smashesStructures: true, ccMult: 0.7, radius: 10, height: 30,
+    charge: 10, worm: true, smashesStructures: true, ccMult: 0.5, radius: 10, height: 30,
   }),
   jumper: E({
     name: 'Имаго-Прыгун', hp: 90, speed: 52, damage: 10, attackRate: 0.8, amber: 6, star: 0.3, charge: 3,
@@ -225,16 +225,23 @@ function crownBase(stage: number, i: number): { x: number; y: number } {
     const top = shape.height;
     const width = Math.max(...shape.leaves.map((l) => Math.abs(l.x))) || 20;
     const used = new Set<number>();
+    const placed: Array<{ x: number; y: number }> = [];
+    // slots keep apart: a cluster closer than this to a taken slot is skipped (if any other is left)
+    const MIN_GAP = 18;
     list = CROWN_X.map((dx) => {
       const tx = Math.max(-width, Math.min(width, (dx / 72) * width * 0.75));
       const ty = -top * (Math.abs(dx) > 90 ? 0.5 : Math.abs(dx) > 50 ? 0.55 : 0.68);
-      let best = 0, bd = Infinity;
+      let best = -1, bd = Infinity, fallback = 0, fd = Infinity;
       shape.leaves.forEach((l, k) => {
         if (used.has(k)) return;
         const d = Math.abs(l.x - tx) + Math.abs(l.y - ty) * 0.7;
+        if (d < fd) { fd = d; fallback = k; }
+        if (placed.some((p) => Math.hypot(p.x - l.x, p.y - l.y) < MIN_GAP)) return;
         if (d < bd) { bd = d; best = k; }
       });
+      if (best < 0) best = fallback;
       used.add(best);
+      placed.push({ x: shape.leaves[best].x, y: shape.leaves[best].y });
       const l = shape.leaves[best];
       return { x: WORLD.treeX + Math.round(l.x), y: WORLD.groundY + Math.round(l.y) + 3 };
     });

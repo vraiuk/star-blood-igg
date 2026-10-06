@@ -1027,6 +1027,21 @@ export function drawProjectile(c: Ctx, p: Projectile, tint?: string) {
       rect(c, p.x, p.y, 1, 1, PAL.white);
       break;
     case 'meteor': {
+      if (p.shard) {
+        // a small burning shard of the burst star
+        line(c, p.x - ux * 5, p.y - uy * 5, p.x, p.y, '#ff9a4a', 1);
+        disc(c, p.x, p.y, 1.2, PAL.gold5);
+        break;
+      }
+      if (p.giant) {
+        // Сверхзвезда: a huge blazing star with a long fiery tail
+        for (let i = 6; i >= 1; i--) disc(c, p.x - ux * i * 9, p.y - uy * i * 9, 9 - i, i % 2 ? '#ff6a3a' : '#ffb24a');
+        disc(c, p.x, p.y, 11, '#ffb24a');
+        disc(c, p.x, p.y, 8, tint ?? PAL.gold4);
+        disc(c, p.x, p.y, 5, PAL.white);
+        for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + p.age * 6; rect(c, p.x + Math.cos(a) * 14, p.y + Math.sin(a) * 14, 2, 2, PAL.gold5); }
+        break;
+      }
       const big = (p.radius ?? 34) > 50 ? 2.2 : 1;
       line(c, p.x - ux * 18 * big, p.y - uy * 18 * big, p.x, p.y, '#ff7a4a', Math.round(2 * big));
       line(c, p.x - ux * 8 * big, p.y - uy * 8 * big, p.x, p.y, tint ?? PAL.gold4, Math.round(2 * big));

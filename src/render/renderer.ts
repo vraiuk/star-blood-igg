@@ -119,6 +119,18 @@ export class Renderer {
         case 'chain': p.chain(e.points); break;
         case 'ram': p.addFx('ram', e.x, WORLD.groundY - 6, 0.35, 0, e.dir); p.dust(e.x + e.dir * 12, WORLD.groundY - 2); this.shake = Math.max(this.shake, 2); break;
         case 'meteor':
+          if (e.shard) { p.emit(5, e.x, WORLD.groundY - 3, { speed: 40, max: 0.4, colors: ['#ff9a4a', PAL.gold4], glow: true }); p.dust(e.x, WORLD.groundY - 2); break; }
+          if (e.giant) {
+            p.goldBurst(e.x, WORLD.groundY - 8, 160);
+            p.addFx('ring', e.x, WORLD.groundY - 4, 0.6, 70);
+            p.addFx('ring', e.x, WORLD.groundY - 4, 1, 130);
+            p.addFx('growWave', e.x, WORLD.groundY, 0.8, 120);
+            for (let i = -3; i <= 3; i++) p.dust(e.x + i * 9, WORLD.groundY - 2);
+            p.emit(40, e.x, WORLD.groundY + 10, { speed: 80, max: 0.9, colors: ['#5a3a2a', '#8a6040', '#ff7a3a'], gravity: 120 });
+            this.flash = Math.max(this.flash, 0.6);
+            this.shake = Math.max(this.shake, 16);
+            break;
+          }
           p.goldBurst(e.x, WORLD.groundY - 4, 60);
           p.dust(e.x, WORLD.groundY - 2); p.dust(e.x - 10, WORLD.groundY - 2); p.dust(e.x + 10, WORLD.groundY - 2);
           p.addFx('ring', e.x, WORLD.groundY - 4, 0.5, 40);
@@ -203,7 +215,10 @@ export class Renderer {
     drawRoots(c, s.tree.stage, time, this.treeHurt);
     const lanterns = s.structures.filter((x) => x.family === 'dragonfly')
       .map((x) => ({ x: x.x, r: game.nestStats(x).light! }));
-    for (const b of s.burns) this.drawBurn(c, b.x, b.halfWidth, time);
+    for (const b of s.burns) {
+      if (b.crater) this.drawCrater(c, b.x, b.halfWidth, b.life / Math.max(0.01, b.maxLife ?? b.life), time);
+      this.drawBurn(c, b.x, b.halfWidth, time);
+    }
     drawGrass(c, s.tree.radius, time, lanterns);
 
     this.drawNestsOutlined(c, s.structures.filter((x) => x.underground), time);
@@ -462,6 +477,21 @@ export class Renderer {
     const g = 0.5 + 0.5 * Math.sin(time * 6);
     rect(c, WORLD.treeX - 1, WORLD.groundY + 6, 3, 1, g > 0.5 ? PAL.gold5 : PAL.gold3);
     rect(c, WORLD.treeX - 3, WORLD.groundY + 8, 7, 1, PAL.gold2);
+  }
+
+  /** Сверхзвезда's crater: a scorched pit with a glowing rim, cooling as it fades. */
+  private drawCrater(c: Ctx, x: number, hw: number, k: number, time: number) {
+    const r = hw * 1.2;
+    for (let i = -r; i <= r; i += 1) {
+      const t = i / r;
+      const depth = Math.round(Math.sqrt(Math.max(0, 1 - t * t)) * 9);
+      rect(c, x + i, WORLD.groundY, 1, depth, '#0a0608');
+      const glow = k > 0.3 && Math.sin(time * 9 + i * 0.7) > 0.2;
+      rect(c, x + i, WORLD.groundY + depth, 1, 1, glow ? '#ff7a3a' : '#5a2a1a');
+    }
+    // the rim of thrown-up soil
+    rect(c, x - r - 3, WORLD.groundY - 2, 4, 2, '#4a3020');
+    rect(c, x + r - 1, WORLD.groundY - 2, 4, 2, '#4a3020');
   }
 
   private drawBurn(c: Ctx, x: number, hw: number, time: number) {

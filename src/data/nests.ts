@@ -137,7 +137,7 @@ export const NESTS: Record<Family, FamilyDef> = {
   },
   dragonfly: {
     name: 'Золотые Стрекозы', creature: 'стрекозы',
-    desc: 'Высвечивают тварей: в их свету твари получают больше урона от всего', underground: false, blocks: false,
+    desc: 'Высвечивают тварей: в их свету твари получают больше урона от всего. Шкуру гигантских Червей жалят слабо', underground: false, blocks: false,
     levels: [
       { hp: 140, damage: 0, rate: 0, range: 0, light: 64, slow: 0.25, burn: 5, vuln: 0.3 },
       { hp: 200, damage: 0, rate: 0, range: 0, light: 78, slow: 0.3, burn: 8, vuln: 0.4 },
@@ -191,7 +191,7 @@ export const NESTS: Record<Family, FamilyDef> = {
   },
   termite: {
     name: 'Термитник', creature: 'Золотые Термиты',
-    desc: 'Выпускает отряд Золотых Термитов: они держат край Круга и сами бьются с тварями — даже с плевунами за краем', underground: false, blocks: false,
+    desc: 'Выпускает отряд Золотых Термитов: они держат край Круга и сами бьются с тварями — даже с плевунами за краем. Гигантов не удержат: те их затаптывают', underground: false, blocks: false,
     levels: [
       { hp: 260, damage: 9, rate: 0.8, range: 80, soldiers: 3, soldierHp: 90, respawn: 9 },
       { hp: 340, damage: 14, rate: 0.75, range: 95, soldiers: 4, soldierHp: 130, respawn: 8 },

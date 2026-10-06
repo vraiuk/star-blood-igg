@@ -11,7 +11,7 @@ import { icon } from './icons';
 import { QUESTS } from './quests';
 
 const AB_IDS: AbilityId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'timestop'];
-const RUNE_IDS: KeeperRuneId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'light'];
+const RUNE_IDS: KeeperRuneId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'timestop', 'light'];
 
 export type MenuTarget =
   | { kind: 'slot'; slotId: string }
