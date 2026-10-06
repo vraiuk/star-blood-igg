@@ -500,9 +500,13 @@ body { display: grid; place-items: center; }
 .lvchip { font-family: var(--pix); font-size: calc(5.5 * var(--u)); min-width: calc(17 * var(--u)); padding: calc(1 * var(--u)) calc(2 * var(--u)); background: #120e1e; color: #c9b98a; border: var(--u) solid #3a3060; cursor: pointer; border-radius: calc(1.5 * var(--u)); }
 .lvchip:hover { border-color: var(--gold-dim); color: #ffe58a; }
 .lvchip.on { background: linear-gradient(180deg, #5a4214, #2a1e08); color: #fff0c0; border-color: var(--gold); box-shadow: 0 0 calc(4 * var(--u)) rgba(255, 200, 70, 0.45); }
-/* − ★N + steppers under the build options */
-.starstep { position: absolute; transform: translate(-50%, 0); display: flex; align-items: center; gap: calc(1 * var(--u)); pointer-events: auto; white-space: nowrap; }
-.starstep button { width: calc(7 * var(--u)); height: calc(7 * var(--u)); padding: 0; line-height: 1; font-size: calc(6 * var(--u)); background: #120e1e; color: #ffe58a; border: var(--u) solid #3a3060; border-radius: calc(1.5 * var(--u)); cursor: pointer; }
-.starstep button:hover:not(:disabled) { border-color: var(--gold); }
-.starstep button:disabled { opacity: 0.35; cursor: default; }
-.starstep span { font-family: var(--pix); font-size: calc(5.5 * var(--u)); color: #ffd24a; min-width: calc(9 * var(--u)); text-align: center; text-shadow: 0 0 calc(2 * var(--u)) #000; }
+/* + / − steppers left of each build option, ★N above it — high contrast */
+.starstep { position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; gap: calc(1 * var(--u)); pointer-events: auto; }
+.starstep button { width: calc(8 * var(--u)); height: calc(8 * var(--u)); padding: 0; line-height: 1; font-size: calc(7 * var(--u)); font-weight: bold;
+  background: linear-gradient(180deg, #ffd24a, #c88a1a); color: #1a1008; border: var(--u) solid #fff0b0; border-radius: calc(1.5 * var(--u));
+  cursor: pointer; box-shadow: 0 0 calc(3 * var(--u)) rgba(255, 210, 74, 0.6), 0 var(--u) 0 #000; }
+.starstep button:hover:not(:disabled) { background: linear-gradient(180deg, #fff0a0, #ffd24a); }
+.starstep button:disabled { background: #2a2438; color: #6a6280; border-color: #4a4260; box-shadow: none; cursor: default; }
+.starlbl { position: absolute; transform: translate(-50%, -50%); font-family: var(--pix); font-size: calc(6.5 * var(--u)); color: #c9c0a0;
+  background: rgba(10, 8, 20, 0.85); border: var(--u) solid #4a4260; border-radius: calc(1.5 * var(--u)); padding: 0 calc(2 * var(--u)); pointer-events: none; white-space: nowrap; }
+.starlbl.on { color: #fff0b0; border-color: #ffd24a; box-shadow: 0 0 calc(4 * var(--u)) rgba(255, 210, 74, 0.55); }

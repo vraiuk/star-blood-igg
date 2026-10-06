@@ -14,8 +14,6 @@ import { QUESTS } from './quests';
 
 /** Roman numerals for facet levels */
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
-/** the most merge stars a nest can be built with at once */
-const MAX_BUILD_STARS = 6;
 const AB_IDS: AbilityId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'timestop'];
 const RUNE_IDS: KeeperRuneId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'timestop', 'light'];
 
@@ -736,8 +734,12 @@ export class Hud {
         if (!o.fam) return;
         const ang = (-90 - spread / 2 + (n <= 1 ? 0 : (spread / (n - 1)) * i)) * (Math.PI / 180);
         const n0 = this.buildStars[o.fam] ?? 0;
-        html += `<div class="starstep" style="left:calc(${Math.cos(ang) * R} * var(--u));top:calc(${Math.sin(ang) * R + 22} * var(--u))">
-          <button data-fam="${o.fam}" data-d="-1" ${n0 > 0 ? '' : 'disabled'} title="Меньше звёзд">−</button><span>${n0 ? `★${n0}` : '★0'}</span><button data-fam="${o.fam}" data-d="1" ${n0 < MAX_BUILD_STARS ? '' : 'disabled'} title="Больше звёзд: каждая ★ — как 3 гнезда, слитых в одно">+</button></div>`;
+        const ox = Math.cos(ang) * R, oy = Math.sin(ang) * R;
+        // ★N above the icon, + / − stacked on its left
+        html += `<div class="starlbl ${n0 ? 'on' : ''}" style="left:calc(${ox} * var(--u));top:calc(${oy - 16} * var(--u))">★${n0}</div>
+          <div class="starstep" style="left:calc(${ox - 15} * var(--u));top:calc(${oy} * var(--u))">
+          <button data-fam="${o.fam}" data-d="1" title="Больше звёзд: каждая ★ — как 3 гнезда, слитых в одно">+</button>
+          <button data-fam="${o.fam}" data-d="-1" ${n0 > 0 ? '' : 'disabled'} title="Меньше звёзд">−</button></div>`;
       });
       this.ring.innerHTML = html;
       this.ring.querySelectorAll<HTMLButtonElement>('.starstep button').forEach((b) => {
@@ -745,7 +747,7 @@ export class Hud {
         b.addEventListener('click', (ev) => {
           ev.stopPropagation();
           const fam = b.dataset.fam as Family;
-          this.buildStars[fam] = Math.max(0, Math.min(MAX_BUILD_STARS, (this.buildStars[fam] ?? 0) + Number(b.dataset.d)));
+          this.buildStars[fam] = Math.max(0, (this.buildStars[fam] ?? 0) + Number(b.dataset.d));
           this.ringSig = '';
           this.renderRing();
         });

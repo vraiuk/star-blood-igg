@@ -226,7 +226,7 @@
   Термитник B levels 16/22 (was 13/18 — a real dip); a test guards every upgrade path.
 - Pause screen: «Уйти в Вечность» in the corner, two clicks to confirm — ends the run (the Tree
   falls, coins counted as usual).
-- Build with merge stars: every build option has its own − ★N + stepper (0–6 stars) and plants a
+- Build with merge stars: every build option has its own vertical + / − stepper on its left and a ★N badge above (no cap) and plants a
   nest already merged for the price of the 3ⁿ nests it replaces — no more planting three
   nests just to fuse them (levels are upgraded afterwards as usual).
 - Nests grow visibly: size by level, merge stars and ascension (surface up to ×1.7, crown ×1.35,
