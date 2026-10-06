@@ -12,7 +12,7 @@ interface Particle {
   glow: boolean;
 }
 
-type FxKind = 'ring' | 'rootBurst' | 'spikeThrust' | 'growWave' | 'beam' | 'ram' | 'web' | 'bolt' | 'plus';
+type FxKind = 'ring' | 'rootBurst' | 'spikeThrust' | 'growWave' | 'beam' | 'ram' | 'web' | 'bolt' | 'plus' | 'mend';
 interface Bolt { pts: Array<[number, number]>; life: number; }
 interface Fx { kind: FxKind; x: number; y: number; tx: number; ty: number; life: number; max: number; r: number; }
 
@@ -104,6 +104,16 @@ export class Particles {
           }
           break;
         }
+        case 'mend': {
+          const bx = f.x + (f.tx - f.x) * t, by = f.y + (f.ty - f.y) * t - Math.sin(t * Math.PI) * 14;
+          for (let i = 1; i < 4; i++) {
+            const k = Math.max(0, t - i * 0.06);
+            rect(c, f.x + (f.tx - f.x) * k, f.y + (f.ty - f.y) * k - Math.sin(k * Math.PI) * 14, 1, 1, 'rgba(156,255,138,0.5)');
+          }
+          rect(c, bx - 1, by - 1, 3, 2, '#5ac85a');
+          rect(c, bx, by - 1, 1, 1, '#c8ffb0');
+          break;
+        }
         case 'plus': {
           const yy = f.y - t * 14;
           const col = t < 0.6 ? '#9cff8a' : '#4a9a4a';
@@ -164,6 +174,11 @@ export class Particles {
   pickup(x: number, y: number, star: boolean) {
     this.emit(star ? 9 : 5, x, y, { speed: star ? 50 : 30, max: 0.45, colors: star ? [PAL.white, PAL.blood2, PAL.blood1] : [PAL.gold5, PAL.gold3, PAL.gold1], glow: true, drag: 3 });
   }
+  /** A mender beetle flying from the crown to its patient. */
+  mend(x: number, y: number, tx: number, ty: number) {
+    this.fx.push({ kind: 'mend', x, y, tx, ty, life: 0.5, max: 0.5, r: 0 });
+  }
+
   /** Green "+" motes rising from a healed target. */
   heal(x: number, y: number, amount: number) {
     const n = Math.min(4, 1 + Math.floor(amount / 8));

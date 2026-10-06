@@ -279,9 +279,13 @@ export class Game {
       hp: 0, maxHp: 0, cd: 0.4, spentAmber: price.amber, spentStar: price.star, hitFlash: 0, age: 0,
       aim: slot.x < WORLD.treeX ? -1 : 1, haste: 0, intercept: 0,
     };
+    if (st.crown) {
+      const p = crownPos(s.tree.stage, Number(slotId.slice(1)));
+      st.x = p.x; st.y = p.y;
+    }
     st.maxHp = st.hp = this.nestStats(st).hp;
     s.structures.push(st);
-    this.emit({ type: 'built', family, x: slot.x, y: slot.y, underground: slot.underground, tier: 0 });
+    this.emit({ type: 'built', family, x: st.x, y: st.y, underground: slot.underground, tier: 0 });
     return true;
   }
 
@@ -1421,16 +1425,16 @@ export class Game {
       for (const e of line) this.damageEnemy(e, ns.damage, true, true);
       st.aim = Math.sign(t.x - st.x) || st.aim;
       const far = line[line.length - 1] ?? t;
-      this.emit({ type: 'beam', x: st.x, y: WORLD.groundY - 40, tx: far.x + out * 10, ty: far.y - 8 });
+      this.emit({ type: 'beam', x: st.x, y: st.crown ? st.y + 3 : WORLD.groundY - 40, tx: far.x + out * 10, ty: far.y - 8 });
       return;
     }
     const volley = ns.volley ?? 1;
     for (let i = 0; i < volley; i++) {
       const t = targets[i % targets.length];
       st.aim = Math.sign(t.x - st.x) || st.aim;
-      this.fireHoming('arrow', st.x + (i - (volley - 1) / 2) * 3, (st.crown ? WORLD.groundY - 95 : WORLD.groundY - 34) - i * 2, t, ns.damage, 300);
+      this.fireHoming('arrow', st.x + (i - (volley - 1) / 2) * 3, (st.crown ? st.y + 3 : WORLD.groundY - 34) - i * 2, t, ns.damage, 300);
     }
-    this.emit({ type: 'shoot', kind: 'arrow', x: st.x, y: WORLD.groundY - 34 });
+    this.emit({ type: 'shoot', kind: 'arrow', x: st.x, y: st.crown ? st.y : WORLD.groundY - 34 });
   }
 
   /** Медовые соты: passive income, shown as a small gift every few seconds. */
@@ -1444,13 +1448,13 @@ export class Game {
       const v = Math.floor(acc.a);
       acc.a -= v;
       s.amber += v; s.stats.amberCollected += v;
-      this.emit({ type: 'pickup', kind: 'amber', x: st.x, y: WORLD.groundY - 90, value: v });
+      this.emit({ type: 'pickup', kind: 'amber', x: st.x, y: st.y, value: v });
     }
     if (acc.s >= 1) {
       const v = Math.floor(acc.s);
       acc.s -= v;
       s.star += v; s.stats.starCollected += v;
-      this.emit({ type: 'pickup', kind: 'star', x: st.x, y: WORLD.groundY - 90, value: v });
+      this.emit({ type: 'pickup', kind: 'star', x: st.x, y: st.y, value: v });
     }
     this.honeyAcc.set(st.id, acc);
   }
@@ -1463,7 +1467,9 @@ export class Game {
     for (const o of targets) {
       o.hp = Math.min(o.maxHp, o.hp + (ns.heal ?? 0) * dt);
       this.healFx(o.id, o.x, o.underground ? o.y : WORLD.groundY - 20, (ns.heal ?? 0) * dt);
+      if (st.cd <= 0) this.emit({ type: 'mend', x: st.x, y: st.y, tx: o.x, ty: o.underground ? o.y : WORLD.groundY - 14 });
     }
+    if (st.cd <= 0 && targets.length) st.cd = 0.5;
     if (ns.healTree && s.tree.hp < this.treeMaxHp()) {
       s.tree.hp = Math.min(this.treeMaxHp(), s.tree.hp + ns.healTree * dt);
       this.healFx(-1, WORLD.treeX, WORLD.groundY - 40, ns.healTree * dt);
@@ -1909,12 +1915,16 @@ export class Game {
       const want = this.nestStats(n).workers ?? 0;
       const have = s.workers.filter((w) => w.nestId === n.id).length;
       for (let i = have; i < want; i++) {
-        s.workers.push({ id: s.nextId++, nestId: n.id, x: n.x, dir: 1, carry: { amber: 0, star: 0, n: 0 }, target: 0, walk: this.rand() * 3, home: false });
+        s.workers.push({
+          id: s.nextId++, nestId: n.id, x: n.x, dir: 1, carry: { amber: 0, star: 0, n: 0 }, target: 0, walk: this.rand() * 3,
+          home: false, descend: n.crown ? 0.9 + i * 0.3 : 0, fromY: n.y,
+        });
       }
     }
     const aimed = new Map<number, number>();
     for (const w of s.workers) if (w.target) aimed.set(w.target, w.id);
     for (const w of s.workers) {
+      if (w.descend > 0) { w.descend -= dt; continue; }
       const nest = nests.find((n) => n.id === w.nestId)!;
       const ns = this.nestStats(nest);
       const speed = ns.speed ?? 40;

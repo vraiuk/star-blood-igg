@@ -236,6 +236,9 @@ export interface Worker {
   walk: number;
   /** carrying the bundle back to the tree */
   home: boolean;
+  /** seconds left of the silk descent from the crown, and its start height */
+  descend: number;
+  fromY: number;
 }
 
 export type Phase = 'day' | 'night' | 'won' | 'lost';
@@ -274,6 +277,7 @@ export type GameEvent =
   | { type: 'blast'; x: number; y: number }
   | { type: 'intercept'; x: number; y: number; fx: number; fy: number }
   | { type: 'jump'; x: number }
+  | { type: 'mend'; x: number; y: number; tx: number; ty: number }
   | { type: 'heal'; x: number; y: number; amount: number }
   | { type: 'polaria'; x: number; y: number; tx: number; ty: number }
   | { type: 'cast'; ability: AbilityId; x: number; tx: number }

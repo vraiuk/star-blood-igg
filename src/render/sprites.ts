@@ -636,7 +636,17 @@ function cocoon(c: Ctx, s: Structure, time: number, flash: boolean) {
 
 /** A caterpillar collector (green-gold, segmented, inching along). */
 export function drawWorker(c: Ctx, w: import('../sim/types').Worker, time: number) {
-  const x = Math.round(w.x), y = GY;
+  const x = Math.round(w.x);
+  if (w.descend > 0) {
+    // lowering itself from the crown on a silk thread
+    const k = Math.min(1, w.descend / 0.9);
+    const yy = Math.round(GY - (GY - w.fromY) * k);
+    line(c, x, w.fromY + 6, x, yy - 3, 'rgba(230,224,210,0.6)');
+    rect(c, x - 1, yy - 4, 2, 4, '#7ac04a');
+    rect(c, x - 1, yy - 4, 1, 1, PAL.gold4);
+    return;
+  }
+  const y = GY;
   const inch = Math.abs(Math.sin(w.walk * 8));
   for (let i = 0; i < 4; i++) {
     const sx = x - i * 2 * w.dir;
@@ -825,7 +835,8 @@ export function drawCrownNest(c: Ctx, s: Structure, time: number) {
       break;
     }
     default: {
-      // crown hive: an amber pod with fireflies
+      // crown hive: an amber pod with fireflies; flashes on each volley
+      if (s.cd > 0 && s.cd > (s.spec === 'B' ? 2.2 : 0.55)) disc(c, x, y + 3, 7, 'rgba(255,240,180,0.5)');
       ellipse(c, x, y + 3, 4, 5, PAL.gold1);
       ellipse(c, x, y + 2, 3, 4, PAL.gold2);
       rect(c, x - 1, y + 1, 2, 2, g > 0.5 ? PAL.gold5 : PAL.gold4);

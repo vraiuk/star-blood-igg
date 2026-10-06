@@ -85,6 +85,8 @@ export class Renderer {
         case 'blast': p.addFx('ring', e.x, e.y, 0.4, 34); p.emit(14, e.x, e.y, { speed: 70, max: 0.5, colors: ['#ffd0a0', '#ff8a4a', '#8a3a1a'], glow: true }); this.shake = Math.max(this.shake, 3); break;
         case 'intercept': p.chain([[e.fx, e.fy], [e.x, e.y]]); p.acid(e.x, e.y); break;
         case 'jump': p.dust(e.x, WORLD.groundY - 2); break;
+        case 'mend': p.mend(e.x, e.y, e.tx, e.ty); break;
+        case 'shoot': if (e.kind === 'arrow') p.emit(3, e.x, e.y, { speed: 30, max: 0.25, colors: [PAL.white, PAL.gold4], glow: true }); break;
         case 'lostLoot': p.emit(4, e.x, e.y, { speed: 20, max: 0.8, colors: ['#8a8aa8', '#5a5a78'], glow: true, gravity: -30 }); break;
         case 'devRune': p.goldBurst(e.x, WORLD.groundY - 20, 40); p.addFx('ring', e.x, WORLD.groundY - 20, 0.8, 30); break;
         case 'chain': p.chain(e.points); break;
@@ -100,7 +102,12 @@ export class Renderer {
         case 'shield': p.addFx('ring', WORLD.treeX, WORLD.groundY - 50, 0.9, 60); p.goldBurst(WORLD.treeX, WORLD.groundY - 50, 50); break;
         case 'secondWind': p.goldBurst(WORLD.treeX, WORLD.groundY - 60, 120); this.shake = 8; break;
         case 'rankUp': p.goldBurst(game.state.keeper.x, WORLD.groundY - 12, 50); p.addFx('ring', game.state.keeper.x, WORLD.groundY - 10, 0.6, 40); break;
-        case 'built': p.dust(e.x, e.underground ? e.y : WORLD.groundY - 2); p.goldBurst(e.x, e.underground ? e.y : WORLD.groundY - 10, 10); break;
+        case 'built': {
+          const high = !e.underground && e.y < WORLD.groundY - 20; // a crown nest
+          if (!high) p.dust(e.x, e.underground ? e.y : WORLD.groundY - 2);
+          p.goldBurst(e.x, e.underground || high ? e.y : WORLD.groundY - 10, high ? 24 : 10);
+          break;
+        }
         case 'sold': p.dust(e.x, WORLD.groundY - 4); break;
         case 'pickup': p.pickup(e.x, e.y, e.kind === 'star'); break;
         case 'treeHit': this.treeHurt = 0.12; if (e.amount >= 20) this.shake = Math.max(this.shake, 2); break;
