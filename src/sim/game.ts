@@ -536,8 +536,18 @@ export class Game {
       }
       this.recalc();
     }
-    k.respawn = 0;
+    // back at once (the game may be paused on the death screen — no waiting for a tick)
+    this.reviveKeeper();
     return true;
+  }
+
+  private reviveKeeper() {
+    const k = this.state.keeper;
+    k.alive = true;
+    k.respawn = 0;
+    k.hp = this.keeperMaxHp();
+    k.x = WORLD.treeX;
+    this.emit({ type: 'keeperBack' });
   }
 
   /** Growth ring after the Great Igg-Tree (endless Amber sink). */
@@ -1431,12 +1441,7 @@ export class Game {
 
     if (!k.alive) {
       k.respawn -= dt;
-      if (k.respawn <= 0) {
-        k.alive = true;
-        k.hp = this.keeperMaxHp();
-        k.x = WORLD.treeX;
-        this.emit({ type: 'keeperBack' });
-      }
+      if (k.respawn <= 0) this.reviveKeeper();
       return;
     }
     if (k.leapT > 0) {

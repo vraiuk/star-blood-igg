@@ -81,6 +81,24 @@ describe('tyrant carapace', () => {
   });
 });
 
+describe('revive', () => {
+  it('pays once and brings the Ascended back immediately, even with time frozen', () => {
+    const g = new Game();
+    while (g.choice) g.choose(0);
+    g.callNight();
+    const k = g.state.keeper;
+    k.hp = 1;
+    (g as unknown as { damageKeeper(a: number): void }).damageKeeper(999);
+    expect(k.alive).toBe(false);
+    g.state.amber = 10000;
+    const before = g.state.amber;
+    expect(g.revive('amber')).toBe(true);
+    expect(k.alive).toBe(true);
+    expect(g.state.amber).toBe(before - g.reviveCost());
+    expect(g.revive('amber')).toBe(false); // nothing to pay for a second time
+  });
+});
+
 describe('time stop', () => {
   it('freezes creatures and the night, then recovers over nights, not seconds', () => {
     const g = new Game();
