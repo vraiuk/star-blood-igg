@@ -1,4 +1,4 @@
-import { ENEMIES, SLOTS, WORLD } from '../src/data/balance';
+import { SLOTS, WORLD } from '../src/data/balance';
 import type { Family } from '../src/data/nests';
 import { Game, type GameOptions } from '../src/sim/game';
 
@@ -74,6 +74,40 @@ export function runBot(planName: keyof typeof PLANS, seed = 1, maxMinutes = 30, 
 
 let castTick = 0;
 
+/** Same as runBot but yields to the event loop regularly (keeps test runners responsive). */
+export async function runBotAsync(planName: keyof typeof PLANS, seed = 1, maxMinutes = 30, log?: (line: string) => void, opts: GameOptions = {}, maxNights = 10): Promise<BotResult> {
+  const plan = PLANS[planName];
+  const g = new Game({ seed, ...opts });
+  const s = g.state;
+  let think = 0;
+  const treeDmg: Record<string, number> = {};
+  const maxSteps = maxMinutes * 60 * 60;
+  for (let i = 0; i < maxSteps && !g.over && s.night < maxNights; i++) {
+    if (i % 3000 === 0) await new Promise((r) => setTimeout(r, 0));
+    if (g.choice) g.choose(0);
+    think -= 1;
+    if (think <= 0) {
+      think = 10;
+      act(g, plan);
+    }
+    g.step();
+    for (const ev of s.events) {
+      if (ev.type === 'treeHit') treeDmg[ev.by] = (treeDmg[ev.by] ?? 0) + ev.amount;
+      if (log && ['nightStart', 'dawn', 'keeperDown', 'structureLost', 'treeGrew', 'lost', 'rankUp'].includes(ev.type)) {
+        log(`t${Math.round(s.time)} ${ev.type} amber=${s.amber} star=${s.star} stage=${s.tree.stage + 1} treeHp=${Math.round(s.tree.hp)} nests=${s.structures.map((x) => x.slotId + ':' + x.family[0] + x.tier + (x.spec ?? '')).join(',')}`);
+      }
+    }
+    s.events.length = 0;
+  }
+  return {
+    phase: g.over ? 'lost' : 'alive', night: s.night, stage: s.tree.stage + 1,
+    treeHpPct: Math.round((s.tree.hp / g.treeMaxHp()) * 100), stars: g.stars(),
+    kills: s.stats.kills, amber: s.amber, star: s.star, time: Math.round(s.stats.time), treeDmg,
+  };
+}
+
+
+
 function act(g: Game, plan: BotPlan) {
   const s = g.state;
   const k = s.keeper;
@@ -106,7 +140,7 @@ function act(g: Game, plan: BotPlan) {
   }
 
   let goal: number = WORLD.treeX;
-  const threats = s.enemies.filter((e) => !ENEMIES[e.kind].underground);
+  const threats = s.enemies.filter((e) => e.layer !== 'under');
   if (threats.length) {
     const nearest = threats.reduce((a, b) => (Math.abs(a.x - WORLD.treeX) < Math.abs(b.x - WORLD.treeX) ? a : b));
     goal = WORLD.treeX + Math.sign(nearest.x - WORLD.treeX) * 40;
@@ -118,13 +152,16 @@ function act(g: Game, plan: BotPlan) {
       .sort((a, b) => Math.abs(a.x - k.x) - Math.abs(b.x - k.x))[0];
     if (d) goal = d.x;
   }
+  // seal open tunnels: stand on the exit mouth
+  const tn = s.tunnels.filter((t) => t.open).sort((a, b) => Math.abs(a.headX - k.x) - Math.abs(b.headX - k.x))[0];
+  if (tn) goal = tn.headX;
   if (k.hp < 35) goal = WORLD.treeX;
   g.setMove(Math.abs(goal - k.x) < 4 ? 0 : goal > k.x ? 1 : -1);
 
   if (!plan.abilities) return;
   castTick++;
   if (castTick % (plan.castEvery ?? 1) !== 0) return;
-  const worm = s.enemies.find((e) => ENEMIES[e.kind].underground && Math.abs(e.x - WORLD.treeX) < 160);
+  const worm = s.enemies.find((e) => e.layer === 'under' && Math.abs(e.x - WORLD.treeX) < 160);
   if (worm && Math.abs(worm.x - k.x) < 100) g.cast('hammer', k.x);
   const close = threats.filter((e) => Math.abs(e.x - k.x) < 160);
   if (close.length) {
@@ -143,7 +180,7 @@ function buildDefense(g: Game, plan: BotPlan, coreOnly: boolean) {
   const s = g.state;
   if (!coreOnly) {
     for (const sl of SLOTS.filter((x) => x.crown && g.slotUnlocked(x))) {
-      if (!g.structureAt(sl.id)) g.build(sl.id, CROWN[Number(sl.id.slice(1))]);
+      if (!g.structureAt(sl.id)) g.build(sl.id, CROWN[Number(sl.id.slice(1)) % CROWN.length]);
     }
   }
   const surface = SLOTS.filter((sl) => !sl.underground && !sl.crown && g.slotUnlocked(sl))

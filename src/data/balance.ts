@@ -24,6 +24,7 @@ export const WORLD = {
 export type EnemyKind =
   | 'hound' | 'stalker' | 'spitter'
   | 'forager' | 'worm' | 'guard' | 'larva' | 'reaper' | 'jumper' | 'tunneler' | 'tunnelerUp'
+  | 'moth' | 'bomber'
   | 'mother' | 'executioner';
 export type AbilityId = 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm';
 
@@ -46,7 +47,15 @@ export interface EnemyDef {
   /** worm-type: burned by Igg-light and x2 damage in light */
   worm: boolean;
   underground: boolean;
+  /** flies above the Circle: beetles, weavers, termites and the Hammer can't reach it */
+  air: boolean;
+  /** flight height above the ground (air only) */
+  altitude: number;
   smashesStructures: boolean;
+  /** sweeping bite: also hits every soldier within this many px */
+  cleave?: number;
+  /** «Туман Тьмы» radius: shields creatures inside from Igg-light and auras */
+  fog?: number;
   ccMult: number;
   radius: number;
   height: number;
@@ -54,7 +63,7 @@ export interface EnemyDef {
 }
 
 const E = (o: Partial<EnemyDef> & Pick<EnemyDef, 'name' | 'hp' | 'speed' | 'damage' | 'amber'>): EnemyDef => ({
-  armor: 0, attackRate: 1, structureMult: 1, range: 0, star: 0, devRune: 0, charge: 2, worm: false, underground: false,
+  armor: 0, attackRate: 1, structureMult: 1, range: 0, star: 0, devRune: 0, charge: 2, worm: false, underground: false, air: false, altitude: 0,
   smashesStructures: false, ccMult: 1, radius: 7, height: 12, ...o,
 });
 
@@ -71,11 +80,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   }),
   worm: E({
     name: 'Имаго-Копатель', hp: 210, speed: 17, damage: 14, attackRate: 1, amber: 10, star: 2, devRune: 0.006, charge: 5,
-    worm: true, underground: true, radius: 12, height: 10,
+    worm: true, underground: true, radius: 12, height: 10, cleave: 18, fog: 30,
   }),
   guard: E({
     name: 'Имаго-Страж', hp: 520, armor: 10, speed: 12, damage: 22, attackRate: 1.2, amber: 19, star: 4, devRune: 0.03, charge: 9,
-    worm: true, underground: true, ccMult: 0.6, radius: 14, height: 12,
+    worm: true, underground: true, ccMult: 0.6, radius: 14, height: 12, cleave: 26, fog: 48,
   }),
   reaper: E({
     name: 'Имаго-Жнец', hp: 900, armor: 9, speed: 24, damage: 46, attackRate: 1.3, structureMult: 1.3, amber: 28, star: 1,
@@ -93,10 +102,18 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     name: 'Имаго-Землерой', hp: 260, armor: 4, speed: 26, damage: 18, attackRate: 1, amber: 10, star: 1, charge: 6,
     worm: true, smashesStructures: true, radius: 9, height: 14,
   }),
+  moth: E({
+    name: 'Тенекрыл', hp: 75, speed: 44, damage: 9, attackRate: 0.8, amber: 6, star: 0.2, charge: 3,
+    air: true, altitude: 95, radius: 7, height: 10,
+  }),
+  bomber: E({
+    name: 'Имаго-Кислотник', hp: 240, armor: 3, speed: 22, damage: 22, attackRate: 2.4, structureMult: 1.2, amber: 15, star: 0.6, charge: 6,
+    worm: true, air: true, altitude: 130, radius: 10, height: 14,
+  }),
   larva: E({ name: 'Личинка', hp: 18, speed: 38, damage: 3, attackRate: 0.7, amber: 1, star: 0.2, charge: 1, worm: true, radius: 4, height: 5 }),
   mother: E({
     name: 'Имаго-Матерь', hp: 5200, armor: 4, speed: 8, damage: 80, attackRate: 2, amber: 79, star: 30, devRune: 1, charge: 40,
-    worm: true, smashesStructures: true, ccMult: 0.25, radius: 26, height: 40, boss: true,
+    worm: true, smashesStructures: true, ccMult: 0.25, radius: 26, height: 40, boss: true, cleave: 34, fog: 70,
   }),
   executioner: E({
     name: 'Имаго-Палач', hp: 11000, armor: 14, speed: 10, damage: 120, attackRate: 1.6, structureMult: 1.5, amber: 158, star: 60,
@@ -126,6 +143,26 @@ export const ELITE = {
 /** Jumpers leap over blockers; tunnellers surface this close to the trunk. */
 export const JUMP = { distance: 46, cooldown: 3.5, time: 0.55 } as const;
 export const TUNNEL_SURFACE = 70;
+/**
+ * Лазы: diggers (Копатель, Страж, Землерой) start a tunnel at the Circle's edge and break
+ * out behind the defenses; ground creatures that reach the mouth dive in and skip the nests.
+ * The Keeper seals a mouth by standing on it; the Igg-Hammer caves tunnels in at once.
+ */
+/** «Туман Тьмы» around big worms: Igg-light can't burn inside, auras deal only this share. */
+export const FOG = { aura: 0.4, fromNight: 10 } as const;
+
+export const TUNNELS = {
+  /** the entry mouth opens this far outside the Circle */
+  entryPad: 30,
+  /** diggers break out at max(exitMin, radius × exitShare) from the trunk */
+  exitMin: 56, exitShare: 0.3,
+  /** speed of ground creatures inside a tunnel */
+  crawl: 1.35,
+  /** seconds the Keeper needs to seal a mouth */
+  sealTime: 1.4, sealReach: 18,
+  /** creatures buried by a collapse lose this share of max hp */
+  collapseDamage: 0.25,
+} as const;
 
 /** Minimum share of a hit that passes armor. */
 export const ARMOR_FLOOR = 0.25;
@@ -145,14 +182,23 @@ export interface SlotDef {
 }
 
 /** Crown slots: the Tree as a tower. Index i opens at stage 2 + i. Positions are drawn by the renderer. */
-export const CROWN_SLOTS = 5;
-export const CROWN_X = [-36, 36, -72, 72, 0] as const;
+export const CROWN_SLOTS = 10;
+export const CROWN_X = [-36, 36, -72, 72, 0, -100, 100, -128, 128, -16] as const;
+/** Growth rings make the Great Tree bigger; every 2 rings open one more crown slot. */
+export const treeScale = (rings: number) => 1 + Math.min(0.45, 0.035 * rings);
+export const ringsForCrownSlot = (i: number) => (i < 5 ? 0 : (i - 4) * 2);
 /**
  * Crown slot anchors sit on real leaf clusters of the current stage's crown (so they never
  * hang in the air): slot i aims at a point across the crown and takes the nearest free cluster.
  */
 const crownCache = new Map<number, Array<{ x: number; y: number }>>();
-export function crownPos(stage: number, i: number): { x: number; y: number } {
+export function crownPos(stage: number, i: number, rings = 0): { x: number; y: number } {
+  const p = crownBase(stage, i);
+  const k = treeScale(rings);
+  return { x: Math.round(WORLD.treeX + (p.x - WORLD.treeX) * k), y: Math.round(WORLD.groundY + (p.y - WORLD.groundY) * k) };
+}
+
+function crownBase(stage: number, i: number): { x: number; y: number } {
   let list = crownCache.get(stage);
   if (!list) {
     const shape = SHAPES[stage];
@@ -160,8 +206,8 @@ export function crownPos(stage: number, i: number): { x: number; y: number } {
     const width = Math.max(...shape.leaves.map((l) => Math.abs(l.x))) || 20;
     const used = new Set<number>();
     list = CROWN_X.map((dx) => {
-      const tx = (dx / 72) * width * 0.75;
-      const ty = -top * (Math.abs(dx) > 50 ? 0.55 : 0.68);
+      const tx = Math.max(-width, Math.min(width, (dx / 72) * width * 0.75));
+      const ty = -top * (Math.abs(dx) > 90 ? 0.5 : Math.abs(dx) > 50 ? 0.55 : 0.68);
       let best = 0, bd = Infinity;
       shape.leaves.forEach((l, k) => {
         if (used.has(k)) return;
@@ -177,7 +223,7 @@ export function crownPos(stage: number, i: number): { x: number; y: number } {
   return list[i];
 }
 
-function CROWN_X_LIST(): number[] { return [-36, 36, -72, 72, 0]; }
+function CROWN_X_LIST(): number[] { return [...CROWN_X]; }
 
 const SURFACE_OFFSETS = [42, 76, 112, 150, 190, 232, 276, 322, 370, 420];
 /**
@@ -196,7 +242,7 @@ export const SLOTS: SlotDef[] = [
     { id: `R${i}`, x: WORLD.treeX + o, y: WORLD.groundY, underground: false, offset: o },
   ]),
   ...CROWN_X_LIST().map((dx, i) => ({
-    id: `C${i}`, x: WORLD.treeX + dx, y: WORLD.groundY - 90, underground: false, offset: 0, unlockStage: 2 + i, crown: true,
+    id: `C${i}`, x: WORLD.treeX + dx, y: WORLD.groundY - 90, underground: false, offset: 0, unlockStage: Math.min(6, 2 + i), crown: true,
   })),
   ...ROOT_ARC.map(([r, deg, st], i) => {
     const a = (deg * Math.PI) / 180;

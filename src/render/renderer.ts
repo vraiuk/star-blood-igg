@@ -1,4 +1,4 @@
-import { ENEMIES, SLOTS, WORLD, crownPos } from '../data/balance';
+import { ENEMIES, SLOTS, WORLD, crownPos, treeScale } from '../data/balance';
 import type { Game } from '../sim/game';
 import type { GameEvent } from '../sim/types';
 import { type Backdrop, buildBackdrop } from './background';
@@ -7,7 +7,7 @@ import { Lighting } from './lighting';
 import { Particles } from './particles';
 import { type Ctx, PAL, makeCanvas, rect } from './pixel';
 import {
-  ROOT_SLOT_Y, drawAffix, drawWeb, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
+  ROOT_SLOT_Y, drawTunnel, drawTunnelMouths, drawFog, drawAffix, drawWeb, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
   drawCrownNest, drawCrownSlot, drawSoldier, drawStructure, drawWorker,
 } from './sprites';
 import { drawGrass, drawRoots, drawTree } from './tree';
@@ -82,6 +82,15 @@ export class Renderer {
         case 'beam': p.addFx('beam', e.x, e.y, 0.25, 0, e.tx, e.ty); break;
         case 'polaria': p.chain([[e.x, e.y], [e.tx, e.ty]]); break;
         case 'heal': p.heal(e.x, e.y, e.amount); break;
+        case 'cleave':
+          p.addFx('ring', e.x, WORLD.groundY - 6, 0.25, e.r);
+          p.emit(6, e.x, WORLD.groundY - 6, { speed: 60, max: 0.3, colors: ['#ffd070', '#c89a3a', '#5a3a1a'] });
+          break;
+        case 'tunnelOpen': p.dust(e.x, WORLD.groundY - 2); p.dust(e.x - 6, WORLD.groundY - 2); this.shake = Math.max(this.shake, 2); break;
+        case 'tunnelSealed':
+          p.dust(e.x, WORLD.groundY - 2); p.dust(e.x + 8, WORLD.groundY - 2); p.dust(e.x - 8, WORLD.groundY - 2);
+          p.goldBurst(e.x, WORLD.groundY - 6, 18);
+          break;
         case 'emerge': p.dust(e.x, WORLD.groundY - 2); p.dust(e.x + 6, WORLD.groundY - 2); this.shake = Math.max(this.shake, 3); break;
         case 'blast': p.addFx('ring', e.x, e.y, 0.4, 34); p.emit(14, e.x, e.y, { speed: 70, max: 0.5, colors: ['#ffd0a0', '#ff8a4a', '#8a3a1a'], glow: true }); this.shake = Math.max(this.shake, 3); break;
         case 'intercept': p.chain([[e.fx, e.fy], [e.x, e.y]]); p.acid(e.x, e.y); break;
@@ -183,8 +192,22 @@ export class Renderer {
     drawGrass(c, s.tree.radius, time, lanterns);
 
     this.drawNestsOutlined(c, s.structures.filter((x) => x.underground), time);
-    for (const e of s.enemies) if (ENEMIES[e.kind].underground) drawEnemy(c, e, time);
+    for (const tn of s.tunnels) drawTunnel(c, tn, time);
+    for (const e of s.enemies) if (e.layer === 'under') drawFog(c, e, time, s.night);
+    for (const e of s.enemies) if (e.layer === 'under') drawEnemy(c, e, time);
+    const tsc = treeScale(s.tree.rings);
+    c.save();
+    c.translate(WORLD.treeX, WORLD.groundY);
+    c.scale(tsc, tsc);
+    c.translate(-WORLD.treeX, -WORLD.groundY);
     drawTree(c, s.tree.stage, time, this.treeHurt, this.growPulse);
+    // growth rings glow as golden bands on the trunk
+    for (let i = 0; i < Math.min(12, s.tree.rings); i++) {
+      const y = WORLD.groundY - 8 - i * 5;
+      const pulse = Math.sin(time * 2 - i * 0.6) > 0.3;
+      rect(c, WORLD.treeX - 6, y, 11, 1, pulse ? PAL.gold5 : PAL.gold3);
+    }
+    c.restore();
     if (s.tree.stage + 1 >= TREE.polariaStage) this.drawPolaria(c, game, time);
     for (const st of s.structures) if (st.crown) drawCrownNest(c, st, time);
     for (const st of s.structures) {
@@ -194,7 +217,9 @@ export class Renderer {
     }
     if (view.hoverTree && !game.over) this.treeOutline(c, time);
     this.drawNestsOutlined(c, s.structures.filter((x) => !x.underground && !x.crown), time);
-    for (const e of s.enemies) if (!ENEMIES[e.kind].underground) drawEnemy(c, e, time);
+    for (const tn of s.tunnels) if (tn.open) drawTunnelMouths(c, tn, time);
+    for (const e of s.enemies) if (e.layer !== 'under') drawFog(c, e, time, s.night);
+    for (const e of s.enemies) if (e.layer !== 'under') drawEnemy(c, e, time);
     drawKeeper(c, s.keeper, time);
     for (const w of s.workers) drawWorker(c, w, time);
     for (const u of s.soldiers) drawSoldier(c, u);
@@ -216,7 +241,7 @@ export class Renderer {
       for (const sl of SLOTS) {
         if (!game.slotUnlocked(sl) || game.structureAt(sl.id)) continue;
         if (sl.crown) {
-          const p = crownPos(s.tree.stage, Number(sl.id.slice(1)));
+          const p = crownPos(s.tree.stage, Number(sl.id.slice(1)), s.tree.rings);
           drawCrownSlot(c, p.x, p.y, time, view.hoverSlot === sl.id || view.selectedSlot === sl.id);
           continue;
         }

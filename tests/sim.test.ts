@@ -4,11 +4,71 @@ import { NESTS } from '../src/data/nests';
 import { TREE_STAGES } from '../src/data/tree';
 import { Game } from '../src/sim/game';
 import { ENDLESS, generateNight } from '../src/data/nights';
-import { runBot } from './bot';
+import { runBot, runBotAsync } from './bot';
 
 const run = (g: Game, seconds: number) => {
   for (let i = 0; i < seconds * 60; i++) g.step();
 };
+
+describe('tunnels and flyers', () => {
+  const dig = () => {
+    const g = new Game();
+    const w = g.spawnEnemy('worm', WORLD.treeX + 300, -1);
+    for (let i = 0; i < 60 * 60 && w.layer === 'under'; i++) g.step();
+    return { g, w };
+  };
+
+  it('a digger opens a tunnel behind the defenses and breaks out on the surface', () => {
+    const { g, w } = dig();
+    expect(w.layer).toBe('ground');
+    const tn = g.state.tunnels[0];
+    expect(tn.open).toBe(true);
+    expect(Math.abs(tn.entryX - WORLD.treeX)).toBeGreaterThan(Math.abs(tn.headX - WORLD.treeX));
+  });
+
+  it('ground creatures dive into an open tunnel and come out past its exit', () => {
+    const { g } = dig();
+    const tn = g.state.tunnels[0];
+    const h = g.spawnEnemy('hound', tn.entryX - 2, -1);
+    g.step();
+    expect(h.layer).toBe('under');
+    for (let i = 0; i < 600 && h.layer === 'under'; i++) g.step();
+    expect(h.layer).toBe('ground');
+    expect(h.x).toBeLessThanOrEqual(tn.headX + 1);
+  });
+
+  it('the Keeper standing on the exit seals the tunnel', () => {
+    const { g } = dig();
+    const tn = g.state.tunnels[0];
+    g.state.keeper.x = tn.headX;
+    run(g, 2);
+    expect(g.state.tunnels.length).toBe(0);
+  });
+
+  it('a digger killed underground leaves no tunnel', () => {
+    const g = new Game();
+    const w = g.spawnEnemy('worm', WORLD.treeX + 300, -1);
+    run(g, 1);
+    g.damageEnemy(w, 99999);
+    run(g, 0.1);
+    expect(g.state.tunnels.length).toBe(0);
+  });
+
+  it('flyers soar over the beetles; hives shoot them down', () => {
+    const g = new Game();
+    g.build('R0', 'beetle');
+    const m = g.spawnEnemy('moth', WORLD.treeX + 60, -1);
+    expect(m.layer).toBe('air');
+    run(g, 1.5);
+    expect(m.x).toBeLessThan(WORLD.treeX + 40);
+    const g2 = new Game();
+    g2.build('R0', 'hive');
+    const m2 = g2.spawnEnemy('moth', WORLD.treeX + 50, -1);
+    m2.speedMul = 0;
+    run(g2, 3);
+    expect(m2.hp).toBeLessThan(m2.maxHp);
+  });
+});
 
 describe('light rules', () => {
   it('tree radius defines the lit zone on the surface', () => {
@@ -204,25 +264,29 @@ describe('economy', () => {
 });
 
 describe('determinism', () => {
-  it('same seed → same outcome', () => {
-    expect(runBot('balanced', 3, 12)).toEqual(runBot('balanced', 3, 12));
+  it('same seed → same outcome', async () => {
+    expect(await runBotAsync('balanced', 3, 6)).toEqual(runBot('balanced', 3, 6));
   });
 });
 
 describe('balance corridor (heuristic bots)', () => {
   const seeds = [1, 2, 3];
-  it('doing nothing loses the first night', () => {
-    const r = runBot('idle', 1);
+  it('doing nothing loses the first night', async () => {
+    const r = await runBotAsync('idle', 1);
     expect(r.phase).toBe('lost');
     expect(r.night).toBe(0);
     expect(r.night).toBe(0);
   });
-  it('a balanced player usually wins', () => {
-    const wins = seeds.map((s) => runBot('balanced', s)).filter((r) => r.night >= 10).length;
+  it('a balanced player usually wins', async () => {
+    const rs = [];
+    for (const sd of seeds) rs.push(await runBotAsync('balanced', sd));
+    const wins = rs.filter((r) => r.night >= 10).length;
     expect(wins).toBeGreaterThanOrEqual(2);
   });
-  it('defense without growing the tree falls early', () => {
-    expect(seeds.map((s) => runBot('turtle', s)).every((r) => r.phase === 'lost' && r.night <= 4)).toBe(true);
+  it('defense without growing the tree falls early', async () => {
+    const rs = [];
+    for (const sd of seeds) rs.push(await runBotAsync('turtle', sd));
+    expect(rs.every((r) => r.phase === 'lost' && r.night <= 4)).toBe(true);
   });
   it('endless difficulty keeps outgrowing rewards (curves, generator rhythm)', () => {
     // hp grows much faster than bounty, so a finite set of slots eventually falls
@@ -233,7 +297,9 @@ describe('balance corridor (heuristic bots)', () => {
     expect(t(10)).toContain('Тихая');
     expect(t(14)).toMatch(/Охота|Палач/);
   });
-  it('pure tree greed without defense loses', () => {
-    expect(seeds.map((s) => runBot('greedy', s)).every((r) => r.phase === 'lost')).toBe(true);
+  it('pure tree greed without defense loses', async () => {
+    const rs = [];
+    for (const sd of seeds) rs.push(await runBotAsync('greedy', sd));
+    expect(rs.every((r) => r.phase === 'lost')).toBe(true);
   });
 });

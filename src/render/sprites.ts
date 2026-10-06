@@ -1,6 +1,6 @@
-import { AFFIXES, ENEMIES, WORLD } from '../data/balance';
+import { AFFIXES, ENEMIES, FOG, WORLD } from '../data/balance';
 import { ASCEND, NESTS, glowBand } from '../data/nests';
-import type { Drop, Enemy, Keeper, Projectile, Structure } from '../sim/types';
+import type { Drop, Enemy, Keeper, Projectile, Structure, Tunnel } from '../sim/types';
 import { type Ctx, PAL, disc, ellipse, line, rect, ring } from './pixel';
 
 const GY = WORLD.groundY;
@@ -17,7 +17,10 @@ export function drawEnemy(c: Ctx, e: Enemy, time: number) {
   const rim = flash ? '#ffffff' : e.vuln > 0 ? (Math.sin(time * 10 + e.id) > 0 ? PAL.gold4 : PAL.gold2) : e.lit ? '#8a6cc8' : PAL.shadeRim;
   const t = e.age;
   const moving = !e.attacking && e.stun <= 0 && e.rooted <= 0;
+  if (e.layer === 'under' && !ENEMIES[e.kind].underground) return crawler(c, e, t, flash);
   switch (e.kind) {
+    case 'moth': return moth(c, e, t, flash, body, rim);
+    case 'bomber': return bomber(c, e, t, flash, body, rim, time);
     case 'hound': return hound(c, e, t, moving, body, rim);
     case 'stalker': return stalker(c, e, t, moving, body, rim);
     case 'spitter': return spitter(c, e, t, moving, body, rim, time);
@@ -31,6 +34,111 @@ export function drawEnemy(c: Ctx, e: Enemy, time: number) {
     case 'jumper': return jumper(c, e, t, body, rim);
     case 'tunneler': return worm(c, e, t, flash);
     case 'tunnelerUp': return digger(c, e, t, moving, rim, flash);
+  }
+}
+
+/** A ground creature crawling through a Лаз: a hunched shadow in the tunnel. */
+function crawler(c: Ctx, e: Enemy, t: number, flash: boolean) {
+  const d = e.dir;
+  const r = Math.max(4, Math.min(9, ENEMIES[e.kind].radius));
+  const sway = Math.sin(t * 9) * 1;
+  ellipse(c, e.x, e.y + sway, r + 2, r * 0.6, flash ? '#fff' : '#0c0a14');
+  ellipse(c, e.x - d, e.y - 1 + sway, r, r * 0.4, flash ? '#fff' : '#1d1830');
+  for (let i = 0; i < 3; i++) rect(c, e.x - d * (r + 3 + i * 3), e.y + 2 + ((i + Math.floor(t * 8)) % 2), 1, 1, '#4a3a2a');
+}
+
+/** Тенекрыл: a moth-like shadow flyer with ragged, beating wings. */
+function moth(c: Ctx, e: Enemy, t: number, flash: boolean, body: string, rim: string) {
+  const d = e.dir;
+  const x = Math.round(e.x), y = Math.round(e.y) - 6;
+  const flap = Math.sin(t * 16);
+  const wy = Math.round(flap * 6);
+  const wing = flash ? '#fff' : '#1a1630';
+  for (let i = 0; i < 7; i++) {
+    const k = i / 6;
+    line(c, x - d * 1, y - 1, x - d * (2 + k * 6), y - 2 - wy * (0.4 + k * 0.6) - k * 3, wing, 2);
+    line(c, x + d * 1, y - 1, x + d * (1 + k * 4), y - 2 - wy * (0.4 + k * 0.6) - k * 2, wing, 1);
+  }
+  line(c, x - d * 7, y - 2 - wy - 3, x - d * 2, y - 1, rim);
+  ellipse(c, x, y, 4, 2, flash ? '#fff' : body);
+  rect(c, x - d * 5, y, 2, 1, flash ? '#fff' : body);
+  line(c, x + d * 4, y - 1, x + d * 7, y - 5, rim);
+}
+
+/** Имаго-Кислотник: a heavy winged worm with a glowing acid sac. */
+function bomber(c: Ctx, e: Enemy, t: number, flash: boolean, body: string, rim: string, time: number) {
+  const d = e.dir;
+  const x = Math.round(e.x), y = Math.round(e.y) - 8;
+  const flap = Math.sin(t * 11);
+  const wy = Math.round(flap * 5);
+  const wing = flash ? '#fff' : 'rgba(150,140,200,0.55)';
+  for (const s of [-1, 1]) {
+    line(c, x + s * 3, y - 4, x + s * 13, y - 8 - wy, wing, 2);
+    line(c, x + s * 13, y - 8 - wy, x + s * 6, y - 3, wing, 1);
+  }
+  for (let i = 3; i >= 0; i--) disc(c, x - d * i * 4, y + Math.sin(t * 3 + i) * 1, 4 - i * 0.5, flash ? '#fff' : body);
+  rect(c, x - 5, y - 4, 10, 1, rim);
+  const glow = Math.sin(time * 6 + e.id) > 0 ? PAL.acid2 : PAL.acid1;
+  disc(c, x - d * 4, y + 5, 3, flash ? '#fff' : PAL.acid0);
+  disc(c, x - d * 4, y + 5, 2, glow);
+  if (e.attacking && Math.sin(time * 8) > 0.5) rect(c, x - d * 4, y + 9, 1, 2, PAL.acid2);
+}
+
+/** «Туман Тьмы»: a dithered shroud of darkness around a big worm. */
+export function drawFog(c: Ctx, e: Enemy, time: number, night: number) {
+  const r = ENEMIES[e.kind].fog;
+  if (!r || e.dead || night < FOG.fromNight) return;
+  const cy = e.layer === 'ground' && !ENEMIES[e.kind].underground ? GY - ENEMIES[e.kind].height * 0.5 : e.y;
+  const ry = r * 0.45;
+  const x0 = Math.round(e.x), y0 = Math.round(cy);
+  const ph = Math.floor(time * 6);
+  for (let y = -ry; y <= ry; y += 2) {
+    for (let x = -r; x <= r; x += 2) {
+      const k = (x * x) / (r * r) + (y * y) / (ry * ry);
+      if (k > 1) continue;
+      const h = ((x0 + x) * 7 + (y0 + y) * 13 + ph * 5) & 15;
+      if (h > (1 - k) * 14) continue;
+      rect(c, x0 + x, y0 + y, 2, 2, h % 3 === 0 ? 'rgba(60,30,90,0.55)' : 'rgba(8,5,18,0.6)');
+    }
+  }
+}
+
+/** A tunnel under the ground (dark burrow at the worm lane). */
+export function drawTunnel(c: Ctx, tn: Tunnel, time: number) {
+  if (Number.isNaN(tn.entryX)) return;
+  const a = Math.min(tn.entryX, tn.headX), b = Math.max(tn.entryX, tn.headX);
+  const y = WORLD.wormLaneY - 14;
+  for (let x = Math.round(a); x <= b; x += 2) {
+    const wob = Math.sin(x * 0.21 + tn.id) * 1.5;
+    rect(c, x, y - 4 + wob, 2, 8, '#06050b');
+    if ((x + tn.id) % 7 === 0) rect(c, x, y - 5 + wob, 1, 1, '#3a2a20');
+    if ((x + tn.id) % 9 === 0) rect(c, x, y + 4 + wob, 1, 1, '#2a1f18');
+  }
+  // shafts up to the surface
+  const shaft = (sx: number) => { for (let yy = WORLD.groundY; yy < y; yy += 2) rect(c, sx - 2 + Math.round(Math.sin(yy * 0.3) * 1), yy, 4, 2, '#06050b'); };
+  shaft(tn.entryX);
+  if (tn.open) shaft(tn.headX);
+  else if (Math.sin(time * 12) > 0) rect(c, tn.headX, y - 6, 1, 1, '#8a6a4a');
+}
+
+/** Surface mouths of an open tunnel, with the Keeper's sealing progress. */
+export function drawTunnelMouths(c: Ctx, tn: Tunnel, time: number) {
+  for (const [x, exit] of [[tn.entryX, false], [tn.headX, true]] as const) {
+    ellipse(c, x, GY - 1, 9, 3, '#3a2a1c');
+    ellipse(c, x, GY - 1, 6, 2, '#05040a');
+    rect(c, x - 10, GY - 3, 2, 2, '#4a3624');
+    rect(c, x + 8, GY - 3, 2, 2, '#4a3624');
+    if (exit) {
+      // red warning glint above the exit
+      if (Math.sin(time * 5 + tn.id) > 0) rect(c, x, GY - 14, 1, 3, '#ff6a4a');
+      rect(c, x, GY - 9, 1, 1, '#ff6a4a');
+    }
+  }
+  if (tn.seal > 0) {
+    const x = tn.headX;
+    const w = 20;
+    rect(c, x - w / 2, GY - 20, w, 3, '#1a0b14');
+    rect(c, x - w / 2, GY - 20, Math.max(1, w * Math.min(1, tn.seal)), 2, PAL.gold3);
   }
 }
 
@@ -307,6 +415,11 @@ export function drawEnemyEyes(c: Ctx, e: Enemy, time: number) {
   const x = Math.round(e.x), y = GY;
   const blink = Math.sin(time * 1.3 + e.id * 2.1) > 0.97;
   if (blink) return;
+  if (e.layer === 'under' && !ENEMIES[e.kind].underground) {
+    rect(c, e.x + e.dir * 3, e.y - 2, 1, 1, '#ffb070');
+    rect(c, e.x + e.dir * 5, e.y - 2, 1, 1, '#ffb070');
+    return;
+  }
   const eye = (ex: number, ey: number, col: string = PAL.eye) => {
     rect(c, ex, ey, 1, 1, col);
   };
@@ -358,6 +471,12 @@ export function drawEnemyEyes(c: Ctx, e: Enemy, time: number) {
     case 'tunnelerUp':
       eye(x + 9 * d, y - 7, '#ffd070');
       break;
+    case 'moth':
+      eye(e.x + 3 * d, e.y - 7, '#c8a0ff'); eye(e.x + 4 * d, e.y - 7, '#c8a0ff');
+      break;
+    case 'bomber':
+      eye(e.x + 3 * d, e.y - 10, '#d8ffb0'); eye(e.x + 4 * d, e.y - 9, '#d8ffb0');
+      break;
     default:
       break;
   }
@@ -365,7 +484,7 @@ export function drawEnemyEyes(c: Ctx, e: Enemy, time: number) {
 
 /** Silk strands on creatures caught by a weaver. */
 export function drawWeb(c: Ctx, e: Enemy) {
-  if (e.web <= 0 || ENEMIES[e.kind].underground) return;
+  if (e.web <= 0 || e.layer !== 'ground') return;
   const h = ENEMIES[e.kind].height;
   for (let i = -1; i <= 1; i++) line(c, e.x - 5, GY - 2 - (i + 1) * h * 0.25, e.x + 5, GY - 4 - (i + 1) * h * 0.2, 'rgba(230,226,255,0.55)');
   line(c, e.x, GY, e.x, GY - h * 0.7, 'rgba(230,226,255,0.4)');
@@ -376,8 +495,8 @@ export function drawAffix(c: Ctx, e: Enemy, time: number) {
   if (!e.affix) return;
   const a = AFFIXES[e.affix];
   const def = ENEMIES[e.kind];
-  const h = def.underground ? 10 : def.height;
-  const y0 = def.underground ? e.y : GY;
+  const h = e.layer === 'under' ? 10 : def.height;
+  const y0 = e.layer === 'ground' && !def.underground ? GY : e.y;
   for (let i = 0; i < 10; i++) {
     const ang = time * 3 + (i / 10) * Math.PI * 2;
     rect(c, e.x + Math.cos(ang) * (def.radius + 3), y0 - h * 0.5 + Math.sin(ang) * (h * 0.6 + 2), 1, 1, a.color);
@@ -392,7 +511,7 @@ export function drawEnemyHp(c: Ctx, e: Enemy) {
   if (e.hp >= e.maxHp || !e.lit) return;
   const def = ENEMIES[e.kind];
   const w = def.boss ? 60 : Math.max(8, Math.min(30, def.radius * 2));
-  const y = def.underground ? e.y - 12 : e.kind === 'mother' ? GY - 66 : e.kind === 'executioner' ? GY - 62 : GY - def.height - 6;
+  const y = e.layer !== 'ground' || def.underground ? e.y - (def.air ? def.height + 8 : 12) : e.kind === 'mother' ? GY - 66 : e.kind === 'executioner' ? GY - 62 : GY - def.height - 6;
   rect(c, e.x - w / 2, y, w, 2, '#1a0b14');
   rect(c, e.x - w / 2, y, Math.max(1, (w * e.hp) / e.maxHp), 1, def.worm ? '#ff9a3c' : '#c58cff');
 }

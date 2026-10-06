@@ -393,3 +393,15 @@ body { display: grid; place-items: center; }
 
 .ab .cd { max-height: 100%; }
 .ab > .cd, .ab > .charge, .ab > .lock { overflow: hidden; }
+
+/* v4.2: clear ability readiness */
+
+.ab .key { z-index: 2; }
+.ab .cd { top: 0; bottom: auto; height: 100% !important; max-height: none; transform-origin: top; transform: scaleY(0); background: rgba(4, 4, 14, 0.78); transition: none; }
+.ab .cdt { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--pix); font-size: calc(10 * var(--u)); color: #fff; text-shadow: 0 0 calc(2 * var(--u)) #000, 0 0 calc(2 * var(--u)) #000; pointer-events: none; }
+.ab.ready { border-color: var(--gold); animation: abready 1.1s ease-in-out infinite alternate; }
+@keyframes abready { from { box-shadow: 0 0 calc(3 * var(--u)) rgba(255, 200, 70, 0.45); } to { box-shadow: 0 0 calc(10 * var(--u)) rgba(255, 220, 120, 0.95); } }
+.ab.ready img { filter: brightness(1.25) drop-shadow(0 0 calc(2 * var(--u)) rgba(255, 220, 120, 0.9)); }
+.ab:not(.ready) img { filter: grayscale(0.35) brightness(0.75); }
+.ab.pop::before { content: ''; position: absolute; inset: 0; background: rgba(255, 240, 190, 0.85); animation: abpop 0.45s ease-out forwards; pointer-events: none; z-index: 3; }
+@keyframes abpop { from { opacity: 1; } to { opacity: 0; } }

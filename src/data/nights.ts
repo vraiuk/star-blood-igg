@@ -35,7 +35,7 @@ export const NIGHTS: NightDef[] = [
   },
   {
     title: 'Вторая ночь', hpMul: 1.2,
-    hint: 'Первые Черви! Фуражиры боятся света, Копатель роет к корням — призови Паука-ткача.',
+    hint: 'Первые Черви! Копатель роет лаз под гнёздами — встань Хранителем на выход, чтобы засыпать его, или поймай Пауком-ткачом.',
     groups: [
       g(2, 'hound', 'B', 4, 1.3), g(10, 'forager', 'L', 4, 1.2), g(16, 'worm', 'R', 1),
       g(26, 'hound', 'R', 5, 1), g(36, 'forager', 'R', 4, 1), g(40, 'hound', 'L', 5, 1),
@@ -52,10 +52,10 @@ export const NIGHTS: NightDef[] = [
   },
   {
     title: 'Четвёртая ночь', hpMul: 1.8,
-    hint: 'Тьма давит на Круг. Имаго-Прыгуны перескакивают Светожуков!',
+    hint: 'Тьма давит на Круг. Прыгуны перескакивают Светожуков, а Тенекрылы летят к кроне — их бьют стрекозы, ульи и Копьё.',
     groups: [
       g(2, 'hound', 'B', 6, 1), g(8, 'stalker', 'L', 2, 4), g(10, 'spitter', 'R', 3, 2.5), g(14, 'worm', 'B', 1), g(24, 'stalker', 'B', 1),
-      g(32, 'jumper', 'L', 4, 0.8),
+      g(32, 'jumper', 'L', 4, 0.8), g(18, 'moth', 'R', 4, 1), g(40, 'moth', 'L', 4, 1),
       g(20, 'forager', 'B', 6, 0.8), g(26, 'stalker', 'R', 2, 4), g(30, 'spitter', 'L', 3, 2.5), g(36, 'worm', 'B', 1),
       g(42, 'hound', 'B', 8, 0.7), g(50, 'stalker', 'B', 1),
     ],
@@ -81,10 +81,11 @@ export const NIGHTS: NightDef[] = [
   },
   {
     title: 'Седьмая ночь', hpMul: 3.3,
-    hint: 'Рой Фуражиров. Чем шире Круг — тем больше их сгорит в свету.',
+    hint: 'Рой Фуражиров и первые Кислотники: они зависают над гнёздами и роняют кислоту.',
     groups: [
       g(2, 'forager', 'B', 12, 0.5), g(10, 'stalker', 'B', 2, 4), g(20, 'reaper', 'B', 1), g(16, 'guard', 'B', 1), g(22, 'spitter', 'B', 4, 2),
       g(30, 'forager', 'B', 12, 0.45), g(38, 'worm', 'B', 3, 3), g(46, 'hound', 'B', 10, 0.5), g(54, 'stalker', 'B', 2, 3),
+      g(26, 'bomber', 'L', 2, 4), g(44, 'bomber', 'R', 2, 4), g(12, 'moth', 'B', 4, 0.8),
     ],
   },
   {
@@ -92,7 +93,7 @@ export const NIGHTS: NightDef[] = [
     hint: 'Ледозубы стадом. Держи их Светожуками и Молотом.',
     groups: [
       g(2, 'hound', 'B', 10, 0.6), g(8, 'stalker', 'B', 4, 3), g(24, 'reaper', 'B', 2, 4), g(18, 'tunneler', 'B', 1), g(30, 'jumper', 'B', 4, 0.6), g(14, 'guard', 'B', 2, 6), g(20, 'spitter', 'B', 4, 2),
-      g(28, 'worm', 'B', 3, 3), g(34, 'forager', 'B', 10, 0.5), g(42, 'stalker', 'B', 3, 3), g(52, 'hound', 'B', 12, 0.45),
+      g(28, 'worm', 'B', 3, 3), g(34, 'forager', 'B', 10, 0.5), g(42, 'stalker', 'B', 3, 3), g(52, 'hound', 'B', 12, 0.45), g(36, 'moth', 'B', 6, 0.6), g(46, 'bomber', 'B', 2, 4),
     ],
   },
   {
@@ -110,7 +111,7 @@ export const NIGHTS: NightDef[] = [
     groups: [
       g(2, 'hound', 'B', 10, 0.6), g(8, 'executioner', 'L', 1), g(20, 'reaper', 'B', 2, 4), g(12, 'stalker', 'R', 3, 3), g(18, 'guard', 'B', 2, 5),
       g(24, 'mother', 'R', 1), g(30, 'spitter', 'B', 5, 1.8), g(38, 'forager', 'B', 14, 0.4), g(46, 'worm', 'B', 3, 3),
-      g(54, 'stalker', 'B', 3, 3), g(62, 'hound', 'B', 14, 0.4),
+      g(54, 'stalker', 'B', 3, 3), g(62, 'hound', 'B', 14, 0.4), g(34, 'bomber', 'B', 3, 3), g(16, 'moth', 'B', 6, 0.6),
     ],
   },
 ];
@@ -138,13 +139,17 @@ export const ENDLESS = {
   bossHp: (n: number) => (1 + 0.12 * Math.max(0, n - 4)) * Math.pow(1.04, Math.max(0, n - 9)),
   /** extra growth of underground worm groups per night */
   wormCount: 0.06,
+  /** big Imago (Копатель, Страж) toughen faster after the campaign: hp, armor, bite */
+  heavyHp: (n: number) => 1 + 0.07 * Math.max(0, n - 9),
+  heavyArmor: (n: number) => 0.8 * Math.max(0, n - 9),
+  heavyDamage: (n: number) => 1 + 0.035 * Math.max(0, n - 9),
   /** threat budget of a generated night */
   budget: (n: number) => 120 + 14 * n,
 } as const;
 
 /** Threat cost of one creature (for the generator's budget). */
 const THREAT: Partial<Record<EnemyKind, number>> = {
-  hound: 1, forager: 1, spitter: 2.5, stalker: 5, worm: 3.5, guard: 7, reaper: 9, jumper: 1.8, tunneler: 5,
+  hound: 1, forager: 1, moth: 1.4, bomber: 4.5, spitter: 2.5, stalker: 5, worm: 3.5, guard: 7, reaper: 9, jumper: 1.8, tunneler: 5,
 };
 /** Night index from which a kind appears in generated nights, and its weight. */
 const POOL: Array<{ kind: EnemyKind; from: number; w: number; size: [number, number] }> = [
@@ -152,11 +157,13 @@ const POOL: Array<{ kind: EnemyKind; from: number; w: number; size: [number, num
   { kind: 'forager', from: 0, w: 4, size: [5, 12] },
   { kind: 'spitter', from: 0, w: 2.5, size: [2, 4] },
   { kind: 'stalker', from: 0, w: 3.2, size: [2, 4] },
-  { kind: 'worm', from: 0, w: 2, size: [1, 3] },
-  { kind: 'guard', from: 0, w: 1.8, size: [1, 3] },
+  { kind: 'worm', from: 0, w: 2, size: [2, 4] },
+  { kind: 'guard', from: 0, w: 1.8, size: [2, 4] },
   { kind: 'reaper', from: 0, w: 2.2, size: [1, 3] },
   { kind: 'jumper', from: 0, w: 2.2, size: [3, 6] },
   { kind: 'tunneler', from: 0, w: 1.6, size: [1, 3] },
+  { kind: 'moth', from: 0, w: 2.6, size: [3, 7] },
+  { kind: 'bomber', from: 0, w: 1.6, size: [1, 3] },
 ];
 
 const LORE_HINTS = [
@@ -194,16 +201,17 @@ interface Theme {
 
 const THEMES: Record<string, Theme> = {
   calm: { name: 'Тихая ночь', hint: 'Тьма переводит дух. Время строить и копить.', budget: 0.55, weights: { hound: 2, spitter: 1 }, rest: 0.2 },
-  worms: { name: 'Ночь Червей', hint: 'Имаго роют к корням толпой — держи паучий котёл у ствола.', budget: 1.25, weights: { worm: 6, guard: 4, forager: 2 }, rest: 0.25 },
+  worms: { name: 'Ночь Червей', hint: 'Имаго роют к корням толпой — держи паучий котёл у ствола.', budget: 1.35, weights: { worm: 6, guard: 6, forager: 1.5 }, rest: 0.25 },
   wolves: { name: 'Охота Найтволков', hint: 'Стаи найтволков несутся к Кругу со всех сторон.', budget: 1.1, weights: { hound: 6, spitter: 1.5 }, rest: 0.2 },
   heavy: { name: 'Поступь Ледозубов', hint: 'Тяжёлые твари ломают гнёзда. Светожуки, держите строй!', budget: 1.15, weights: { stalker: 5, reaper: 1.5, hound: 1 }, rest: 0.2 },
   swarm: { name: 'Рой Фуражиров', hint: 'Рой Имаго-Фуражиров. Чем шире Круг — тем больше сгорит.', budget: 1.1, weights: { forager: 7, worm: 1.5 }, rest: 0.15 },
   reap: { name: 'Жатва', hint: 'Имаго-Жнецы идут косить гнёзда.', budget: 1.2, weights: { reaper: 4, stalker: 2, spitter: 2 }, rest: 0.2 },
   flank: { name: 'Натиск с фланга', hint: 'Вся тьма давит на одну сторону Круга!', budget: 1.3, weights: {}, rest: 1, oneSide: true },
+  sky: { name: 'Крылья над Кругом', hint: 'Тенекрылы и Кислотники летят поверх строя — стрекозы, ульи и Копьё!', budget: 1.15, weights: { moth: 6, bomber: 4, hound: 1 }, rest: 0.2 },
   mixed: { name: '', hint: '', budget: 1, weights: {}, rest: 1 },
 };
-const MEDIUM = ['mixed', 'wolves', 'swarm', 'heavy', 'reap', 'mixed'];
-const SPIKES = ['worms', 'flank', 'heavy', 'worms', 'reap'];
+const MEDIUM = ['mixed', 'wolves', 'swarm', 'heavy', 'reap', 'sky', 'mixed'];
+const SPIKES = ['worms', 'flank', 'heavy', 'worms', 'reap', 'sky'];
 
 /** Procedural night (deterministic per index). Cycle of 5: breather → medium → medium → spike → boss. */
 export function generateNight(n: number): NightDef {

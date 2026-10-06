@@ -1,5 +1,5 @@
 import { Audio } from './audio/audio';
-import { ABILITIES, SLOTS, WORLD, crownPos, type AbilityId } from './data/balance';
+import { ABILITIES, SLOTS, WORLD, crownPos, treeScale, type AbilityId } from './data/balance';
 import { PATHS, coinsForRun } from './data/meta';
 import { Renderer, type ViewState } from './render/renderer';
 import { treeHeight } from './render/tree';
@@ -171,21 +171,25 @@ function toWorld(ev: MouseEvent): [number, number] {
 }
 hud.setProjector((x, y) => renderer.camera.toScreen(x, y, cssW, cssH));
 
+/** Clickable height of surface nests (matches their sprites). */
+const PICK_H: Record<string, number> = { hive: 42, beetle: 20, dragonfly: 36, termite: 22, spider: 12 };
+
 function pick(mx: number, my: number): MenuTarget | null {
   const s = game.state;
-  for (const st of s.structures) {
-    if (st.crown || Math.abs(mx - st.x) > 10) continue;
-    if (st.underground ? Math.abs(my - st.y) < 12 : my > WORLD.groundY - 55 && my < WORLD.groundY + 6) {
-      return { kind: 'structure', id: st.id };
-    }
-  }
+  // the crown first: on a young tree its slots hang low, right above the surface nests
   for (const st of s.structures) {
     if (st.crown && Math.hypot(mx - st.x, my - st.y - 3) < 10) return { kind: 'structure', id: st.id };
   }
   for (const sl of SLOTS) {
     if (!sl.crown || !game.slotUnlocked(sl) || game.structureAt(sl.id)) continue;
-    const p = crownPos(s.tree.stage, Number(sl.id.slice(1)));
+    const p = crownPos(s.tree.stage, Number(sl.id.slice(1)), s.tree.rings);
     if (Math.hypot(mx - p.x, my - p.y) < 10) return { kind: 'slot', slotId: sl.id };
+  }
+  for (const st of s.structures) {
+    if (st.crown || Math.abs(mx - st.x) > 10) continue;
+    if (st.underground ? Math.abs(my - st.y) < 12 : my > WORLD.groundY - PICK_H[st.family] && my < WORLD.groundY + 6) {
+      return { kind: 'structure', id: st.id };
+    }
   }
   for (const sl of SLOTS) {
     if (sl.crown || !game.slotUnlocked(sl) || game.structureAt(sl.id) || Math.abs(mx - sl.x) > 10) continue;
@@ -193,7 +197,7 @@ function pick(mx: number, my: number): MenuTarget | null {
       return { kind: 'slot', slotId: sl.id };
     }
   }
-  const th = treeHeight(s.tree.stage);
+  const th = treeHeight(s.tree.stage) * treeScale(s.tree.rings);
   if (Math.abs(mx - WORLD.treeX) < 10 + th * 0.3 && my > WORLD.groundY - th && my < WORLD.groundY + 8) return { kind: 'tree' };
   return null;
 }

@@ -1,6 +1,6 @@
 import {
-  ABILITIES, ABILITY_STAGE_SCALING, AFFIXES, ARMOR_FLOOR, ATTR_MAX, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
-  SLOT_MARGIN, SLOTS, crownPos, WORLD, WORM_LIGHT_MULT,
+  ABILITIES, ABILITY_STAGE_SCALING, AFFIXES, ARMOR_FLOOR, ATTR_MAX, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
+  SLOT_MARGIN, SLOTS, crownPos, ringsForCrownSlot, WORLD, WORM_LIGHT_MULT, FOG,
   type AbilityId, type AttrId, type EnemyKind, type SlotDef,
 } from '../data/balance';
 import { PATHS } from '../data/meta';
@@ -17,7 +17,14 @@ import {
 } from '../data/runes';
 import { TREE, TREE_BRANCHES, TREE_STAGES } from '../data/tree';
 import { mulberry32 } from './rng';
-import type { Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Projectile, Soldier, Structure } from './types';
+import type { Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Projectile, Soldier, Structure, Tunnel } from './types';
+
+/** Big underground Imago that toughen faster in endless nights. */
+const HEAVY = new Set<EnemyKind>(['worm', 'guard']);
+/** Underground creatures that dig Лазы for the others. */
+/** Dragonflies are hunters of the air. */
+const DRAGONFLY_VS_AIR = 1.6;
+const DIGGERS = new Set<EnemyKind>(['worm', 'guard', 'tunneler']);
 
 /** Seconds after the last spawn before dawn burns remaining creatures. */
 export const NIGHT_GRACE = 60;
@@ -74,8 +81,8 @@ export class Game {
     const st0 = TREE_STAGES[0];
     this.state = {
       phase: 'day', night: 0, phaseTime: 0, dayLeft: DAY.firstLength,
-      amber: ECONOMY.startAmber + this.mods.startAmber, star: this.mods.startStar, devRunes: 0,
-      enemies: [], structures: [], projectiles: [], drops: [], workers: [], soldiers: [], tempLights: [], burns: [],
+      amber: ECONOMY.startAmber + this.mods.startAmber, star: this.mods.startStar, devRunes: 0, wrath: 1,
+      enemies: [], structures: [], projectiles: [], drops: [], workers: [], soldiers: [], tempLights: [], burns: [], tunnels: [],
       keeper: {
         x: WORLD.treeX - 28, dir: 1, hp: KEEPER.hp, alive: true, respawn: 0, light: KEEPER.startLight, move: 0,
         cooldowns: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0 },
@@ -109,7 +116,8 @@ export class Game {
   /** Nest / spark power: stage power × growth rings. */
   treePower() { return this.stageDef.power * (1 + RINGS.power * this.state.tree.rings); }
   treeRadius() {
-    const flare = this.state?.keeper?.radianceT > 0 ? ABILITIES.radiance.radius * this.runeArea('radiance') : 0;
+    const flare = this.state?.keeper?.radianceT > 0
+      ? ABILITIES.radiance.radius * this.runeArea('radiance') + (this.propCount('radiance', 'rd-wide') ? 0.15 : 0) : 0;
     return this.stageDef.radius * (1 + this.mods.lightRadius + flare);
   }
   keeperMaxHp() { return Math.round((KEEPER_RANKS[this.state.keeper.rank].hp + this.mods.keeperHp) * (1 + 0.1 * this.state.keeper.attrs.body)); }
@@ -152,7 +160,7 @@ export class Game {
     const merge = st.merge ?? 0, asc = st.ascend ?? 0;
     const boost = (1 + MERGE.power * merge) * (1 + ASCEND.power * asc);
     const dmg = (1 + m.famDamage[st.family]) * this.treePower() * boost;
-    const rng = (1 + m.famRange[st.family]) * (1 + MERGE.range * merge);
+    const rng = (1 + m.famRange[st.family]) * (1 + MERGE.range * merge) * (st.family === 'spider' ? 1 : this.stageDef.reach);
     const hpBoost = (1 + MERGE.hp * merge) * (1 + ASCEND.power * asc);
     return {
       ...base,
@@ -193,7 +201,9 @@ export class Game {
   canPay(p: Price) { return this.state.amber >= p.amber && this.state.star >= p.star; }
 
   abilityCost(id: AbilityId) {
-    const own = id === 'spear' ? this.mods.spearCost : id === 'hammer' ? this.mods.hammerCost : 0;
+    const own = id === 'spear' ? this.mods.spearCost : id === 'hammer' ? this.mods.hammerCost
+      : id === 'radiance' && this.propCount('radiance', 'rd-cheap') ? -0.35
+      : id === 'swarm' && this.propCount('swarm', 'sw-cheap') ? -0.35 : 0;
     return Math.round(ABILITIES[id].cost * Math.max(0.3, 1 + this.mods.abilityCost + own));
   }
 
@@ -237,7 +247,10 @@ export class Game {
 
   slotUnlocked(slot: SlotDef): boolean {
     const r = this.treeRadius();
-    if (slot.underground || slot.crown) return this.state.tree.stage + 1 >= (slot.unlockStage ?? 1);
+    if (slot.crown) {
+      return this.state.tree.stage + 1 >= (slot.unlockStage ?? 1) && this.state.tree.rings >= ringsForCrownSlot(Number(slot.id.slice(1)));
+    }
+    if (slot.underground) return this.state.tree.stage + 1 >= (slot.unlockStage ?? 1);
     return slot.offset <= r - SLOT_MARGIN;
   }
   structureAt(slotId: string): Structure | undefined { return this.state.structures.find((s) => s.slotId === slotId); }
@@ -298,7 +311,7 @@ export class Game {
       aim: slot.x < WORLD.treeX ? -1 : 1, haste: 0, intercept: 0, merge: 0, ascend: 0,
     };
     if (st.crown) {
-      const p = crownPos(s.tree.stage, Number(slotId.slice(1)));
+      const p = crownPos(s.tree.stage, Number(slotId.slice(1)), s.tree.rings);
       st.x = p.x; st.y = p.y;
     }
     st.maxHp = st.hp = this.nestStats(st).hp;
@@ -609,6 +622,7 @@ export class Game {
     }
     let cd = def.cooldown * (id === 'hammer' && this.mods.hammerCost < 0 ? 0.75 : 1) * runeRankCd(k.runeRank[id]);
     void form;
+    if ((id === 'radiance' && this.propCount('radiance', 'rd-cheap')) || (id === 'swarm' && this.propCount('swarm', 'sw-cheap'))) cd *= 0.8;
     if (id === 'spear' && k.forms.spear === 'B') cd = Math.max(cd, 2.2 * runeRankCd(k.runeRank[id]));
     if (id === 'spear' && k.forms.spear === 'A') cd = Math.max(cd, 1.1 * runeRankCd(k.runeRank[id]));
     k.cooldowns[id] = cd;
@@ -638,7 +652,7 @@ export class Game {
     const s = this.state;
     const k = s.keeper;
     const def = ABILITIES.swarm;
-    k.swarmT = def.duration * this.runeArea('swarm');
+    k.swarmT = def.duration * this.runeArea('swarm') * (this.propCount('swarm', 'sw-long') ? 1.5 : 1);
     k.swarmX = k.x;
     const reach = this.swarmReach();
     for (const st of s.structures) {
@@ -718,7 +732,7 @@ export class Game {
         x: k.x, radius: 100 * area, life, maxLife: life, slow: 0.5, dps: 34 * mult, haste: 0.4, heal: apo ? 30 : 0,
       });
       for (const e of s.enemies) {
-        if (e.dead || ENEMIES[e.kind].underground || Math.abs(e.x - k.x) > 100 * area) continue;
+        if (e.dead || e.layer !== 'ground' || Math.abs(e.x - k.x) > 100 * area) continue;
         this.damageEnemy(e, def.damage * 0.5 * mult);
       }
       return;
@@ -726,8 +740,8 @@ export class Game {
     let hits = 0;
     const radius = def.radius * (1 + this.mods.hammerRadius) * area;
     for (const e of s.enemies) {
-      const under = ENEMIES[e.kind].underground;
-      if (e.dead || (under && !this.mods.hammerQuake)) continue;
+      const under = (e.layer === 'under');
+      if (e.dead || e.layer === 'air' || (under && !this.mods.hammerQuake)) continue;
       const d = e.x - k.x;
       if (Math.abs(d) > radius) continue;
       hits++;
@@ -735,6 +749,9 @@ export class Game {
       this.damageEnemy(e, def.damage * mult);
       this.stunEnemy(e, def.stun);
       if (e.kind !== 'mother') e.kick = Math.sign(d || -e.dir) * def.knockback * 3;
+    }
+    for (const tn of [...s.tunnels]) {
+      if (tn.open && (Math.abs(tn.headX - k.x) <= radius || Math.abs(tn.entryX - k.x) <= radius)) this.collapseTunnel(tn, 'hammer');
     }
     if (this.mods.hammerRefund) k.light = Math.min(this.maxLight(), k.light + Math.min(30, hits * 5));
     s.tempLights.push({ x: k.x, radius: def.lightRadius * area, life: def.lightTime, maxLife: def.lightTime });
@@ -775,7 +792,7 @@ export class Game {
     if (form === 'B') {
       // Звёздный ливень: stars rain over the whole Circle for a few seconds
       const n = apo ? 35 : 20;
-      const targets = s.enemies.filter((e) => !e.dead && !ENEMIES[e.kind].underground && e.lit);
+      const targets = s.enemies.filter((e) => !e.dead && !(e.layer === 'under') && e.lit);
       for (let i = 0; i < n; i++) {
         let x: number;
         if (apo && targets.length) x = targets[i % targets.length].x + (this.rand() - 0.5) * 16;
@@ -830,6 +847,7 @@ export class Game {
 
     this.updateKeeper(dt);
     this.updateEnemies(dt);
+    this.updateTunnels(dt);
     this.updateStructures(dt);
     this.updateTree(dt);
     this.updateProjectiles(dt);
@@ -880,6 +898,8 @@ export class Game {
     s.phaseTime = 0;
     s.dayLeft = 0;
     s.tree.shieldUsed = false;
+    this.nightMinReach = Infinity;
+    this.nightTreeDmg = 0;
     const def = this.night(s.night);
     const handMade = s.night < this.campaignNights;
     const pending: PendingSpawn[] = [];
@@ -929,10 +949,10 @@ export class Game {
       this.emit({ type: 'built', family: 'beetle', x: slot.x, y: slot.y, underground: false, tier: g.tier });
     }
     this.graveyard = [];
+    s.tunnels = [];
     if (!s.keeper.alive) s.keeper.respawn = 0.5;
+    this.adaptWrath(finished);
     this.emit({ type: 'dawn', night: finished, gift });
-    // after every boss night the Observer marks a Feat: bank the run or go on
-    if ((finished + 1) % 5 === 0) s.choices.push({ kind: 'feat', night: finished + 1 });
     this.offerDawn(false);
   }
 
@@ -943,7 +963,7 @@ export class Game {
   private offerDawn(start: boolean) {
     const s = this.state;
     const offers = this.rollOffers(start ? 1 : maxRankForNight(s.night - 1));
-    if (offers.length) s.choices.push({ kind: 'dawn', offers });
+    if (offers.length) s.choices.push({ kind: 'dawn', offers, start });
   }
 
   private rollOffers(maxRank: number): string[] {
@@ -1008,7 +1028,7 @@ export class Game {
     const nightMul = this.night(s.night).hpMul;
     const pathMul = PATHS[this.path].hp;
     // bosses are tuned at their absolute value on first appearance, then grow slowly
-    let hp = Math.round(def.hp * (def.boss ? ENDLESS.bossHp(s.night) : nightMul) * pathMul);
+    let hp = Math.round(def.hp * (def.boss ? ENDLESS.bossHp(s.night) : nightMul) * pathMul * s.wrath * (HEAVY.has(kind) ? ENDLESS.heavyHp(s.night) : 1));
     let affix: Enemy['affix'] = null;
     if (!def.boss && kind !== 'larva' && s.night >= ELITE.fromNight && this.rand() < ELITE.chance(s.night)) {
       const list = Object.keys(AFFIXES) as Array<NonNullable<Enemy['affix']>>;
@@ -1016,12 +1036,19 @@ export class Game {
       hp = Math.round(hp * ELITE.hp);
     }
     const e: Enemy = {
-      id: s.nextId++, kind, x, y: def.underground ? WORLD.wormLaneY : WORLD.groundY, dir,
+      id: s.nextId++, kind, x, y: def.underground ? WORLD.wormLaneY : def.air ? WORLD.groundY - def.altitude : WORLD.groundY, dir,
       hp, maxHp: hp, speedMul: 0.92 + this.rand() * 0.16, attackCd: 0.3 + this.rand() * 0.4,
       stun: 0, sinceStun: 99, rooted: 0, slow: 0, poison: 0, poisonTime: 0, marked: 0, burn: 0, vuln: 0, armorBreak: 0, web: 0, affix, jumpCd: 0, jumping: 0,
       attacking: false, lit: false, age: this.rand() * 3, hitFlash: 0,
       broodCd: (BROOD[kind]?.every ?? 5) * 0.6, kick: 0, dead: false,
+      layer: def.underground ? 'under' : def.air ? 'air' : 'ground', tunnel: 0, usedTunnel: false, fogged: false,
     };
+    if (DIGGERS.has(kind)) {
+      // every digger drives a tunnel toward the trunk
+      const tn: Tunnel = { id: s.nextId++, dir, entryX: NaN, headX: x, open: false, seal: 0 };
+      s.tunnels.push(tn);
+      e.tunnel = tn.id;
+    }
     s.enemies.push(e);
     return e;
   }
@@ -1068,7 +1095,7 @@ export class Game {
       if (Math.floor(before / BEAM_TICK) !== Math.floor(k.channel / BEAM_TICK)) {
         const apo = this.apotheosis('spear');
         for (const e of s.enemies) {
-          if (e.dead || ENEMIES[e.kind].underground || (e.x - k.x) * k.channelDir < 0) continue;
+          if (e.dead || (e.layer === 'under') || (e.x - k.x) * k.channelDir < 0) continue;
           this.damageEnemy(e, k.channelDps * BEAM_TICK);
           if (apo) { e.marked = Math.max(e.marked, 3); this.damageQuiet(e, k.channelDps * BEAM_TICK * 0.4); }
         }
@@ -1085,7 +1112,7 @@ export class Game {
     // radiance: the Ascended burns creatures pressing against him
     const aura = this.keeperAura();
     for (const e of s.enemies) {
-      if (e.dead || ENEMIES[e.kind].underground || Math.abs(e.x - k.x) > ENEMIES[e.kind].radius + 14) continue;
+      if (e.dead || e.layer !== 'ground' || Math.abs(e.x - k.x) > ENEMIES[e.kind].radius + 14) continue;
       this.damageQuiet(e, aura * dt);
     }
   }
@@ -1126,16 +1153,16 @@ export class Game {
   damageEnemy(e: Enemy, amount: number, lightMult = true, fromNest = false): number {
     if (e.dead) return 0;
     const def = ENEMIES[e.kind];
-    const worm = lightMult && def.worm && this.isLit(e.x, def.underground);
+    const worm = lightMult && def.worm && !e.fogged && this.isLit(e.x, e.layer === 'under');
     const k0 = this.state.keeper;
     const fury = fromNest && k0.swarmT > 0 && this.propCount('swarm', 'sw-fury') > 0 ? 1.4 : 1;
     const mark = (fromNest && e.marked > 0 ? 1.25 : 1) * fury;
     const raw = amount * (worm ? WORM_LIGHT_MULT : 1) * mark * (1 + e.vuln);
-    const armor = e.armorBreak > 0 ? 0 : def.armor + (e.affix === 'armored' ? ELITE.armor : 0);
+    const armor = e.armorBreak > 0 ? 0 : def.armor + (e.affix === 'armored' ? ELITE.armor : 0) + (def.armor > 0 && HEAVY.has(e.kind) ? ENDLESS.heavyArmor(this.state.night) : 0);
     const dmg = Math.max(raw * ARMOR_FLOOR, raw - armor);
     e.hp -= dmg;
     e.hitFlash = 0.12;
-    this.emit({ type: 'hit', x: e.x, y: def.underground ? e.y : e.y - def.height * 0.6, amount: dmg, crit: worm });
+    this.emit({ type: 'hit', x: e.x, y: e.layer === 'under' ? e.y : e.y - def.height * 0.6, amount: dmg, crit: worm });
     if (e.hp <= 0) this.killEnemy(e);
     return dmg;
   }
@@ -1143,6 +1170,7 @@ export class Game {
   private killEnemy(e: Enemy) {
     const s = this.state;
     e.dead = true;
+    if (e.tunnel && DIGGERS.has(e.kind)) s.tunnels = s.tunnels.filter((t) => t.id !== e.tunnel || t.open);
     s.stats.kills++;
     const def = ENEMIES[e.kind];
     const k = s.keeper;
@@ -1184,7 +1212,7 @@ export class Game {
       if (v <= 0) continue;
       const d: Drop = {
         id: s.nextId++, kind, x: Math.max(8, Math.min(WORLD.width - 8, e.x)),
-        y: def.underground ? WORLD.groundY - 2 : e.y - def.height * 0.5,
+        y: e.layer === 'under' ? WORLD.groundY - 2 : e.y - def.height * 0.5,
         vx: (this.rand() - 0.5) * 70, vy: -60 - this.rand() * 60, value: v,
         life: 0, grounded: false, pulled: false, age: 0, claimed: 0, rooted: false, mode: 0, hover: 0,
       };
@@ -1195,6 +1223,11 @@ export class Game {
 
   private updateEnemies(dt: number) {
     const s = this.state;
+    // «Туман Тьмы»: big worms shroud everything around them
+    const fogs = s.night >= FOG.fromNight ? s.enemies.filter((e) => !e.dead && ENEMIES[e.kind].fog) : [];
+    for (const e of s.enemies) {
+      e.fogged = fogs.some((f) => f.layer === e.layer && Math.abs(f.x - e.x) <= ENEMIES[f.kind].fog!);
+    }
     for (const e of s.enemies) {
       if (e.dead) continue;
       const def = ENEMIES[e.kind];
@@ -1211,12 +1244,14 @@ export class Game {
         e.x += e.dir * (JUMP.distance / JUMP.time) * dt;
         continue;
       }
-      e.lit = this.isLit(e.x, def.underground);
+      e.lit = this.isLit(e.x, e.layer === 'under');
+      const reach = Math.abs(e.x - WORLD.treeX);
+      if (reach < this.nightMinReach) this.nightMinReach = reach;
       e.attacking = false;
       e.slow = this.slowAt(e);
       e.vuln = this.vulnAt(e);
       e.attackCd -= dt;
-      if (def.worm && e.lit) {
+      if (def.worm && e.lit && !e.fogged) {
         // Igg-light burns worms: «личинка сгорает за одну-две секунды»
         const flare = s.keeper.radianceT > 0 ? ABILITIES.radiance.burn : 1;
         e.hp -= this.stageDef.wormBurn * (1 + this.mods.wormBurn) * flare * (def.boss ? 0.5 : 1) * dt;
@@ -1224,14 +1259,14 @@ export class Game {
       }
       if (e.poisonTime > 0) {
         e.poisonTime -= dt;
-        this.damageQuiet(e, e.poison * dt);
+        this.damageQuiet(e, e.poison * dt, false);
         if (e.dead) continue;
       }
       for (const b of s.burns) {
-        if (!def.underground && Math.abs(e.x - b.x) <= b.halfWidth) this.damageQuiet(e, b.dps * dt);
+        if (e.layer === 'ground' && Math.abs(e.x - b.x) <= b.halfWidth) this.damageQuiet(e, b.dps * dt);
       }
       for (const t of s.tempLights) {
-        if (t.dps && !def.underground && Math.abs(e.x - t.x) <= t.radius) this.damageQuiet(e, t.dps * dt);
+        if (t.dps && e.layer !== 'under' && Math.abs(e.x - t.x) <= t.radius) this.damageQuiet(e, t.dps * dt);
       }
       if (e.dead) continue;
 
@@ -1261,10 +1296,14 @@ export class Game {
         const up = this.spawnEnemy('tunnelerUp', e.x, e.dir);
         up.hp = up.maxHp * (e.hp / e.maxHp);
         up.affix = e.affix;
+        this.openTunnel(e);
         this.emit({ type: 'emerge', x: e.x });
         continue;
       }
-      if (def.underground) { this.updateWorm(e, dt); continue; }
+      if (e.layer === 'air') { this.updateFlyer(e, dt); continue; }
+      if (e.layer === 'under' && !def.underground) { this.crawlTunnel(e, dt); continue; }
+      if (e.layer === 'under') { this.updateWorm(e, dt); continue; }
+      if (!e.usedTunnel && !def.boss && e.jumping <= 0 && this.diveIntoTunnel(e)) continue;
 
       const target = this.pickTarget(e);
       // jumpers leap over blocking nests
@@ -1278,10 +1317,18 @@ export class Game {
         e.attacking = true;
         if (e.attackCd <= 0) {
           e.attackCd = def.attackRate;
-          const dmg = def.damage * this.enemyDamageMul();
+          const dmg = def.damage * this.enemyDamageMul(e.kind);
+          if (def.cleave) {
+            // sweeping bite mows down the termite squad around it
+            let hit = 0;
+            for (const u of s.soldiers) {
+              if (u.hp > 0 && Math.abs(u.x - e.x) <= def.cleave + def.radius) { this.damageSoldier(u, dmg, e); hit++; }
+            }
+            if (hit) this.emit({ type: 'cleave', x: e.x, r: def.cleave });
+          }
           if (def.range > 0) this.spitAcid(e, target);
           else if (target.kind === 'structure') this.damageStructure(target.s, dmg * def.structureMult, e);
-          else if (target.kind === 'soldier') this.damageSoldier(target.u, dmg, e);
+          else if (target.kind === 'soldier') { if (!def.cleave) this.damageSoldier(target.u, dmg, e); }
           else if (target.kind === 'keeper') this.damageKeeper(dmg);
           else this.damageTree(dmg, e.kind, e);
         }
@@ -1301,7 +1348,7 @@ export class Game {
       e.attacking = true;
       if (e.attackCd <= 0) {
         e.attackCd = def.attackRate;
-        this.damageStructure(nest, def.damage * def.structureMult * this.enemyDamageMul(), e);
+        this.damageStructure(nest, def.damage * def.structureMult * this.enemyDamageMul(e.kind), e);
       }
       return;
     }
@@ -1309,40 +1356,198 @@ export class Game {
       e.attacking = true;
       if (e.attackCd <= 0) {
         e.attackCd = def.attackRate;
-        this.damageTree(def.damage * this.enemyDamageMul(), e.kind, e);
+        this.damageTree(def.damage * this.enemyDamageMul(e.kind), e.kind, e);
       }
       return;
     }
     if (e.rooted > 0) { e.rooted -= dt; return; }
     const dist = Math.abs(e.x - WORLD.treeX);
+    const tn = this.state.tunnels.find((t) => t.id === e.tunnel);
+    if (tn) {
+      if (Number.isNaN(tn.entryX) && dist <= this.treeRadius() + TUNNELS.entryPad) tn.entryX = e.x;
+      tn.headX = e.x;
+      if (e.kind !== 'tunneler' && dist <= this.tunnelExit()) {
+        // the digger breaks out behind the defenses: now the Keeper and the nests can hit it
+        this.openTunnel(e);
+        e.layer = 'ground';
+        e.y = WORLD.groundY - 6;
+        e.usedTunnel = true;
+        this.emit({ type: 'emerge', x: e.x });
+        return;
+      }
+    }
     const targetY = dist < 90 ? WORLD.wormLaneY - (1 - dist / 90) * 30 : WORLD.wormLaneY;
     e.y += (targetY - e.y) * Math.min(1, dt * 2);
     e.x += e.dir * def.speed * e.speedMul * (1 - e.slow) * dt;
   }
 
-  private slowAt(e: Enemy): number {
+  /** Distance from the trunk where diggers break out. */
+  tunnelExit() { return Math.max(TUNNELS.exitMin, this.treeRadius() * TUNNELS.exitShare); }
+
+  private openTunnel(e: Enemy) {
+    const tn = this.state.tunnels.find((t) => t.id === e.tunnel);
+    e.tunnel = 0;
+    if (!tn) return;
+    if (Number.isNaN(tn.entryX)) { this.state.tunnels = this.state.tunnels.filter((t) => t !== tn); return; }
+    tn.headX = e.x;
+    tn.open = true;
+    this.emit({ type: 'tunnelOpen', x: e.x });
+  }
+
+  /** A ground creature between a tunnel's mouths dives in and skips the nests. */
+  private diveIntoTunnel(e: Enemy): boolean {
+    for (const tn of this.state.tunnels) {
+      if (!tn.open || tn.dir !== e.dir) continue;
+      if ((e.x - tn.entryX) * e.dir < 0 || (tn.headX - e.x) * e.dir <= 8) continue;
+      e.layer = 'under';
+      e.tunnel = tn.id;
+      e.y = WORLD.wormLaneY - 14;
+      e.attacking = false;
+      this.emit({ type: 'emerge', x: e.x });
+      return true;
+    }
+    return false;
+  }
+
+  private crawlTunnel(e: Enemy, dt: number) {
     const def = ENEMIES[e.kind];
+    const tn = this.state.tunnels.find((t) => t.id === e.tunnel);
+    if (!tn || (e.x - tn.headX) * e.dir >= 0) { this.surface(e, !!tn); return; }
+    if (e.rooted > 0) { e.rooted -= dt; return; }
+    e.x += e.dir * def.speed * TUNNELS.crawl * e.speedMul * (1 - e.slow) * dt;
+  }
+
+  /** Back to the surface: at the exit mouth, or buried by a collapse. */
+  private surface(e: Enemy, viaExit: boolean) {
+    e.layer = 'ground';
+    e.y = WORLD.groundY;
+    e.tunnel = 0;
+    e.usedTunnel = true;
+    if (!viaExit) this.damageQuiet(e, e.maxHp * TUNNELS.collapseDamage);
+    this.emit({ type: 'emerge', x: e.x });
+  }
+
+  private collapseTunnel(tn: Tunnel, by: 'keeper' | 'hammer') {
+    const s = this.state;
+    s.tunnels = s.tunnels.filter((t) => t !== tn);
+    for (const e of s.enemies) if (!e.dead && e.tunnel === tn.id && !DIGGERS.has(e.kind)) this.surface(e, false);
+    this.emit({ type: 'tunnelSealed', x: tn.headX, by });
+  }
+
+  /** The Keeper standing on a mouth fills it in. */
+  private updateTunnels(dt: number) {
+    const s = this.state;
+    const k = s.keeper;
+    for (const tn of [...s.tunnels]) {
+      if (!tn.open) continue;
+      const near = k.alive && (Math.abs(k.x - tn.headX) <= TUNNELS.sealReach || Math.abs(k.x - tn.entryX) <= TUNNELS.sealReach);
+      tn.seal = near ? tn.seal + dt / TUNNELS.sealTime : Math.max(0, tn.seal - dt * 0.5);
+      if (tn.seal >= 1) this.collapseTunnel(tn, 'keeper');
+    }
+  }
+
+  /**
+   * Flyers ignore blockers: Тенекрылы go for crown nests (then the crown itself),
+   * Кислотники hover over surface nests and drop acid.
+   */
+  private updateFlyer(e: Enemy, dt: number) {
+    const s = this.state;
+    const def = ENEMIES[e.kind];
+    const bob = Math.sin(e.age * 2.4 + e.id) * 5;
+    let tx: number = WORLD.treeX, ty: number = WORLD.groundY - def.altitude;
+    let nest: Structure | null = null;
+    if (e.kind === 'moth') {
+      let bd = Infinity;
+      for (const st of s.structures) {
+        if (!st.crown) continue;
+        const d = Math.abs(st.x - e.x);
+        if (d < bd) { bd = d; nest = st; }
+      }
+      if (nest) { tx = nest.x; ty = nest.y + 4; } else ty = WORLD.groundY - 110 * treeScale(s.tree.rings);
+    } else {
+      let bd = Infinity;
+      for (const st of s.structures) {
+        if (st.underground || st.crown || (st.x - e.x) * e.dir < -6) continue;
+        const d = Math.abs(st.x - e.x);
+        if (d < bd) { bd = d; nest = st; }
+      }
+      if (nest) tx = nest.x;
+    }
+    const dx = tx - e.x;
+    const close = e.kind === 'moth' ? Math.abs(dx) <= 6 && Math.abs(ty - e.y) <= 8 : Math.abs(dx) <= (nest ? 6 : WORLD.treeReach);
+    e.attacking = close;
+    if (close) {
+      e.y += (ty + bob * 0.3 - e.y) * Math.min(1, dt * 3);
+      if (e.attackCd > 0) return;
+      e.attackCd = def.attackRate;
+      const dmg = def.damage * this.enemyDamageMul(e.kind);
+      if (e.kind === 'bomber') { this.dropBomb(e, nest); return; }
+      if (nest) this.damageStructure(nest, dmg * def.structureMult, e);
+      else this.damageTree(dmg, e.kind, e);
+      return;
+    }
+    if (e.rooted > 0) { e.rooted -= dt; return; }
+    const sp = def.speed * e.speedMul * (e.affix === 'swift' ? ELITE.speed : 1) * (1 - e.slow);
+    const dir = Math.sign(dx) || e.dir;
+    e.x += dir * Math.min(Math.abs(dx), sp * dt);
+    const goalY = Math.abs(dx) < 60 ? ty : WORLD.groundY - def.altitude + bob;
+    e.y += (goalY - e.y) * Math.min(1, dt * 1.5);
+  }
+
+  private dropBomb(e: Enemy, nest: Structure | null) {
+    const s = this.state;
+    const tx = nest ? nest.x : WORLD.treeX + (this.rand() - 0.5) * 16;
+    const ty = WORLD.groundY - (nest ? 12 : 40);
+    const flight = 0.6;
+    s.projectiles.push({
+      id: s.nextId++, kind: 'acid', x: e.x, y: e.y, vx: (tx - e.x) / flight,
+      vy: (ty - e.y) / flight - 0.5 * 260 * flight, damage: ENEMIES[e.kind].damage * this.enemyDamageMul(e.kind) * (nest ? ENEMIES[e.kind].structureMult : 1),
+      targetId: nest ? nest.id : -1, tx, ty, pierce: 0, hit: [], life: flight, age: 0,
+    });
+    this.emit({ type: 'shoot', kind: 'acid', x: e.x, y: e.y });
+  }
+
+  private slowAt(e: Enemy): number {
     let slow = 0;
     for (const st of this.state.structures) {
-      if (st.underground !== def.underground) continue;
+      if (st.underground !== (e.layer === 'under') || e.layer === 'air' && st.family !== 'dragonfly') continue;
       const ns = this.nestStats(st);
       if (!ns.slow) continue;
       const reach = st.family === 'spider' ? ns.range : ns.light!;
       if (Math.abs(e.x - st.x) <= reach) slow = Math.max(slow, ns.slow);
     }
     for (const t of this.state.tempLights) {
-      if (t.slow && !def.underground && Math.abs(e.x - t.x) <= t.radius) slow = Math.max(slow, t.slow);
+      if (t.slow && e.layer !== 'under' && Math.abs(e.x - t.x) <= t.radius) slow = Math.max(slow, t.slow);
     }
     if (e.web > 0) slow = Math.max(slow, 0.35);
     return Math.min(0.7, slow * (e.kind === 'mother' ? 0.5 : 1));
   }
 
-  /** Enemy damage grows with the night (fatter and meaner). */
-  enemyDamageMul() { return ENDLESS.damage(this.state.night); }
+  /** Enemy damage grows with the night (fatter and meaner) and with the Darkness' wrath. */
+  enemyDamageMul(kind?: EnemyKind) {
+    return ENDLESS.damage(this.state.night) * Math.sqrt(this.state.wrath) * (kind && HEAVY.has(kind) ? ENDLESS.heavyDamage(this.state.night) : 1);
+  }
+
+  /**
+   * «Гнев Тьмы»: in the endless night the Darkness answers your strength. If no creature even
+   * reached the edge of the Circle and the Tree went unharmed, the next night is fatter;
+   * if the Tree suffered badly, the wrath eases.
+   */
+  private adaptWrath(finished: number) {
+    const s = this.state;
+    if (finished < this.campaignNights - 1) return;
+    const max = this.treeMaxHp();
+    const before = s.wrath;
+    const unharmed = this.nightTreeDmg <= max * 0.02;
+    if (unharmed && this.nightMinReach > s.tree.radius * 0.8) s.wrath *= 1.3;
+    else if (unharmed && this.nightMinReach > s.tree.radius * 0.4) s.wrath *= 1.12;
+    else if (this.nightTreeDmg > max * 0.15) s.wrath = Math.max(1, s.wrath * 0.85);
+    if (Math.abs(s.wrath - before) > 0.01) this.emit({ type: 'wrath', value: s.wrath, up: s.wrath > before });
+  }
 
   /** «Высвечивание»: the strongest dragonfly light covering this enemy. */
   private vulnAt(e: Enemy): number {
-    if (ENEMIES[e.kind].underground) return 0;
+    if ((e.layer === 'under')) return 0;
     let v = this.state.keeper.radianceT > 0 && e.lit ? ABILITIES.radiance.vuln * runeRankPower(this.state.keeper.runeRank.radiance) ** 0.5 : 0;
     for (const st of this.state.structures) {
       if (st.family !== 'dragonfly') continue;
@@ -1408,7 +1613,9 @@ export class Game {
 
   private damageStructure(st: Structure, amount: number, attacker?: Enemy) {
     const s = this.state;
-    st.hp -= amount;
+    const k = s.keeper;
+    const chitin = k.swarmT > 0 && this.propCount('swarm', 'sw-shield') && Math.abs(st.x - k.swarmX) <= this.swarmReach() ? 0.7 : 1;
+    st.hp -= amount * chitin;
     st.hitFlash = 0.12;
     this.emit({ type: 'structureHit', id: st.id, x: st.x });
     const ns = this.nestStats(st);
@@ -1452,7 +1659,7 @@ export class Game {
   private updateStructures(dt: number) {
     for (const st of this.state.structures) {
       if (st.crown) {
-        const p = crownPos(this.state.tree.stage, Number(st.slotId.slice(1)));
+        const p = crownPos(this.state.tree.stage, Number(st.slotId.slice(1)), this.state.tree.rings);
         st.x = p.x; st.y = p.y;
       }
       st.age += dt;
@@ -1476,7 +1683,7 @@ export class Game {
 
   private surfaceTargets(st: Structure, range: number): Enemy[] {
     return this.state.enemies
-      .filter((e) => !e.dead && !ENEMIES[e.kind].underground && this.visibleTo(st, e) && Math.abs(e.x - st.x) <= range)
+      .filter((e) => !e.dead && !(e.layer === 'under') && this.visibleTo(st, e) && Math.abs(e.x - st.x) <= range)
       .sort((a, b) => Math.abs(a.x - WORLD.treeX) - Math.abs(b.x - WORLD.treeX));
   }
 
@@ -1490,7 +1697,7 @@ export class Game {
       const t = targets[0];
       const out = Math.sign(t.x - WORLD.treeX) || 1;
       const line = this.state.enemies
-        .filter((e) => !e.dead && !ENEMIES[e.kind].underground && (e.x - t.x) * out >= 0 && Math.abs(e.x - t.x) <= 70)
+        .filter((e) => !e.dead && !(e.layer === 'under') && (e.x - t.x) * out >= 0 && Math.abs(e.x - t.x) <= 70)
         .sort((a, b) => Math.abs(a.x - t.x) - Math.abs(b.x - t.x))
         .slice(0, ns.pierce);
       for (const e of line) this.damageEnemy(e, ns.damage, true, true);
@@ -1560,7 +1767,7 @@ export class Game {
     }
     if (!ns.knock || st.cd > 0) return;
     const out = st.x < WORLD.treeX ? -1 : 1;
-    const hit = this.state.enemies.filter((e) => !e.dead && !ENEMIES[e.kind].underground
+    const hit = this.state.enemies.filter((e) => !e.dead && e.layer === 'ground'
       && (e.x - st.x) * out >= -4 && Math.abs(e.x - st.x) <= ns.range);
     if (!hit.length) return;
     st.cd = ns.rate;
@@ -1576,12 +1783,12 @@ export class Game {
     const s = this.state;
     const r = ns.light!;
     for (const e of s.enemies) {
-      if (e.dead || ENEMIES[e.kind].underground || Math.abs(e.x - st.x) > r) continue;
-      this.damageQuiet(e, ns.burn! * dt);
+      if (e.dead || (e.layer === 'under') || Math.abs(e.x - st.x) > r) continue;
+      this.damageQuiet(e, ns.burn! * dt * (e.layer === 'air' ? DRAGONFLY_VS_AIR : 1));
     }
     if (!ns.chain || st.cd > 0) return;
     let cur: Enemy | undefined = s.enemies
-      .filter((e) => !e.dead && !ENEMIES[e.kind].underground && Math.abs(e.x - st.x) <= r)
+      .filter((e) => !e.dead && !(e.layer === 'under') && Math.abs(e.x - st.x) <= r)
       .sort((a, b) => Math.abs(a.x - st.x) - Math.abs(b.x - st.x))[0];
     if (!cur) return;
     st.cd = ns.rate;
@@ -1590,10 +1797,10 @@ export class Game {
     for (let i = 0; i < ns.chain && cur; i++) {
       hit.add(cur.id);
       pts.push([cur.x, cur.y - ENEMIES[cur.kind].height * 0.6]);
-      this.damageEnemy(cur, ns.damage * (1 - i * 0.1), true, true);
+      this.damageEnemy(cur, ns.damage * (1 - i * 0.1) * (cur.layer === 'air' ? DRAGONFLY_VS_AIR : 1), true, true);
       const from: Enemy = cur;
       cur = s.enemies
-        .filter((e) => !e.dead && !hit.has(e.id) && !ENEMIES[e.kind].underground && e.lit && Math.abs(e.x - from.x) <= 70)
+        .filter((e) => !e.dead && !hit.has(e.id) && !(e.layer === 'under') && e.lit && Math.abs(e.x - from.x) <= 70)
         .sort((a, b) => Math.abs(a.x - from.x) - Math.abs(b.x - from.x))[0];
     }
     this.emit({ type: 'chain', points: pts });
@@ -1609,14 +1816,14 @@ export class Game {
     const inReach = (e: Enemy) => !e.dead && e.jumping <= 0 && Math.hypot(e.x - st.x, (e.y - st.y) * 0.8) <= ns.range;
     // silk shot straight up through the soil: surface creatures above the knot (horizontal reach)
     const above = (e: Enemy) => !e.dead && e.jumping <= 0 && Math.abs(e.x - st.x) <= ns.range * 1.2;
-    const worms = s.enemies.filter((e) => ENEMIES[e.kind].underground && inReach(e));
-    const surface = worms.length ? [] : s.enemies.filter((e) => !ENEMIES[e.kind].underground && above(e));
+    const worms = s.enemies.filter((e) => (e.layer === 'under') && inReach(e));
+    const surface = worms.length ? [] : s.enemies.filter((e) => e.layer === 'ground' && above(e));
     const prey = worms.length ? worms : surface;
     if (!prey.length) return;
     prey.sort((a, b) => Math.abs(a.x - WORLD.treeX) - Math.abs(b.x - WORLD.treeX));
     st.cd = ns.rate;
     const t = prey[0];
-    const onSurface = !ENEMIES[t.kind].underground;
+    const onSurface = !(t.layer === 'under');
     const mult = onSurface && !this.mods.spiderSurface ? 0.5 : 1;
     this.damageEnemy(t, ns.damage * mult, true, true);
     if (onSurface) t.web = Math.max(t.web, 2);
@@ -1628,10 +1835,10 @@ export class Game {
   }
 
   /** Damage-over-time without spamming hit events. */
-  private damageQuiet(e: Enemy, amount: number) {
+  private damageQuiet(e: Enemy, amount: number, aura = true) {
     if (e.dead) return;
     const def = ENEMIES[e.kind];
-    const mult = def.worm && this.isLit(e.x, def.underground) ? WORM_LIGHT_MULT : 1;
+    const mult = e.fogged ? (aura ? FOG.aura : 1) : def.worm && this.isLit(e.x, e.layer === 'under') ? WORM_LIGHT_MULT : 1;
     e.hp -= amount * mult;
     if (e.hp <= 0) this.killEnemy(e);
   }
@@ -1650,6 +1857,7 @@ export class Game {
 
   private damageTree(amount: number, by: EnemyKind, attacker?: Enemy) {
     const t = this.state.tree;
+    this.nightTreeDmg += amount;
     let dmg = amount;
     if (t.shield > 0) {
       const absorbed = Math.min(t.shield, dmg);
@@ -1678,7 +1886,7 @@ export class Game {
     const prevMax = Math.round(TREE_STAGES[t.stage - 1].maxHp * (1 + this.mods.treeHp));
     t.hp = Math.min(this.treeMaxHp(), t.hp + (this.treeMaxHp() - prevMax) + this.treeMaxHp() * TREE.growHeal);
     for (const e of s.enemies) {
-      if (e.dead || ENEMIES[e.kind].underground) continue;
+      if (e.dead || (e.layer === 'under')) continue;
       const d = Math.abs(e.x - WORLD.treeX);
       if (d > prevR && d <= this.treeRadius()) this.damageEnemy(e, TREE.growBurn);
     }
@@ -1704,7 +1912,7 @@ export class Game {
       t.sparkCd -= dt;
       if (t.sparkCd <= 0) {
         const cands = s.enemies
-          .filter((e) => !e.dead && !ENEMIES[e.kind].underground && e.lit && Math.abs(e.x - WORLD.treeX) <= TREE.sparkRange)
+          .filter((e) => !e.dead && !(e.layer === 'under') && e.lit && Math.abs(e.x - WORLD.treeX) <= TREE.sparkRange)
           .sort((a, b) => Math.abs(a.x - WORLD.treeX) - Math.abs(b.x - WORLD.treeX));
         if (cands.length) {
           t.sparkCd = TREE.sparkRate;
@@ -1721,13 +1929,16 @@ export class Game {
     if (stageNo >= TREE.polariaStage) this.tickPolaria(dt);
     if (stageNo >= TREE.rootBurnStage) {
       for (const e of s.enemies) {
-        if (e.dead || !ENEMIES[e.kind].underground) continue;
+        if (e.dead || !(e.layer === 'under')) continue;
         if (Math.abs(e.x - WORLD.treeX) <= TREE.rootBurnRange) this.damageQuiet(e, TREE.rootBurnDps * (1 + this.mods.rootBurn) * dt);
       }
     }
   }
 
   private polariaCd: number[] = [];
+  /** per-night measurements for «Гнев Тьмы» */
+  private nightMinReach = Infinity;
+  private nightTreeDmg = 0;
   private healAcc = new Map<number, number>();
 
   /** Throttled heal feedback: one event per target every ~0.4 s with the healed amount. */
@@ -1760,7 +1971,7 @@ export class Game {
       if (this.polariaCd[i] > 0) continue;
       const [px, py] = pos[i];
       const t = s.enemies
-        .filter((e) => !e.dead && !ENEMIES[e.kind].underground && e.lit && Math.abs(e.x - px) <= TREE.polariaRange)
+        .filter((e) => !e.dead && !(e.layer === 'under') && e.lit && Math.abs(e.x - px) <= TREE.polariaRange)
         .sort((a, b) => Math.abs(a.x - px) - Math.abs(b.x - px))[0];
       if (!t) continue;
       this.polariaCd[i] = TREE.polariaRate;
@@ -1807,7 +2018,7 @@ export class Game {
         if (p.life <= 0) {
           const def = ABILITIES.starfall;
           for (const e of s.enemies) {
-            if (e.dead || ENEMIES[e.kind].underground || Math.abs(e.x - p.tx) > (p.radius ?? def.impactRadius) + ENEMIES[e.kind].radius) continue;
+            if (e.dead || (e.layer === 'under') || Math.abs(e.x - p.tx) > (p.radius ?? def.impactRadius) + ENEMIES[e.kind].radius) continue;
             if (p.breakArmor) e.armorBreak = p.breakArmor;
             this.damageEnemy(e, p.damage);
             this.stunEnemy(e, p.stun ?? def.stun);
@@ -1821,11 +2032,11 @@ export class Game {
         p.x += p.vx * dt;
         for (const e of s.enemies) {
           if (e.dead || p.hit.includes(e.id) || Math.abs(e.x - p.x) > ENEMIES[e.kind].radius + 6) continue;
-          if (ENEMIES[e.kind].underground && !p.deep) continue;
+          if ((e.layer === 'under') && !p.deep || e.layer === 'air') continue;
           p.hit.push(e.id);
           this.damageEnemy(e, p.damage);
           if (p.stun) this.stunEnemy(e, p.stun);
-          if (p.knock && !ENEMIES[e.kind].boss && !ENEMIES[e.kind].underground) e.kick = Math.sign(p.vx) * p.knock * ENEMIES[e.kind].ccMult;
+          if (p.knock && !ENEMIES[e.kind].boss && e.layer === 'ground') e.kick = Math.sign(p.vx) * p.knock * ENEMIES[e.kind].ccMult;
         }
         continue;
       }
@@ -1836,7 +2047,7 @@ export class Game {
         for (const e of s.enemies) {
           if (e.dead || p.pierce <= 0 || p.hit.includes(e.id)) continue;
           const ed = ENEMIES[e.kind];
-          if (ed.underground) continue;
+          if (e.layer === 'under') continue;
           if (Math.abs(e.x - p.x) <= ed.radius + 3 && p.y >= e.y - ed.height - 4) {
             const n = p.hit.length;
             p.hit.push(e.id);
@@ -1854,7 +2065,7 @@ export class Game {
         }
         if (p.pierce <= 0 && this.mods.spearRicochet && !p.bounced) {
           const next = s.enemies
-            .filter((e) => !e.dead && !p.hit.includes(e.id) && !ENEMIES[e.kind].underground && Math.abs(e.x - p.x) < 130)
+            .filter((e) => !e.dead && !p.hit.includes(e.id) && !(e.layer === 'under') && Math.abs(e.x - p.x) < 130)
             .sort((a, b) => Math.abs(a.x - p.x) - Math.abs(b.x - p.x))[0];
           if (next) {
             const dir = Math.sign(next.x - p.x) || 1;
@@ -2092,7 +2303,7 @@ export class Game {
         let foe: Enemy | undefined;
         let fd = Infinity;
         for (const e of s.enemies) {
-          if (e.dead || ENEMIES[e.kind].underground || e.jumping > 0 || Math.abs(e.x - rally) > ns.range) continue;
+          if (e.dead || e.layer !== 'ground' || e.jumping > 0 || Math.abs(e.x - rally) > ns.range) continue;
           const d = Math.abs(e.x - u.x);
           if (d < fd) { fd = d; foe = e; }
         }

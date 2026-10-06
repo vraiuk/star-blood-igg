@@ -64,9 +64,14 @@ export const PROPERTIES: PropertyDef[] = [
   // ── Сияние Игг
   P({ id: 'rd-long', rune: 'radiance', type: 'Усиление', name: 'Долгое сияние', desc: 'Сияние длится на 50% дольше', rank: 1, price: 7, stack: 2, mods: {} }),
   P({ id: 'rd-heal', rune: 'radiance', type: 'Изменение', name: 'Целящий свет', desc: 'Во время Сияния Древо лечится 20 HP/с', rank: 2, price: 9, stack: 1, mods: {} }),
+  P({ id: 'rd-cheap', rune: 'radiance', type: 'Уменьшение', name: 'Уменьшение: Сияние', desc: 'Сияние на 35% дешевле и перезаряжается на 20% быстрее', rank: 1, price: 7, stack: 1, mods: {} }),
+  P({ id: 'rd-wide', rune: 'radiance', type: 'Усиление', name: 'Широкое сияние', desc: 'Во время Сияния Круг шире ещё на 15%', rank: 2, price: 9, stack: 1, mods: {} }),
   // ── Зов Роя
   P({ id: 'sw-wide', rune: 'swarm', type: 'Усиление', name: 'Широкий зов', desc: 'Охват Зова Роя +40%', rank: 1, price: 6, stack: 2, mods: {} }),
   P({ id: 'sw-fury', rune: 'swarm', type: 'Изменение', name: 'Ярость роя', desc: 'Гнёзда под Зовом наносят +40% урона', rank: 2, price: 10, stack: 1, mods: {} }),
+  P({ id: 'sw-cheap', rune: 'swarm', type: 'Уменьшение', name: 'Уменьшение: Зов', desc: 'Зов Роя на 35% дешевле и перезаряжается на 20% быстрее', rank: 1, price: 7, stack: 1, mods: {} }),
+  P({ id: 'sw-long', rune: 'swarm', type: 'Усиление', name: 'Долгий зов', desc: 'Зов Роя длится на 50% дольше', rank: 1, price: 7, stack: 1, mods: {} }),
+  P({ id: 'sw-shield', rune: 'swarm', type: 'Изменение', name: 'Хитиновый зов', desc: 'Гнёзда под Зовом получают на 30% меньше урона', rank: 2, price: 10, stack: 1, mods: {} }),
   // ── Руна Света
   P({ id: 'lt-spring', rune: 'light', type: 'Усиление', name: 'Родник Света', desc: '+30% регенерации Света', rank: 1, price: 6, stack: 2, mods: { lightRegen: 0.3 } }),
   P({ id: 'lt-vessel', rune: 'light', type: 'Усиление', name: 'Сосуд', desc: '+40 к запасу Света, +40 HP', rank: 1, price: 6, stack: 2, mods: { lightMax: 40, keeperHp: 40 } }),

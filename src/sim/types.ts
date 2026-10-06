@@ -46,7 +46,30 @@ export interface Enemy {
   broodCd: number;
   /** horizontal velocity from knockback, decays */
   kick: number;
+  /** where the creature is now: on the ground, under it (worms, tunnel crawlers) or in the air */
+  layer: 'ground' | 'under' | 'air';
+  /** id of the tunnel it digs (diggers) or crawls through (ground creatures); 0 = none */
+  tunnel: number;
+  /** already crawled through a tunnel this night (won't dive again) */
+  usedTunnel: boolean;
+  /** inside a big worm's «Туман Тьмы» this tick */
+  fogged: boolean;
   dead: boolean;
+}
+
+/** Лаз: a tunnel dug by a worm under the defenses. */
+export interface Tunnel {
+  id: number;
+  /** direction of travel (+1 = from the left edge toward the trunk) */
+  dir: 1 | -1;
+  /** surface mouth outside the defenses (NaN until the digger reaches the Circle) */
+  entryX: number;
+  /** how far the digger has got / where it broke out */
+  headX: number;
+  /** the digger broke out: creatures can use it */
+  open: boolean;
+  /** Keeper's sealing progress 0..1 */
+  seal: number;
 }
 
 export interface Structure {
@@ -254,7 +277,7 @@ export type Phase = 'day' | 'night' | 'won' | 'lost';
 
 /** A pending choice that pauses the day timer until resolved. */
 export type Choice =
-  | { kind: 'dawn'; offers: string[] }
+  | { kind: 'dawn'; offers: string[]; start?: boolean }
   | { kind: 'branch'; stage: number }
   | { kind: 'feat'; night: number };
 
@@ -283,9 +306,13 @@ export type GameEvent =
   | { type: 'devRune'; x: number }
   | { type: 'lostLoot'; x: number; y: number }
   | { type: 'emerge'; x: number }
+  | { type: 'tunnelOpen'; x: number }
+  | { type: 'cleave'; x: number; r: number }
+  | { type: 'tunnelSealed'; x: number; by: 'keeper' | 'hammer' }
   | { type: 'blast'; x: number; y: number }
   | { type: 'intercept'; x: number; y: number; fx: number; fy: number }
   | { type: 'jump'; x: number }
+  | { type: 'wrath'; value: number; up: boolean }
   | { type: 'merge'; x: number; y: number; from: Array<[number, number]> }
   | { type: 'mend'; x: number; y: number; tx: number; ty: number }
   | { type: 'heal'; x: number; y: number; amount: number }
@@ -325,6 +352,8 @@ export interface GameState {
   star: number;
   /** unspent Lesser Runes of Development */
   devRunes: number;
+  /** «Гнев Тьмы»: adaptive strength of the endless night (1 = baseline) */
+  wrath: number;
   enemies: Enemy[];
   structures: Structure[];
   projectiles: Projectile[];
@@ -333,6 +362,7 @@ export interface GameState {
   soldiers: Soldier[];
   tempLights: TempLight[];
   burns: GroundBurn[];
+  tunnels: Tunnel[];
   keeper: Keeper;
   tree: Tree;
   pending: PendingSpawn[];

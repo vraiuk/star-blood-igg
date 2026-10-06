@@ -78,7 +78,7 @@ export class Hud {
   private track!: HTMLElement;
   private stageCount!: HTMLElement;
   private nightInfo!: HTMLElement;
-  private abEls = {} as Record<AbilityId, { box: HTMLElement; cd: HTMLElement; lock: HTMLElement; charge: HTMLElement }>;
+  private abEls = {} as Record<AbilityId, { box: HTMLElement; cd: HTMLElement; lock: HTMLElement; charge: HTMLElement; cdt: HTMLElement; wasReady: boolean }>;
   private callBtn!: HTMLButtonElement;
   private speedBtn!: HTMLButtonElement;
   private soundBtn!: HTMLButtonElement;
@@ -179,12 +179,12 @@ export class Hud {
       const def = ABILITIES[id];
       const box = el('div', `ab hit ${id === 'starfall' ? 'ult' : ''}`);
       box.title = `${def.name}: ${def.desc}`;
-      box.innerHTML = `<img src="${icon(id)}"><div class="charge"></div><div class="cd"></div>
+      box.innerHTML = `<img src="${icon(id)}"><div class="charge"></div><div class="cd"></div><span class="cdt"></span>
         <div class="lock"><img src="${icon('lock')}"><span>ст. ${def.unlockStage}</span></div>
         ${def.cost ? `<span class="cost">${def.cost}</span>` : ''}<span class="key">${def.key}</span>`;
       box.addEventListener('mousedown', (ev) => { ev.stopPropagation(); this.cb.onCast(id); });
       abs.appendChild(box);
-      this.abEls[id] = { box, cd: box.querySelector('.cd')!, lock: box.querySelector('.lock')!, charge: box.querySelector('.charge')! };
+      this.abEls[id] = { box, cd: box.querySelector('.cd')!, lock: box.querySelector('.lock')!, charge: box.querySelector('.charge')!, cdt: box.querySelector('.cdt')!, wasReady: false };
     });
     r.appendChild(abs);
 
@@ -352,6 +352,13 @@ export class Hud {
           else if (b) this.say(`Получена ${b.category} (${RUNE_RANKS[b.rank]}): «${b.name}».`);
           break;
         }
+        case 'wrath':
+          this.say(e.up ? `Гнев Тьмы растёт: твари ×${e.value.toFixed(2)}. Круг слишком силён — Тьма отвечает.` : `Гнев Тьмы стихает: ×${e.value.toFixed(2)}.`, e.up);
+          break;
+        case 'tunnelOpen':
+          if (!this.once('tunnel', 'Червь прорыл Лаз! Твари ныряют в него и выходят за строем. Встань Хранителем на выход (красная метка) — он засыплет Лаз; Игг-Молот обрушит его сразу.')) this.say('Червь прорыл Лаз за строем!', true);
+          break;
+        case 'tunnelSealed': this.say(e.by === 'hammer' ? 'Молот обрушил Лаз — твари внутри засыпаны.' : 'Хранитель засыпал Лаз.'); break;
         case 'devRune': this.say('С Червя выпала Малая Руна Развития! Открой ею 4-й слот руны [R].'); break;
         case 'structureLost':
           if (this.menuTarget?.kind === 'structure' && !g.state.structures.some((s) => s.id === (this.menuTarget as { id: number }).id)) this.closeMenu();
@@ -374,10 +381,12 @@ export class Hud {
     this.noticeTimer = warn ? 1.6 : 4;
   }
 
-  private once(key: string, text: string) {
-    if (this.seen.has(key)) return;
+  /** Show a tip only the first time; returns whether it was shown. */
+  private once(key: string, text: string): boolean {
+    if (this.seen.has(key)) return false;
     this.seen.add(key);
     this.say(text);
+    return true;
   }
 
   // ───────────────────────────── ring menu ───────────────────────────
@@ -478,7 +487,7 @@ export class Hud {
           act: () => { if (g.build(t.slotId, fam)) this.closeMenu(); },
         });
       });
-      const cp = slot.crown ? crownPos(s.tree.stage, Number(slot.id.slice(1))) : null;
+      const cp = slot.crown ? crownPos(s.tree.stage, Number(slot.id.slice(1)), s.tree.rings) : null;
       return { x: cp ? cp.x : slot.x, y: cp ? cp.y : slot.underground ? slot.y : WORLD.groundY - 10, title: slot.underground ? 'Корневой узел' : slot.crown ? 'Слот кроны Древа' : 'Руна призыва', opts };
     }
     if (t.kind !== 'structure') return null;
@@ -643,7 +652,7 @@ export class Hud {
       } else {
         const rc = g.ringCost();
         html += `<div class="growcard"><div class="gc-head">Великое Игг-Древо в полной силе</div>
-          <div class="gc-un">Теперь оно наращивает <b>годичные кольца</b>: каждое +7% силы гнёзд и +10% здоровья Древа.${s.tree.rings ? `<br>Колец: <b>${s.tree.rings}</b> · сила гнёзд ×${g.treePower().toFixed(2)}` : ''}</div>
+          <div class="gc-un">Теперь оно наращивает <b>годичные кольца</b>: каждое +7% силы гнёзд и +10% здоровья Древа, Древо растёт, а каждые 2 кольца открывают новый слот кроны.${s.tree.rings ? `<br>Колец: <b>${s.tree.rings}</b> · сила гнёзд ×${g.treePower().toFixed(2)}` : ''}</div>
           <div class="row">${btn(`Годичное кольцо №${s.tree.rings + 1} (<img class="icon" src="${icon('amber')}"> ${rc})`, s.amber >= rc, () => { g.addRing(); })}</div></div>`;
       }
       // ── reference: the whole ladder (current at the top of the list, compact)
@@ -771,7 +780,7 @@ export class Hud {
     if (c.kind === 'dawn') {
       html = `<div class="tablet big"><div class="orbit-wrap"><div class="orbit">${'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃ'.split('').map((r, i) => `<span style="--i:${i}">${r}</span>`).join('')}</div></div>
         <div class="who">Скрижаль · Тот-Кто-Наблюдает</div>
-        <h3>Восходящий! Ночь пережита.</h3><div class="sub">Рулетка Наблюдателя: по дару для Восходящего, для созданий и для Древа. Выбери один.</div>
+        <h3>${c.start ? 'Восходящий! Наблюдатель видит тебя.' : 'Восходящий! Ночь пережита.'}</h3><div class="sub">${c.start ? 'Первый дар перед первой ночью' : 'Рулетка Наблюдателя'}: по дару для Восходящего, для созданий и для Древа. Выбери один.</div>
         <div class="cards">${c.offers.map((id, i) => {
           const p = propertyById(id);
           const b = boonById(id);
@@ -874,16 +883,20 @@ export class Hud {
       this.callBtn.innerHTML = `Призвать ночь <span style="opacity:.75">[Пробел] +${Math.floor(s.dayLeft)}</span>`;
     } else {
       const left = s.enemies.length + s.pending.length;
-      this.nightInfo.innerHTML = s.phase === 'night' ? `${g.night(s.night).title}${s.night < total ? ` · ${s.night + 1}/${total}` : ' · ∞'} · тварей: <span class="t">${left}</span>` : '';
+      this.nightInfo.innerHTML = s.phase === 'night' ? `${g.night(s.night).title}${s.night < total ? ` · ${s.night + 1}/${total}` : ' · ∞'} · тварей: <span class="t">${left}</span>${s.wrath > 1.01 ? ` · <span style="color:#ff8a8a">Гнев ×${s.wrath.toFixed(1)}</span>` : ''}` : '';
       this.callBtn.classList.add('hidden');
     }
 
     for (const id of AB_IDS) {
-      const { box, cd, lock, charge } = this.abEls[id];
+      const el = this.abEls[id];
+      const { box, cd, lock, charge, cdt } = el;
       const unlocked = g.abilityUnlocked(id);
       lock.style.display = unlocked ? 'none' : 'grid';
       const c = s.keeper.cooldowns[id];
-      cd.style.height = `${Math.min(100, (c / Math.max(0.01, s.keeper.cdMax[id])) * 100)}%`;
+      const frac = c > 0 ? Math.min(1, c / Math.max(0.01, s.keeper.cdMax[id])) : 0;
+      cd.style.transform = `scaleY(${frac})`;
+      const txt = c > 0.5 ? String(Math.ceil(c)) : '';
+      if (cdt.textContent !== txt) cdt.textContent = txt;
       let ready: boolean;
       if (id === 'starfall') {
         const ch = s.keeper.charge / ABILITIES.starfall.chargeMax;
@@ -894,6 +907,12 @@ export class Hud {
         box.classList.toggle('nolight', unlocked && s.keeper.light < g.abilityCost(id) && s.keeper.freeCast <= 0);
       }
       box.classList.toggle('ready', ready);
+      if (ready && !el.wasReady && unlocked) {
+        box.classList.remove('pop');
+        void box.offsetWidth;
+        box.classList.add('pop');
+      }
+      el.wasReady = ready;
       box.classList.toggle('aim', this.aiming === id);
     }
     const slotsFree = RUNE_IDS.some((r) => (r === 'light' || g.abilityUnlocked(r)) && PROPERTIES.some((p) => p.rune === r && s.star >= p.price && g.canInstall(p)));

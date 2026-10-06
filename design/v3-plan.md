@@ -86,3 +86,20 @@
 - **Звёздные ранги рун** после «Неба»: бесконечно, +15% силы, цена 80·1.45ⁿ Крови. Цвет Копья и звёзд меняется по рангу.
 - **Пронзающий луч** стал поддерживаемым: Восходящий замирает на 1.6 с, урон идёт тиками по всей линии.
 - Гусеницы собирают по всей карте (во тьме медленнее). Термиты и гусеницы светятся. Перезарядка на кнопках не вылезает за рамку.
+
+## v4.2 — Гнев Тьмы, кольца, лазы, крылья
+- «Гнев Тьмы»: adaptive endless multiplier (state.wrath) from how close creatures got and tree damage.
+- Rings visibly grow the tree (treeScale) and unlock crown slots C5..C9 every 2 rings.
+- Radiance/Swarm got their own properties (4th slot is never empty).
+- Ability buttons: cooldown shutter inside the button, seconds, golden "ready" glow and pop.
+- Big worms toughen faster after night 10 (heavyHp/Armor/Damage), bigger packs.
+- Лазы: Копатель/Страж/Землерой dig a tunnel from the Circle's edge, break out behind the
+  defenses (exit = max(56, 0.3·radius)); ground creatures dive in and skip the nests. Keeper
+  seals a mouth by standing on it (1.4 s), Igg-Hammer caves tunnels in, dawn collapses all.
+  Surfaced worms fight on the surface (keeper can hit them).
+- Air: Тенекрыл (crown nests / crown) and Имаго-Кислотник (hovers, drops acid on nests).
+  Beetles, weavers, termites, hammer can't reach them; dragonflies deal ×1.6 to flyers.
+- Big worms: sweeping bite (cleave) mows termite squads; «Туман Тьмы» (from night 11) blocks
+  Igg-light burn/×2 and cuts aura damage to 40% inside.
+- Surface/crown nest range scales with tree stage (reach ×1.0 → ×1.55); camera up to 1240.
+- Feat modal removed (always continue); the start offer is titled as the first gift.
