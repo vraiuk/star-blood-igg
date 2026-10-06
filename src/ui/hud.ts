@@ -607,7 +607,13 @@ export class Hud {
           sub: stars ? `${def.desc} · сразу со ${'★'.repeat(stars)} — как ${Math.pow(3, stars)} гнёзд, слитых в одно` : def.desc, key: String(i + 1),
           body: this.statsBlock(fam, null, stats), price, ok: g.canPay(price),
           preview: { x: slot.x, r: fam === 'dragonfly' ? stats.light! : stats.range, underground: slot.underground, y: slot.y },
-          act: () => { if (g.buildStars(t.slotId, fam, stars)) this.closeMenu(); },
+          // after building, stay on the same node: its upgrade menu opens right away
+          act: () => {
+            if (!g.buildStars(t.slotId, fam, stars)) return;
+            const built = g.structureAt(t.slotId);
+            if (built) this.openMenu({ kind: 'structure', id: built.id });
+            else this.closeMenu();
+          },
         });
       });
       const cp = slot.crown ? crownPos(s.tree.stage, Number(slot.id.slice(1)), s.tree.rings) : null;
@@ -975,7 +981,7 @@ export class Hud {
     if (sig === this.modalSig) return;
     this.modalSig = sig;
     // a choice pops over the Keeper's Tablet without closing it (e.g. a Facet after Повышение)
-    if (this.panelKind === 'keeper') { this.menuTarget = null; this.ring.classList.remove('show'); this.card.classList.remove('show'); }
+    if (this.panelKind === 'keeper' || this.panelKind === 'tree') { this.menuTarget = null; this.ring.classList.remove('show'); this.card.classList.remove('show'); }
     else this.closeMenu();
     let html = '';
     if (c.kind === 'dawn') {
