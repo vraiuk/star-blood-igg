@@ -12,7 +12,7 @@ interface Particle {
   glow: boolean;
 }
 
-type FxKind = 'ring' | 'rootBurst' | 'spikeThrust' | 'growWave' | 'beam' | 'ram' | 'web' | 'bolt';
+type FxKind = 'ring' | 'rootBurst' | 'spikeThrust' | 'growWave' | 'beam' | 'ram' | 'web' | 'bolt' | 'plus';
 interface Bolt { pts: Array<[number, number]>; life: number; }
 interface Fx { kind: FxKind; x: number; y: number; tx: number; ty: number; life: number; max: number; r: number; }
 
@@ -104,6 +104,13 @@ export class Particles {
           }
           break;
         }
+        case 'plus': {
+          const yy = f.y - t * 14;
+          const col = t < 0.6 ? '#9cff8a' : '#4a9a4a';
+          rect(c, f.x - 1, yy, 3, 1, col);
+          rect(c, f.x, yy - 1, 1, 3, col);
+          break;
+        }
         case 'beam': {
           const k = 1 - t;
           line(c, f.x, f.y, f.tx, f.ty, PAL.gold2, 3);
@@ -157,6 +164,12 @@ export class Particles {
   pickup(x: number, y: number, star: boolean) {
     this.emit(star ? 9 : 5, x, y, { speed: star ? 50 : 30, max: 0.45, colors: star ? [PAL.white, PAL.blood2, PAL.blood1] : [PAL.gold5, PAL.gold3, PAL.gold1], glow: true, drag: 3 });
   }
+  /** Green "+" motes rising from a healed target. */
+  heal(x: number, y: number, amount: number) {
+    const n = Math.min(4, 1 + Math.floor(amount / 8));
+    for (let i = 0; i < n; i++) this.fx.push({ kind: 'plus', x: x + (Math.random() - 0.5) * 12, y: y + (Math.random() - 0.5) * 6, tx: 0, ty: 0, life: 0.9, max: 0.9, r: 0 });
+  }
+
   chain(points: Array<[number, number]>) {
     this.bolts.push({ pts: points, life: 0.18 });
     for (const [x, y] of points.slice(1)) this.emit(3, x, y, { speed: 40, max: 0.25, colors: [PAL.white, '#bfe4ff'], glow: true });

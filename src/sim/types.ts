@@ -30,6 +30,11 @@ export interface Enemy {
   vuln: number;
   /** armour shattered (Сверхзвезда) while > 0 */
   armorBreak: number;
+  /** elite modifier */
+  affix: import('../data/balance').Affix | null;
+  /** jumper: cooldown and remaining airtime */
+  jumpCd: number;
+  jumping: number;
   attacking: boolean;
   lit: boolean;
   /** seconds since spawn — drives animation */
@@ -50,6 +55,8 @@ export interface Structure {
   /** anchor y (root knot for underground nests) */
   y: number;
   underground: boolean;
+  /** lives in the Tree's crown: creatures can't reach it */
+  crown: boolean;
   /** 0..2 base levels; 3..4 = specialization levels */
   tier: number;
   spec: SpecId | null;
@@ -65,6 +72,8 @@ export interface Structure {
   aim: number;
   /** attack-speed buff timer (sower rune) */
   haste: number;
+  /** dragonfly: time until it can shoot down another acid glob */
+  intercept: number;
 }
 
 export type ProjectileKind = 'arrow' | 'acid' | 'spear' | 'spark' | 'beam' | 'meteor' | 'wave';
@@ -116,6 +125,10 @@ export interface Drop {
   claimed: number;
   /** being drawn in by the tree's roots */
   rooted: boolean;
+  /** 0 falling, 1 hovering, 2 flying home to the Tree, 3 drifting away to the sky (lost) */
+  mode: 0 | 1 | 2 | 3;
+  /** seconds spent hovering */
+  hover: number;
   age: number;
 }
 
@@ -145,6 +158,10 @@ export interface Keeper {
   cooldowns: Record<AbilityId, number>;
   /** Starfall charge 0..100 */
   charge: number;
+  /** Сияние Игг remaining; Зов Роя remaining and where it was called */
+  radianceT: number;
+  swarmT: number;
+  swarmX: number;
   /** Ascension rank 0..4 */
   rank: number;
   /** installed Observer properties per keeper rune */
@@ -190,15 +207,33 @@ export interface Tree {
   rings: number;
 }
 
+/** A Golden Termite warrior from a termite mound. */
+export interface Soldier {
+  id: number;
+  nestId: number;
+  x: number;
+  dir: 1 | -1;
+  hp: number;
+  maxHp: number;
+  cd: number;
+  /** seconds until respawn while dead (hp <= 0) */
+  respawn: number;
+  walk: number;
+  hitFlash: number;
+}
+
 /** A caterpillar collector crawling along the ground. */
 export interface Worker {
   id: number;
   nestId: number;
   x: number;
   dir: 1 | -1;
-  carry: { kind: DropKind; value: number } | null;
+  /** gathered bundle */
+  carry: { amber: number; star: number; n: number };
   target: number;
   walk: number;
+  /** carrying the bundle back to the tree */
+  home: boolean;
 }
 
 export type Phase = 'day' | 'night' | 'won' | 'lost';
@@ -206,7 +241,8 @@ export type Phase = 'day' | 'night' | 'won' | 'lost';
 /** A pending choice that pauses the day timer until resolved. */
 export type Choice =
   | { kind: 'dawn'; offers: string[] }
-  | { kind: 'branch'; stage: number };
+  | { kind: 'branch'; stage: number }
+  | { kind: 'feat'; night: number };
 
 export type GameEvent =
   | { type: 'hit'; x: number; y: number; amount: number; crit: boolean }
@@ -231,7 +267,12 @@ export type GameEvent =
   | { type: 'rankUp'; rank: number }
   | { type: 'rune'; id: string }
   | { type: 'devRune'; x: number }
-  | { type: 'heal'; x: number }
+  | { type: 'lostLoot'; x: number; y: number }
+  | { type: 'emerge'; x: number }
+  | { type: 'blast'; x: number; y: number }
+  | { type: 'intercept'; x: number; y: number; fx: number; fy: number }
+  | { type: 'jump'; x: number }
+  | { type: 'heal'; x: number; y: number; amount: number }
   | { type: 'polaria'; x: number; y: number; tx: number; ty: number }
   | { type: 'cast'; ability: AbilityId; x: number; tx: number }
   | { type: 'meteor'; x: number }
@@ -273,6 +314,7 @@ export interface GameState {
   projectiles: Projectile[];
   drops: Drop[];
   workers: Worker[];
+  soldiers: Soldier[];
   tempLights: TempLight[];
   burns: GroundBurn[];
   keeper: Keeper;

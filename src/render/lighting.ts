@@ -4,7 +4,7 @@ import type { Game } from '../sim/game';
 import { BAYER4, makeCanvas } from './pixel';
 
 /** Darkness/glow buffers are computed at half resolution, then upscaled pixel-perfect. */
-const CELL = 3;
+const CELL = 4;
 const LW = WORLD.width / CELL;
 const LH = WORLD.height / CELL;
 const GY = WORLD.groundY;

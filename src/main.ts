@@ -1,5 +1,5 @@
 import { Audio } from './audio/audio';
-import { ABILITIES, SLOTS, WORLD, type AbilityId } from './data/balance';
+import { ABILITIES, SLOTS, WORLD, crownPos, type AbilityId } from './data/balance';
 import { PATHS, coinsForRun } from './data/meta';
 import { Renderer, type ViewState } from './render/renderer';
 import { treeHeight } from './render/tree';
@@ -43,6 +43,7 @@ const titleInfo = () => {
 const hud: Hud = new Hud(uiRoot, () => game, {
   onStart() {
     game = newGame();
+    hud.resetQuests();
     renderer.resetCamera(game.state.tree.radius);
     started = true;
     endShown = false;
@@ -53,6 +54,7 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     hud.hideEnd();
     hud.closeMenu();
     game = newGame();
+    hud.resetQuests();
     renderer.resetCamera(game.state.tree.radius);
     endShown = false;
   },
@@ -110,7 +112,7 @@ function setPaused(p: boolean) {
 /** Abilities that need a target point enter aim mode on click; the hammer casts at once. */
 function beginAim(id: AbilityId) {
   hud.closeMenu();
-  if (id === 'hammer' || id === 'spear') { game.cast(id, game.state.keeper.x); return; }
+  if (id !== 'starfall') { game.cast(id, game.state.keeper.x); return; }
   hud.aiming = id;
   view.aiming = id;
 }
@@ -172,13 +174,21 @@ hud.setProjector((x, y) => renderer.camera.toScreen(x, y, cssW, cssH));
 function pick(mx: number, my: number): MenuTarget | null {
   const s = game.state;
   for (const st of s.structures) {
-    if (Math.abs(mx - st.x) > 10) continue;
+    if (st.crown || Math.abs(mx - st.x) > 10) continue;
     if (st.underground ? Math.abs(my - st.y) < 12 : my > WORLD.groundY - 55 && my < WORLD.groundY + 6) {
       return { kind: 'structure', id: st.id };
     }
   }
+  for (const st of s.structures) {
+    if (st.crown && Math.hypot(mx - st.x, my - st.y - 3) < 10) return { kind: 'structure', id: st.id };
+  }
   for (const sl of SLOTS) {
-    if (!game.slotUnlocked(sl) || game.structureAt(sl.id) || Math.abs(mx - sl.x) > 10) continue;
+    if (!sl.crown || !game.slotUnlocked(sl) || game.structureAt(sl.id)) continue;
+    const p = crownPos(s.tree.stage, Number(sl.id.slice(1)));
+    if (Math.hypot(mx - p.x, my - p.y) < 10) return { kind: 'slot', slotId: sl.id };
+  }
+  for (const sl of SLOTS) {
+    if (sl.crown || !game.slotUnlocked(sl) || game.structureAt(sl.id) || Math.abs(mx - sl.x) > 10) continue;
     if (sl.underground ? Math.abs(my - sl.y) < 12 : my > WORLD.groundY - 30 && my < WORLD.groundY + 10) {
       return { kind: 'slot', slotId: sl.id };
     }
@@ -221,7 +231,7 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 function finishRun() {
   const s = game.state;
   const stars = game.stars();
-  const coins = coinsForRun(s.night, stars, game.path + 1);
+  const coins = Math.round(coinsForRun(s.night, stars, game.path + 1) * (game.retired ? 1.5 : 1));
   const prevBest = save.bestNight[game.path] ?? 0;
   save.bestNight[game.path] = Math.max(prevBest, s.night);
   lastRecord = s.night > prevBest;
@@ -268,7 +278,7 @@ function frame(now: number) {
     endShown = true;
     hud.closeMenu();
     const coins = finishRun();
-    setTimeout(() => hud.showEnd(coins, save.bestNight[game.path] ?? 0, lastRecord), 1400);
+    setTimeout(() => hud.showEnd(coins, save.bestNight[game.path] ?? 0, lastRecord), game.retired ? 300 : 1400);
   }
   renderer.render(game, view, time, frozen && started ? dt * 0.15 : dt);
   hud.update(dt);

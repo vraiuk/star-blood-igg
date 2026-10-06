@@ -8,7 +8,8 @@ const GROUND_AT = 0.66;
 
 /**
  * Side-view camera. It frames the Igg-Tree's Circle of light: as the tree grows
- * the view widens from 640×360 to the whole 960×540 world.
+ * the view widens from 640×360 to 1120×630 inside a 1440×720 world, so even the Great
+ * Igg-Tree's Circle leaves room (and time) before creatures reach the nests.
  */
 export class Camera {
   x = 0;
@@ -17,8 +18,10 @@ export class Camera {
   h = MIN_W * ASPECT;
 
   /** Target width for a given light radius. */
+  /** Widest view: beyond this pixels get too small; creatures then walk in from off-screen. */
+  static readonly MAX_W = 1120;
   static widthFor(radius: number) {
-    return Math.max(MIN_W, Math.min(WORLD.width, radius * 2 + 300));
+    return Math.max(MIN_W, Math.min(Camera.MAX_W, WORLD.width, radius * 2 + 300));
   }
 
   update(radius: number, dt: number, snap = false) {

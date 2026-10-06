@@ -11,12 +11,14 @@ export type RuneRank = 0 | 1 | 2 | 3 | 4;
 export const RUNE_RANKS = ['Дерево', 'Бронза', 'Серебро', 'Золото', 'Небо'] as const;
 export const RUNE_RANK_COLORS = ['#b08a5a', '#d9883a', '#c9d4e6', '#ffd24a', '#8fd0ff'] as const;
 
-export type KeeperRuneId = 'spear' | 'hammer' | 'starfall' | 'light';
+export type KeeperRuneId = 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm' | 'light';
 
 export const KEEPER_RUNES: Record<KeeperRuneId, { name: string; icon: string; desc: string }> = {
   spear: { name: 'Копьё Игг-Света', icon: 'spear', desc: 'Руна-Предмет (золото)' },
   hammer: { name: 'Игг-Молот', icon: 'hammer', desc: 'Руна-Предмет (золото)' },
   starfall: { name: 'Звездопад', icon: 'starfall', desc: 'Руна-Заклинание' },
+  radiance: { name: 'Сияние Игг', icon: 'radiance', desc: 'Руна-Умение' },
+  swarm: { name: 'Зов Роя', icon: 'swarm', desc: 'Руна-Умение' },
   light: { name: 'Руна Света', icon: 'light', desc: 'Руна-Свойство Восходящего' },
 };
 
@@ -59,6 +61,12 @@ export const PROPERTIES: PropertyDef[] = [
   P({ id: 'sf-charge', rune: 'starfall', type: 'Уменьшение', name: 'Звёздный след', desc: 'Заряжается на 45% быстрее', rank: 1, price: 7, stack: 1, mods: { chargeGain: 0.45 } }),
   P({ id: 'sf-rain', rune: 'starfall', type: 'Изменение', name: 'Ливень', desc: '+3 звезды', rank: 3, price: 14, stack: 1, mods: { starfallMeteors: 3 } }),
   P({ id: 'sf-scorch', rune: 'starfall', type: 'Изменение', name: 'Выжженная земля', desc: 'Пламя от звёзд жжёт вдвое сильнее', rank: 2, price: 9, stack: 1, mods: { starfallBurn: 1 } }),
+  // ── Сияние Игг
+  P({ id: 'rd-long', rune: 'radiance', type: 'Усиление', name: 'Долгое сияние', desc: 'Сияние длится на 50% дольше', rank: 1, price: 7, stack: 2, mods: {} }),
+  P({ id: 'rd-heal', rune: 'radiance', type: 'Изменение', name: 'Целящий свет', desc: 'Во время Сияния Древо лечится 20 HP/с', rank: 2, price: 9, stack: 1, mods: {} }),
+  // ── Зов Роя
+  P({ id: 'sw-wide', rune: 'swarm', type: 'Усиление', name: 'Широкий зов', desc: 'Охват Зова Роя +40%', rank: 1, price: 6, stack: 2, mods: {} }),
+  P({ id: 'sw-fury', rune: 'swarm', type: 'Изменение', name: 'Ярость роя', desc: 'Гнёзда под Зовом наносят +40% урона', rank: 2, price: 10, stack: 1, mods: {} }),
   // ── Руна Света
   P({ id: 'lt-spring', rune: 'light', type: 'Усиление', name: 'Родник Света', desc: '+30% регенерации Света', rank: 1, price: 6, stack: 2, mods: { lightRegen: 0.3 } }),
   P({ id: 'lt-vessel', rune: 'light', type: 'Усиление', name: 'Сосуд', desc: '+40 к запасу Света, +40 HP', rank: 1, price: 6, stack: 2, mods: { lightMax: 40, keeperHp: 40 } }),

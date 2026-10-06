@@ -51,7 +51,7 @@ function buildSky(ec: { x: number; y: number; r: number }) {
   ditherGradient(c, 0, 0, W, GY, [PAL.sky0, PAL.sky1, PAL.sky2, PAL.sky3, PAL.sky4, '#311f4a']);
   const r = seeded(7);
   // stars
-  for (let i = 0; i < 380; i++) {
+  for (let i = 0; i < 700; i++) {
     const x = r() * W, y = r() * GY * 0.7;
     const b = r();
     rect(c, x, y, 1, 1, b > 0.92 ? '#d9d4ff' : b > 0.6 ? '#7c79b8' : '#3d3b6e');
@@ -62,7 +62,7 @@ function buildSky(ec: { x: number; y: number; r: number }) {
     }
   }
   // faint nebula streaks
-  for (let i = 0; i < 1600; i++) {
+  for (let i = 0; i < 2600; i++) {
     const t = r();
     const x = (280 + t * 340 + (r() - 0.5) * 40) * SX;
     const y = 60 + Math.sin(t * 5) * 18 + t * 40 + (r() - 0.5) * 30;
@@ -160,13 +160,13 @@ function buildMid() {
       if (r() > 0.5) line(c, x, y + 1, x - dir * len * 0.7, y - len * 0.3, col);
     }
   };
-  for (let i = 0; i < 105; i++) tree(r() * MW, 214 + OY, 26 + r() * 40, '#0e1028');
+  for (let i = 0; i < 160; i++) tree(r() * MW, 214 + OY, 26 + r() * 40, '#0e1028');
   // rolling hill band
   for (let x = 0; x < MW; x++) {
     const h = 18 + Math.sin(x * 0.03) * 6 + Math.sin(x * 0.11) * 3;
     rect(c, x, 214 + OY - h, 1, h + 30, PAL.mid1);
   }
-  for (let i = 0; i < 90; i++) tree(r() * MW, 226 + OY, 20 + r() * 34, PAL.mid0);
+  for (let i = 0; i < 135; i++) tree(r() * MW, 226 + OY, 20 + r() * 34, PAL.mid0);
   for (let x = 0; x < MW; x++) {
     const h = 6 + Math.sin(x * 0.05 + 2) * 3 + Math.sin(x * 0.17) * 2;
     rect(c, x, 230 + OY - h, 1, h + 10, PAL.mid0);
@@ -202,7 +202,7 @@ function buildGround() {
     }
   }
   // rocks
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 230; i++) {
     const x = r() * W, y = GY + 8 + r() * (H - GY - 10);
     const s = 2 + r() * 6;
     ellipse(c, x, y, s, s * 0.6, PAL.rock);

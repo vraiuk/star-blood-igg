@@ -161,7 +161,7 @@ export class Audio {
           this.tone(140, 0.15, 'triangle', 0.3, 90);
           this.hiss(0.12, 900, 0.2, 1, 'lowpass');
           this.tone(660 + e.tier * 160, 0.3, 'sine', 0.1, undefined, 0.05);
-          if (e.tier >= 3) [880, 1175, 1568].forEach((f, i) => this.tone(f, 0.6, 'sine', 0.08, undefined, 0.1 + i * 0.07));
+          if (e.tier >= 2) [880, 1175, 1568].forEach((f, i) => this.tone(f, 0.6, 'sine', 0.08, undefined, 0.1 + i * 0.07));
           break;
         case 'sold':
           this.tone(300, 0.2, 'triangle', 0.15, 150);

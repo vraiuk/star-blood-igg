@@ -147,6 +147,30 @@ const PAINTERS: Record<string, Painter> = {
     for (let i = 0; i < 5; i++) rect(c, 6 + i * 2, 13 - (i === 2 ? 1 : 0), 2, 2, i % 2 ? '#5aa63a' : '#9be35a');
     rect(c, 14, 13, 1, 1, PAL.gold4);
   },
+  termite: (c) => {
+    for (let i = 0; i < 10; i++) { const w = Math.round((1 - i / 10) * 6 + 1); rect(c, 8 - w, 15 - i, w * 2, 1, i % 3 === 0 ? '#8a5a2a' : '#6a4422'); }
+    rect(c, 7, 4, 2, 1, PAL.gold4);
+    rect(c, 2, 13, 4, 2, PAL.gold2); rect(c, 6, 13, 1, 1, '#f0e0c0');
+    rect(c, 11, 13, 4, 2, PAL.gold2); rect(c, 10, 13, 1, 1, '#f0e0c0');
+  },
+  honeycomb: (c) => {
+    for (const [dx, dy] of [[8, 4], [4, 7], [12, 7], [8, 10], [4, 13], [12, 13]]) { rect(c, dx - 2, dy - 1, 4, 3, PAL.gold2); rect(c, dx - 1, dy - 1, 2, 1, PAL.gold4); }
+  },
+  mender: (c) => {
+    ellipse(c, 8, 9, 5, 4, '#3a8a3a'); ellipse(c, 7, 8, 4, 3, '#5ac85a');
+    rect(c, 6, 3, 5, 2, '#9cff8a'); rect(c, 7, 2, 2, 4, '#9cff8a');
+    line(c, 4, 12, 2, 14, '#2a5a2a'); line(c, 12, 12, 14, 14, '#2a5a2a');
+  },
+  radiance: (c) => {
+    line(c, 8, 15, 8, 9, PAL.gold2, 2);
+    disc(c, 8, 6, 4, PAL.gold3);
+    disc(c, 8, 6, 2, PAL.gold5);
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; rect(c, 8 + Math.cos(a) * 7, 6 + Math.sin(a) * 6, 1, 1, PAL.gold5); }
+  },
+  swarm: (c) => {
+    for (const [x, y] of [[4, 5], [11, 4], [8, 9], [3, 11], [12, 11]]) { rect(c, x, y, 2, 2, PAL.gold3); rect(c, x - 1, y - 1, 1, 1, PAL.gold5); rect(c, x + 2, y - 1, 1, 1, PAL.gold5); }
+    rect(c, 7, 13, 3, 2, '#9cff8a');
+  },
   lock: (c) => {
     rect(c, 4, 7, 8, 7, '#4a4560');
     rect(c, 5, 3, 1, 5, '#6a6585'); rect(c, 10, 3, 1, 5, '#6a6585'); rect(c, 5, 3, 6, 1, '#6a6585');

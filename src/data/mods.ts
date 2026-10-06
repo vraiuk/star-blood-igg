@@ -66,7 +66,7 @@ export interface Mods {
   wormStar: number;
 }
 
-const famZero = (): Record<Family, number> => ({ hive: 0, beetle: 0, dragonfly: 0, spider: 0, caterpillar: 0 });
+const famZero = (): Record<Family, number> => ({ hive: 0, beetle: 0, dragonfly: 0, spider: 0, caterpillar: 0, termite: 0, honeycomb: 0, mender: 0 });
 
 export function baseMods(): Mods {
   return {

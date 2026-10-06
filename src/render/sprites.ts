@@ -1,4 +1,4 @@
-import { ENEMIES, WORLD } from '../data/balance';
+import { AFFIXES, ENEMIES, WORLD } from '../data/balance';
 import { NESTS } from '../data/nests';
 import type { Drop, Enemy, Keeper, Projectile, Structure } from '../sim/types';
 import { type Ctx, PAL, disc, ellipse, line, rect, ring } from './pixel';
@@ -28,6 +28,9 @@ export function drawEnemy(c: Ctx, e: Enemy, time: number) {
     case 'guard': return guard(c, e, t, flash);
     case 'executioner': return executioner(c, e, t, flash, time, rim);
     case 'reaper': return reaper(c, e, t, moving, body, rim);
+    case 'jumper': return jumper(c, e, t, body, rim);
+    case 'tunneler': return worm(c, e, t, flash);
+    case 'tunnelerUp': return forager(c, e, t, moving, body, rim);
   }
 }
 
@@ -200,6 +203,22 @@ function executioner(c: Ctx, e: Enemy, t: number, flash: boolean, time: number, 
   rect(c, cx, cy, 2, 2, Math.sin(time * 8) > 0 ? PAL.acid2 : PAL.acid1);
 }
 
+/** Имаго-Прыгун: «разведчики, лёгкая крылатая кавалерия» — a leaping winged bug. */
+function jumper(c: Ctx, e: Enemy, t: number, body: string, rim: string) {
+  const d = e.dir;
+  const air = e.jumping > 0 ? Math.sin((1 - e.jumping / 0.55) * Math.PI) * 26 : 0;
+  const x = Math.round(e.x), y = GY - Math.round(air);
+  line(c, x - 3 * d, y - 4, x - 6 * d, y, PAL.shade0);
+  line(c, x + 2 * d, y - 4, x + 5 * d, y, PAL.shade0);
+  ellipse(c, x, y - 7, 6, 3, body);
+  rect(c, x - 5, y - 10, 10, 1, rim);
+  ellipse(c, x + 6 * d, y - 8, 2, 2, body);
+  // wings flutter while airborne
+  const w = air > 0 ? (Math.sin(t * 40) > 0 ? 6 : 3) : 2;
+  line(c, x - d, y - 9, x - 4 * d, y - 9 - w, '#8a7aa8');
+  line(c, x + d, y - 9, x - 2 * d, y - 10 - w, '#a89ac8');
+}
+
 /** Имаго-Жнец: «напоминающие богомолов» — armoured mantis with scythe arms. */
 function reaper(c: Ctx, e: Enemy, t: number, moving: boolean, body: string, rim: string) {
   const d = e.dir;
@@ -311,9 +330,37 @@ export function drawEnemyEyes(c: Ctx, e: Enemy, time: number) {
     case 'reaper':
       eye(x + 8 * d, y - 29, '#ff8a4a'); eye(x + 9 * d, y - 28, '#ff8a4a');
       break;
+    case 'jumper': {
+      const air = e.jumping > 0 ? Math.sin((1 - e.jumping / 0.55) * Math.PI) * 26 : 0;
+      eye(x + 7 * d, y - 9 - Math.round(air), '#d8ffb0');
+      break;
+    }
+    case 'tunneler':
+      eye(e.x + 5 * d, e.y - 3, '#ffd070');
+      break;
+    case 'tunnelerUp':
+      eye(x + 9 * d, y - 7, '#ffd070');
+      break;
     default:
       break;
   }
+}
+
+/** Elite aura and glyph so modifiers are readable. */
+export function drawAffix(c: Ctx, e: Enemy, time: number) {
+  if (!e.affix) return;
+  const a = AFFIXES[e.affix];
+  const def = ENEMIES[e.kind];
+  const h = def.underground ? 10 : def.height;
+  const y0 = def.underground ? e.y : GY;
+  for (let i = 0; i < 10; i++) {
+    const ang = time * 3 + (i / 10) * Math.PI * 2;
+    rect(c, e.x + Math.cos(ang) * (def.radius + 3), y0 - h * 0.5 + Math.sin(ang) * (h * 0.6 + 2), 1, 1, a.color);
+  }
+  c.fillStyle = a.color;
+  c.font = '8px monospace';
+  c.textAlign = 'center';
+  c.fillText(a.glyph, e.x, y0 - h - 10);
 }
 
 export function drawEnemyHp(c: Ctx, e: Enemy) {
@@ -387,12 +434,20 @@ export function drawStructure(c: Ctx, s: Structure, time: number) {
     c.rect(s.x - 30, s.underground ? s.y - 20 : GY - 70 * build - 2, 60, 200);
     c.clip();
   }
+  if (!s.underground) {
+    // soft ground halo so nests read against the dark background
+    for (let i = -10; i <= 10; i++) {
+      const k = 1 - Math.abs(i) / 11;
+      if (k > 0.2) rect(c, s.x + i, GY - 1, 1, 1, k > 0.6 ? 'rgba(255,214,120,0.55)' : 'rgba(255,190,90,0.3)');
+    }
+  }
   switch (s.family) {
     case 'hive': hive(c, s, time, flash); break;
     case 'beetle': beetle(c, s, time, flash); break;
     case 'dragonfly': dragonflyNest(c, s, time, flash); break;
     case 'spider': spider(c, s, time); break;
     case 'caterpillar': cocoon(c, s, time, flash); break;
+    case 'termite': mound(c, s, time, flash); break;
   }
   c.restore();
   if (s.hp < s.maxHp || s.family === 'beetle') {
@@ -403,7 +458,7 @@ export function drawStructure(c: Ctx, s: Structure, time: number) {
   }
   // tier pips (gold for base levels, crimson for Star Blood specialization levels)
   const py = s.underground ? s.y + 12 : GY + 3;
-  for (let i = 0; i <= s.tier; i++) rect(c, s.x - s.tier * 1.5 + i * 3 - 1, py, 2, 1, i >= 3 ? PAL.blood2 : PAL.gold3);
+  for (let i = 0; i <= s.tier; i++) rect(c, s.x - s.tier * 1.5 + i * 3 - 1, py, 2, 1, i >= 2 ? PAL.blood2 : PAL.gold3);
 }
 
 /** A tiny glowing firefly orbiting a point. */
@@ -438,11 +493,11 @@ function hive(c: Ctx, s: Structure, time: number, flash: boolean) {
     rect(c, px - 1, py - 1, 2, 2, g > 0.5 ? PAL.gold5 : PAL.gold4);
   };
   if (s.spec === 'A') {
-    pod(x - 3, podY, 4); pod(x + 4, podY + 2, 3); pod(x, podY - 5, 3 + (tier - 3));
+    pod(x - 3, podY, 4); pod(x + 4, podY + 2, 3); pod(x, podY - 5, 3 + (tier - 2));
   } else if (s.spec === 'B') {
     pod(x, podY, 4);
     // focusing amber lens on top
-    disc(c, x, podY - 8, 3 + (tier - 3), PAL.gold3);
+    disc(c, x, podY - 8, 3 + (tier - 2), PAL.gold3);
     disc(c, x, podY - 8, 2, PAL.gold5);
     line(c, x - 4, podY - 8, x + 4, podY - 8, PAL.wood3);
   } else {
@@ -450,6 +505,9 @@ function hive(c: Ctx, s: Structure, time: number, flash: boolean) {
   }
   const n = 2 + tier * 2 + (s.spec === 'A' ? 4 : 0);
   for (let i = 0; i < n; i++) firefly(c, x, podY, 6 + (i % 3) * 3, time, i + s.id);
+  // muzzle flash right after a volley
+  const fired = s.cd > 0 && s.age > 0.5 && (s.spec === 'B' ? s.cd > 2.2 : s.cd > 0.55);
+  if (fired) { disc(c, x, podY, 6, 'rgba(255,240,180,0.55)'); rect(c, x - 1, podY - 1, 3, 3, PAL.white); }
   if (tier >= 1) {
     const bx = x + (s.aim > 0 ? -7 : 6);
     rect(c, bx, y - 18, 2, 7, PAL.banner);
@@ -460,7 +518,7 @@ function hive(c: Ctx, s: Structure, time: number, flash: boolean) {
 function beetle(c: Ctx, s: Structure, time: number, flash: boolean) {
   const out = s.x < WORLD.treeX ? -1 : 1;
   const x = Math.round(s.x), y = GY;
-  const sz = 7 + Math.min(s.tier, 2) * 1.5 + (s.tier >= 3 ? 2 : 0);
+  const sz = 7 + Math.min(s.tier, 1) * 2 + (s.tier >= 2 ? 3 : 0);
   const shell0 = flash ? '#fff' : '#3a2416';
   const shell1 = flash ? '#fff' : '#6a4426';
   const rim = s.spec === 'A' ? PAL.gold3 : PAL.gold2;
@@ -510,7 +568,7 @@ function dragonflyNest(c: Ctx, s: Structure, time: number, flash: boolean) {
   const g = 0.5 + 0.5 * Math.sin(time * 2.5 + s.id);
   const storm = s.spec === 'B';
   const core = storm ? (g > 0.6 ? '#e8f4ff' : '#9fd0ff') : g > 0.5 ? PAL.gold5 : PAL.gold4;
-  disc(c, x, ny - 3, 2 + (s.spec === 'A' ? 2 + (s.tier - 3) : 0), core);
+  disc(c, x, ny - 3, 2 + (s.spec === 'A' ? 2 + (s.tier - 2) : 0), core);
   // dragonflies
   const n = 2 + s.tier;
   for (let i = 0; i < n; i++) {
@@ -524,6 +582,41 @@ function dragonflyNest(c: Ctx, s: Structure, time: number, flash: boolean) {
     rect(c, fx - 1, fy - (wing ? 2 : 1), 1, 1, storm ? '#e8f4ff' : PAL.gold5);
     rect(c, fx + 1, fy - (wing ? 1 : 2), 1, 1, storm ? '#e8f4ff' : PAL.gold5);
     rect(c, fx + dir * 2, fy, 1, 1, PAL.white);
+  }
+}
+
+/** A termite mound of clay and amber. */
+function mound(c: Ctx, s: Structure, time: number, flash: boolean) {
+  const x = Math.round(s.x), y = GY;
+  const h = 14 + s.tier * 3;
+  for (let i = 0; i < h; i++) {
+    const w = Math.round((1 - i / h) * (8 + s.tier) + 2);
+    rect(c, x - w, y - i, w * 2, 1, flash ? '#fff' : i % 4 === 0 ? '#8a5a2a' : '#6a4422');
+  }
+  for (let i = 0; i < 4 + s.tier; i++) rect(c, x - 5 + ((i * 7) % 11), y - 3 - ((i * 5) % (h - 4)), 2, 1, '#2a1a10');
+  const g = 0.5 + 0.5 * Math.sin(time * 3 + s.id);
+  rect(c, x - 1, y - h - 1, 3, 2, g > 0.5 ? PAL.gold4 : PAL.gold2);
+  if (s.spec === 'B') for (let i = -1; i <= 1; i++) rect(c, x + i * 5, y - h + 4, 2, 3, '#c9b48a');
+  if (s.spec === 'A') line(c, x, y - h, x + 4, y - h - 6, '#d8d0c0');
+}
+
+/** A Golden Termite warrior. */
+export function drawSoldier(c: Ctx, u: import('../sim/types').Soldier) {
+  if (u.hp <= 0) return;
+  const x = Math.round(u.x), y = GY;
+  const step = Math.round(Math.sin(u.walk * 14));
+  const body = u.hitFlash > 0 ? '#fff' : PAL.gold2;
+  rect(c, x - 3, y - 4, 6, 3, body);
+  rect(c, x - 3, y - 4, 6, 1, PAL.gold4);
+  rect(c, x + u.dir * 3, y - 5, 2, 2, PAL.gold1);
+  // mandibles
+  rect(c, x + u.dir * 5, y - 5, 1, 1, '#f0e0c0');
+  rect(c, x + u.dir * 5, y - 3, 1, 1, '#f0e0c0');
+  rect(c, x - 2 + step, y - 1, 1, 1, PAL.gold0);
+  rect(c, x + 1 - step, y - 1, 1, 1, PAL.gold0);
+  if (u.hp < u.maxHp) {
+    rect(c, x - 3, y - 8, 6, 1, '#3a1420');
+    rect(c, x - 3, y - 8, Math.max(1, Math.round((6 * u.hp) / u.maxHp)), 1, '#9cff8a');
   }
 }
 
@@ -551,8 +644,8 @@ export function drawWorker(c: Ctx, w: import('../sim/types').Worker, time: numbe
     rect(c, sx, y - 3 - hump, 1, 1, PAL.gold4);
   }
   rect(c, x + w.dir * 2, y - 3, 1, 1, '#1a1a10');
-  if (w.carry) {
-    rect(c, x - w.dir * 2, y - 7 - Math.round(inch), 2, 2, w.carry.kind === 'star' ? PAL.blood2 : PAL.gold3);
+  if (w.carry.n > 0) {
+    for (let i = 0; i < Math.min(4, w.carry.n); i++) rect(c, x - w.dir * (2 + i * 2), y - 7 - Math.round(inch) - (i % 2), 2, 2, w.carry.star > 0 && i === 0 ? PAL.blood2 : PAL.gold3);
     if (Math.sin(time * 9) > 0.6) rect(c, x - w.dir * 2 + 1, y - 8, 1, 1, PAL.white);
   }
 }
@@ -609,7 +702,10 @@ export function drawSlotMarker(c: Ctx, x: number, underground: boolean, time: nu
     return;
   }
   const y = GY + 3;
-  const col = hover ? PAL.gold5 : g > 0.5 ? PAL.gold3 : PAL.gold2;
+  const col = hover ? PAL.gold5 : g > 0.5 ? PAL.gold4 : PAL.gold3;
+  // a beam of light rising from the rune makes free build spots obvious
+  for (let i = 0; i < 18; i++) if ((i + Math.floor(time * 8)) % 3 !== 0) rect(c, x, y - 5 - i, 1, 1, `rgba(255,220,130,${0.6 - i * 0.03})`);
+  rect(c, x - 3, y - 4, 7, 7, 'rgba(0,0,0,0.5)');
   // rune diamond
   rect(c, x, y - 3, 1, 1, col);
   rect(c, x - 1, y - 2, 1, 1, col);
@@ -626,28 +722,32 @@ export function drawSlotMarker(c: Ctx, x: number, underground: boolean, time: nu
 // ───────────────────────────── drops & projectiles ─────────────────
 
 export function drawDrop(c: Ctx, d: Drop, time: number) {
-  const fade = d.life < 3 ? (Math.sin(time * 20) > 0 ? 1 : 0) : 1;
-  if (!fade) return;
-  const bob = d.grounded ? Math.round(Math.sin(time * 4 + d.id) * 1) : 0;
-  const x = Math.round(d.x), y = Math.round(d.y) - bob;
-  if (d.kind === 'amber') {
-    // amber resin droplet
-    rect(c, x, y - 2, 1, 1, PAL.gold4);
-    rect(c, x - 1, y - 1, 3, 2, PAL.gold2);
-    rect(c, x - 1, y + 1, 3, 1, PAL.gold1);
-    rect(c, x - 1, y - 1, 1, 1, PAL.gold5);
-    return;
+  const x = Math.round(d.x), y = Math.round(d.y);
+  const star = d.kind === 'star';
+  const sky = d.mode === 3;
+  // hovering loot glows and casts a thin beam to the ground so it never blends in
+  if (d.mode === 1 && d.y < GY - 6) {
+    for (let yy = y + 3; yy < GY; yy += 2) rect(c, x, yy, 1, 1, star ? 'rgba(255,90,106,0.45)' : 'rgba(255,200,80,0.45)');
   }
-  // Star Blood: crimson crystal with a star glint
-  rect(c, x, y - 3, 1, 1, PAL.blood2);
-  rect(c, x - 1, y - 2, 3, 1, PAL.blood2);
-  rect(c, x - 2, y - 1, 5, 1, PAL.blood1);
-  rect(c, x - 1, y, 3, 1, PAL.blood1);
-  rect(c, x, y + 1, 1, 1, PAL.blood0);
-  const tw = Math.sin(time * 6 + d.id * 3);
-  if (tw > 0.3) {
-    rect(c, x + 2, y - 4, 1, 3, PAL.white);
-    rect(c, x + 1, y - 3, 3, 1, PAL.white);
+  if (!sky || Math.sin(time * 30) > 0) {
+    const g = 0.5 + 0.5 * Math.sin(time * 5 + d.id);
+    const halo = star ? (g > 0.5 ? '#ff7a8a' : '#c21f3a') : g > 0.5 ? PAL.gold4 : PAL.gold2;
+    rect(c, x - 3, y, 1, 1, halo); rect(c, x + 3, y, 1, 1, halo); rect(c, x, y - 4, 1, 1, halo); rect(c, x, y + 3, 1, 1, halo);
+  }
+  // dark outline then the gem
+  rect(c, x - 2, y - 2, 5, 4, '#1a0a06');
+  if (!star) {
+    rect(c, x - 1, y - 2, 3, 1, PAL.gold4);
+    rect(c, x - 1, y - 1, 3, 2, PAL.gold2);
+    rect(c, x - 1, y - 1, 1, 1, PAL.gold5);
+    rect(c, x, y + 1, 1, 1, PAL.gold1);
+  } else {
+    rect(c, x, y - 3, 1, 1, PAL.blood2);
+    rect(c, x - 1, y - 2, 3, 1, PAL.blood2);
+    rect(c, x - 2, y - 1, 5, 1, PAL.blood1);
+    rect(c, x - 1, y, 3, 1, PAL.blood1);
+    rect(c, x, y + 1, 1, 1, PAL.blood0);
+    if (Math.sin(time * 6 + d.id * 3) > 0.3) { rect(c, x + 2, y - 4, 1, 3, PAL.white); rect(c, x + 1, y - 3, 3, 1, PAL.white); }
   }
 }
 
@@ -656,10 +756,11 @@ export function drawProjectile(c: Ctx, p: Projectile) {
   const ux = p.vx / sp, uy = p.vy / sp;
   switch (p.kind) {
     case 'arrow':
-      // a darting firefly with a light trail
-      line(c, p.x - ux * 5, p.y - uy * 5, p.x, p.y, PAL.gold1);
-      line(c, p.x - ux * 2, p.y - uy * 2, p.x, p.y, PAL.gold3);
-      rect(c, p.x, p.y, 1, 1, PAL.gold5);
+      // a darting firefly with a bright light trail
+      line(c, p.x - ux * 9, p.y - uy * 9, p.x, p.y, PAL.gold1, 2);
+      line(c, p.x - ux * 4, p.y - uy * 4, p.x, p.y, PAL.gold4, 2);
+      rect(c, p.x - 1, p.y - 1, 3, 3, PAL.gold5);
+      rect(c, p.x, p.y, 1, 1, PAL.white);
       break;
     case 'spear':
       line(c, p.x - ux * 14, p.y, p.x - ux * 4, p.y, PAL.gold3, 1);
@@ -693,4 +794,59 @@ export function drawProjectile(c: Ctx, p: Projectile) {
     default:
       break;
   }
+}
+
+/** Utility nests living in the crown: small glowing pods hanging from branches. */
+export function drawCrownNest(c: Ctx, s: Structure, time: number) {
+  const x = Math.round(s.x), y = Math.round(s.y);
+  const g = 0.5 + 0.5 * Math.sin(time * 3 + s.id);
+  line(c, x, y - 8, x, y - 3, PAL.bark2);
+  switch (s.family) {
+    case 'honeycomb': {
+      for (const [dx, dy] of [[0, 0], [-3, 2], [3, 2], [0, 4], [-3, 6], [3, 6]] as const) {
+        rect(c, x + dx - 1, y + dy - 1, 3, 2, s.spec === 'B' ? PAL.blood1 : PAL.gold2);
+        rect(c, x + dx, y + dy - 1, 1, 1, g > 0.5 ? PAL.gold5 : PAL.gold4);
+      }
+      break;
+    }
+    case 'mender': {
+      for (let i = 0; i < 3 + s.tier; i++) {
+        const a = time * 2 + i * 2.1;
+        const bx = x + Math.cos(a) * 5, by = y + 3 + Math.sin(a) * 3;
+        rect(c, bx - 1, by - 1, 3, 2, '#5ac85a');
+        rect(c, bx, by - 1, 1, 1, '#c8ffb0');
+      }
+      rect(c, x - 1, y + 1, 3, 3, g > 0.5 ? '#9cff8a' : '#5ac85a');
+      break;
+    }
+    case 'caterpillar': {
+      ellipse(c, x, y + 4, 3, 5, s.spec === 'B' ? PAL.gold2 : '#d8d0c0');
+      for (let i = 0; i < 8; i += 2) rect(c, x - 2, y + i, 5, 1, '#a89c8c');
+      break;
+    }
+    default: {
+      // crown hive: an amber pod with fireflies
+      ellipse(c, x, y + 3, 4, 5, PAL.gold1);
+      ellipse(c, x, y + 2, 3, 4, PAL.gold2);
+      rect(c, x - 1, y + 1, 2, 2, g > 0.5 ? PAL.gold5 : PAL.gold4);
+      for (let i = 0; i < 3 + s.tier * 2; i++) {
+        const a = time * (1.6 + (i % 3) * 0.4) + i * 2.1;
+        rect(c, x + Math.cos(a) * 8, y + 3 + Math.sin(a * 1.3) * 5, 1, 1, PAL.gold5);
+      }
+    }
+  }
+  for (let i = 0; i <= s.tier; i++) rect(c, x - s.tier * 1.5 + i * 3 - 1, y + 11, 2, 1, i >= 2 ? PAL.blood2 : PAL.gold3);
+}
+
+/** An empty crown slot: a glowing hollow in the branches. */
+export function drawCrownSlot(c: Ctx, x: number, y: number, time: number, hover: boolean) {
+  const g = 0.5 + 0.5 * Math.sin(time * 3 + x);
+  const r = 5 + g + (hover ? 2 : 0);
+  for (let a = 0; a < 16; a++) {
+    if (a % 2 && !hover) continue;
+    const ang = (a / 16) * Math.PI * 2 + time;
+    rect(c, x + Math.cos(ang) * r, y + Math.sin(ang) * r, 1, 1, hover ? PAL.gold5 : PAL.gold4);
+  }
+  rect(c, x - 2, y, 5, 1, PAL.gold5);
+  rect(c, x, y - 2, 1, 5, PAL.gold5);
 }

@@ -4,12 +4,12 @@
  */
 
 export const WORLD = {
-  width: 960,
-  height: 540,
-  groundY: 380,
+  width: 1440,
+  height: 720,
+  groundY: 560,
   /** y of the underground worm lane */
-  wormLaneY: 448,
-  treeX: 480,
+  wormLaneY: 628,
+  treeX: 720,
   /** half-width of the tree trunk zone that enemies must reach to attack it */
   treeReach: 16,
   spawnMargin: 14,
@@ -21,9 +21,9 @@ export const WORLD = {
  */
 export type EnemyKind =
   | 'hound' | 'stalker' | 'spitter'
-  | 'forager' | 'worm' | 'guard' | 'larva' | 'reaper'
+  | 'forager' | 'worm' | 'guard' | 'larva' | 'reaper' | 'jumper' | 'tunneler' | 'tunnelerUp'
   | 'mother' | 'executioner';
-export type AbilityId = 'spear' | 'hammer' | 'starfall';
+export type AbilityId = 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm';
 
 export interface EnemyDef {
   name: string;
@@ -79,6 +79,18 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     name: 'Имаго-Жнец', hp: 900, armor: 9, speed: 24, damage: 46, attackRate: 1.3, structureMult: 1.3, amber: 28, star: 1,
     charge: 10, worm: true, smashesStructures: true, ccMult: 0.7, radius: 10, height: 30,
   }),
+  jumper: E({
+    name: 'Имаго-Прыгун', hp: 90, speed: 52, damage: 10, attackRate: 0.8, amber: 6, star: 0.3, charge: 3,
+    worm: true, radius: 6, height: 12,
+  }),
+  tunneler: E({
+    name: 'Имаго-Землерой', hp: 260, armor: 4, speed: 22, damage: 18, attackRate: 1, amber: 10, star: 1, charge: 6,
+    worm: true, underground: true, radius: 10, height: 10,
+  }),
+  tunnelerUp: E({
+    name: 'Имаго-Землерой', hp: 260, armor: 4, speed: 26, damage: 18, attackRate: 1, amber: 10, star: 1, charge: 6,
+    worm: true, smashesStructures: true, radius: 9, height: 14,
+  }),
   larva: E({ name: 'Личинка', hp: 18, speed: 38, damage: 3, attackRate: 0.7, amber: 1, star: 0.2, charge: 1, worm: true, radius: 4, height: 5 }),
   mother: E({
     name: 'Имаго-Матерь', hp: 5200, armor: 4, speed: 8, damage: 80, attackRate: 2, amber: 79, star: 30, devRune: 1, charge: 40,
@@ -96,6 +108,23 @@ export const BROOD: Partial<Record<EnemyKind, { every: number; count: number; ki
   executioner: { every: 9, count: 2, kind: 'forager' },
 };
 
+/** Elite affixes (from night 6): readable modifiers with an aura and a glyph. */
+export type Affix = 'armored' | 'swift' | 'regen' | 'volatile';
+export const AFFIXES: Record<Affix, { name: string; glyph: string; color: string }> = {
+  armored: { name: 'Бронированный', glyph: '◆', color: '#b8c4d8' },
+  swift: { name: 'Быстрый', glyph: '»', color: '#8fd0ff' },
+  regen: { name: 'Регенерирующий', glyph: '+', color: '#8aff8a' },
+  volatile: { name: 'Взрывной', glyph: '!', color: '#ff8a4a' },
+};
+export const ELITE = {
+  fromNight: 5,
+  chance: (n: number) => Math.min(0.35, 0.04 + 0.015 * n),
+  hp: 1.35, armor: 8, speed: 1.6, regen: 0.03, blast: 50, blastRadius: 34, loot: 1.6,
+} as const;
+/** Jumpers leap over blockers; tunnellers surface this close to the trunk. */
+export const JUMP = { distance: 46, cooldown: 3.5, time: 0.55 } as const;
+export const TUNNEL_SURFACE = 70;
+
 /** Minimum share of a hit that passes armor. */
 export const ARMOR_FLOOR = 0.25;
 
@@ -107,9 +136,22 @@ export interface SlotDef {
   underground: boolean;
   /** distance from the trunk (surface slots unlock by Circle radius) */
   offset: number;
-  /** root nodes unlock by tree stage (1-based) */
+  /** root nodes and crown slots unlock by tree stage (1-based) */
   unlockStage?: number;
+  /** utility slot in the Igg-Tree's crown (not reachable by creatures) */
+  crown?: boolean;
 }
+
+/** Crown slots: the Tree as a tower. Index i opens at stage 2 + i. Positions are drawn by the renderer. */
+export const CROWN_SLOTS = 5;
+export const CROWN_X = [-36, 36, -72, 72, 0] as const;
+/** Height of crown slots above the ground per tree stage, and sideways spread. */
+const CROWN_Y = [30, 46, 78, 108, 140, 175] as const;
+export function crownPos(stage: number, i: number): { x: number; y: number } {
+  return { x: WORLD.treeX + CROWN_X[i] * (0.7 + 0.32 * stage), y: WORLD.groundY - CROWN_Y[stage] - (i >= 2 ? -10 : 0) };
+}
+
+function CROWN_X_LIST(): number[] { return [-36, 36, -72, 72, 0]; }
 
 const SURFACE_OFFSETS = [42, 76, 112, 150, 190, 232, 276, 322, 370, 420];
 /**
@@ -127,6 +169,9 @@ export const SLOTS: SlotDef[] = [
     { id: `L${i}`, x: WORLD.treeX - o, y: WORLD.groundY, underground: false, offset: o },
     { id: `R${i}`, x: WORLD.treeX + o, y: WORLD.groundY, underground: false, offset: o },
   ]),
+  ...CROWN_X_LIST().map((dx, i) => ({
+    id: `C${i}`, x: WORLD.treeX + dx, y: WORLD.groundY - 90, underground: false, offset: 0, unlockStage: 2 + i, crown: true,
+  })),
   ...ROOT_ARC.map(([r, deg, st], i) => {
     const a = (deg * Math.PI) / 180;
     const x = Math.round(WORLD.treeX + Math.cos(a) * r * 1.25);
@@ -210,6 +255,16 @@ export const ABILITIES = {
     name: 'Звездопад', desc: 'Заряжается убийствами. Пять огромных звёзд падают у курсора: оглушают, рвут броню и выжигают землю.',
     cost: 0, cooldown: 70, unlockStage: 4, key: '3',
     damage: 520, meteors: 5, spread: 60, burnDps: 60, burnTime: 5, chargeMax: 100, impactRadius: 34, stun: 1.2,
+  },
+  radiance: {
+    name: 'Сияние Игг', desc: 'Древо вспыхивает: Круг шире на 25%, Игг-свет жжёт Червей втрое, освещённые твари получают +30% урона.',
+    cost: 45, cooldown: 35, unlockStage: 3, key: '4',
+    duration: 8, radius: 0.25, burn: 3, vuln: 0.3,
+  },
+  swarm: {
+    name: 'Зов Роя', desc: 'Гнёзда рядом с Восходящим 6 с атакуют на 60% быстрее и сразу чинятся на 25%.',
+    cost: 40, cooldown: 28, unlockStage: 2, key: '5',
+    duration: 6, reach: 170, haste: 0.6, heal: 0.25,
   },
 } satisfies Record<AbilityId, AbilityDef & Record<string, number | string>>;
 

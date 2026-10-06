@@ -1,4 +1,4 @@
-import { ENEMIES, SLOTS, WORLD } from '../data/balance';
+import { ENEMIES, SLOTS, WORLD, crownPos } from '../data/balance';
 import type { Game } from '../sim/game';
 import type { GameEvent } from '../sim/types';
 import { type Backdrop, buildBackdrop } from './background';
@@ -7,8 +7,8 @@ import { Lighting } from './lighting';
 import { Particles } from './particles';
 import { type Ctx, PAL, makeCanvas, rect } from './pixel';
 import {
-  ROOT_SLOT_Y, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
-  drawStructure, drawWorker,
+  ROOT_SLOT_Y, drawAffix, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
+  drawCrownNest, drawCrownSlot, drawSoldier, drawStructure, drawWorker,
 } from './sprites';
 import { drawGrass, drawRoots, drawTree } from './tree';
 import { TREE } from '../data/tree';
@@ -37,6 +37,11 @@ export class Renderer {
   readonly camera = new Camera();
   private worldCv: HTMLCanvasElement;
   private c: Ctx;
+  /** nest layer + its tinted copy, used to draw a glowing outline around nests */
+  private nestCv: HTMLCanvasElement;
+  private nestCtx: Ctx;
+  private rimCv: HTMLCanvasElement;
+  private rimCtx: Ctx;
   private bg: Backdrop;
   private lighting = new Lighting();
   private shake = 0;
@@ -48,6 +53,8 @@ export class Renderer {
   constructor(private screen: Ctx) {
     this.bg = buildBackdrop();
     [this.worldCv, this.c] = makeCanvas(WORLD.width, WORLD.height);
+    [this.nestCv, this.nestCtx] = makeCanvas(WORLD.width, WORLD.height);
+    [this.rimCv, this.rimCtx] = makeCanvas(WORLD.width, WORLD.height);
   }
 
   /** Snap the camera (e.g. on a new run). */
@@ -70,6 +77,12 @@ export class Renderer {
         case 'structureLost': p.dust(e.x, e.underground ? e.y : WORLD.groundY - 6); this.shake = Math.max(this.shake, 3); break;
         case 'beam': p.addFx('beam', e.x, e.y, 0.25, 0, e.tx, e.ty); break;
         case 'polaria': p.chain([[e.x, e.y], [e.tx, e.ty]]); break;
+        case 'heal': p.heal(e.x, e.y, e.amount); break;
+        case 'emerge': p.dust(e.x, WORLD.groundY - 2); p.dust(e.x + 6, WORLD.groundY - 2); this.shake = Math.max(this.shake, 3); break;
+        case 'blast': p.addFx('ring', e.x, e.y, 0.4, 34); p.emit(14, e.x, e.y, { speed: 70, max: 0.5, colors: ['#ffd0a0', '#ff8a4a', '#8a3a1a'], glow: true }); this.shake = Math.max(this.shake, 3); break;
+        case 'intercept': p.chain([[e.fx, e.fy], [e.x, e.y]]); p.acid(e.x, e.y); break;
+        case 'jump': p.dust(e.x, WORLD.groundY - 2); break;
+        case 'lostLoot': p.emit(4, e.x, e.y, { speed: 20, max: 0.8, colors: ['#8a8aa8', '#5a5a78'], glow: true, gravity: -30 }); break;
         case 'devRune': p.goldBurst(e.x, WORLD.groundY - 20, 40); p.addFx('ring', e.x, WORLD.groundY - 20, 0.8, 30); break;
         case 'chain': p.chain(e.points); break;
         case 'ram': p.addFx('ram', e.x, WORLD.groundY - 6, 0.35, 0, e.dir); p.dust(e.x + e.dir * 12, WORLD.groundY - 2); this.shake = Math.max(this.shake, 2); break;
@@ -99,6 +112,13 @@ export class Renderer {
             p.addFx('ring', e.x, WORLD.groundY - 10, 0.45, 92 * (1 + game.mods.hammerRadius));
             p.goldBurst(e.x, WORLD.groundY - 10, 30);
             this.shake = Math.max(this.shake, 3);
+          } else if (e.ability === 'radiance') {
+            p.goldBurst(WORLD.treeX, WORLD.groundY - 80, 120);
+            p.addFx('growWave', WORLD.treeX, WORLD.groundY, 1, game.state.tree.radius);
+            this.flash = Math.max(this.flash, 0.25);
+          } else if (e.ability === 'swarm') {
+            p.addFx('ring', e.x, WORLD.groundY - 8, 0.6, game.swarmReach());
+            p.emit(30, e.x, WORLD.groundY - 10, { speed: 90, max: 0.8, colors: ['#c8ffb0', PAL.gold4, '#5ac85a'], glow: true });
           } else if (e.ability === 'spear') {
             p.emit(6, e.x, WORLD.groundY - 12, { speed: 40, max: 0.3, glow: true });
           }
@@ -145,25 +165,32 @@ export class Renderer {
     for (const b of s.burns) this.drawBurn(c, b.x, b.halfWidth, time);
     drawGrass(c, s.tree.radius, time, lanterns);
 
-    for (const st of s.structures) if (st.underground) drawStructure(c, st, time);
+    this.drawNestsOutlined(c, s.structures.filter((x) => x.underground), time);
     for (const e of s.enemies) if (ENEMIES[e.kind].underground) drawEnemy(c, e, time);
     drawTree(c, s.tree.stage, time, this.treeHurt, this.growPulse);
     if (s.tree.stage + 1 >= TREE.polariaStage) this.drawPolaria(c, game, time);
+    for (const st of s.structures) if (st.crown) drawCrownNest(c, st, time);
     for (const st of s.structures) {
       if (st.family === 'beetle' && st.spec === 'A' && Math.random() < dt * 4) {
         this.particles.emit(1, st.x + (Math.random() - 0.5) * 120, WORLD.groundY - 4, { speed: 10, max: 1.2, colors: ['#c8ffb0', PAL.gold4, PAL.gold2], glow: true, gravity: -20, angle: -Math.PI / 2, spread: 0.4 });
       }
     }
     if (view.hoverTree && !game.over) this.treeOutline(c, time);
-    for (const st of s.structures) if (!st.underground) drawStructure(c, st, time);
+    this.drawNestsOutlined(c, s.structures.filter((x) => !x.underground && !x.crown), time);
     for (const e of s.enemies) if (!ENEMIES[e.kind].underground) drawEnemy(c, e, time);
     drawKeeper(c, s.keeper, time);
     for (const w of s.workers) drawWorker(c, w, time);
+    for (const u of s.soldiers) drawSoldier(c, u);
     this.particles.draw(c, false);
 
     // ── darkness
     this.lighting.drawDarkness(c);
-    this.lighting.drawGlow(c, s.phase === 'day' ? 0.32 : 0.4);
+    this.lighting.drawGlow(c, (s.phase === 'day' ? 0.32 : 0.4) + (s.keeper.radianceT > 0 ? 0.25 : 0));
+    if (s.keeper.swarmT > 0) {
+      const r = game.swarmReach();
+      const k = s.keeper;
+      for (let i = -r; i <= r; i += 4) if (Math.sin(time * 8 + i * 0.2) > 0) rect(c, k.swarmX + i, WORLD.groundY + 2, 2, 1, '#9cff8a');
+    }
 
     // ── above darkness: eyes, light, drops, projectiles
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
@@ -171,6 +198,11 @@ export class Renderer {
     if (!game.over) {
       for (const sl of SLOTS) {
         if (!game.slotUnlocked(sl) || game.structureAt(sl.id)) continue;
+        if (sl.crown) {
+          const p = crownPos(s.tree.stage, Number(sl.id.slice(1)));
+          drawCrownSlot(c, p.x, p.y, time, view.hoverSlot === sl.id || view.selectedSlot === sl.id);
+          continue;
+        }
         drawSlotMarker(c, sl.x, sl.underground, time, view.hoverSlot === sl.id || view.selectedSlot === sl.id, sl.y);
       }
     }
@@ -179,6 +211,7 @@ export class Renderer {
     for (const t of s.tempLights) if (t.dps) this.drawDome(c, t.x, t.radius, t.life / t.maxLife, time);
     this.particles.draw(c, true);
     for (const e of s.enemies) drawEnemyHp(c, e);
+    for (const e of s.enemies) drawAffix(c, e, time);
     drawKeeperHp(c, s.keeper, game.keeperMaxHp());
     if (view.aiming) this.drawAim(c, game, view, time);
     if (view.preview) this.drawRangeRaw(c, view.preview.x, view.preview.r, view.preview.underground, true, view.preview.y);
@@ -215,6 +248,22 @@ export class Renderer {
       sc.fillStyle = `rgba(255,236,190,${this.flash * 0.6})`;
       sc.fillRect(0, 0, W, H);
     }
+  }
+
+  /** Draw nests with a 1px warm outline so they read against the night. */
+  private drawNestsOutlined(c: Ctx, list: import('../sim/types').Structure[], time: number) {
+    if (!list.length) return;
+    const n = this.nestCtx, r = this.rimCtx;
+    n.clearRect(0, 0, WORLD.width, WORLD.height);
+    for (const st of list) drawStructure(n, st, time);
+    r.globalCompositeOperation = 'source-over';
+    r.clearRect(0, 0, WORLD.width, WORLD.height);
+    r.drawImage(this.nestCv, 0, 0);
+    r.globalCompositeOperation = 'source-in';
+    r.fillStyle = 'rgba(255, 214, 140, 0.9)';
+    r.fillRect(0, 0, WORLD.width, WORLD.height);
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) c.drawImage(this.rimCv, dx, dy);
+    c.drawImage(this.nestCv, 0, 0);
   }
 
   /** «Купол Сияния»: a shimmering dome. */

@@ -57,6 +57,30 @@ describe('economy', () => {
     expect(g.build(st2.id, 'beetle')).toBe(true);
   });
 
+  it('loot inside the Circle flies to the tree by itself', () => {
+    const g = new Game();
+    g.state.keeper.alive = false;
+    g.state.keeper.respawn = 999;
+    const e = g.spawnEnemy('hound', WORLD.treeX + 40, 1);
+    const before = g.state.amber;
+    g.damageEnemy(e, 9999);
+    for (let i = 0; i < 60 * 6; i++) g.step();
+    expect(g.state.amber).toBeGreaterThan(before);
+  });
+
+  it('caterpillars gather several drops per trip', () => {
+    const g = new Game();
+    g.state.amber = 999;
+    g.feed(TREE_STAGES[0].growCost);
+    g.choose(0);
+    expect(g.build('C0', 'caterpillar')).toBe(true);
+    g.state.keeper.alive = false; g.state.keeper.respawn = 999;
+    for (let i = 0; i < 5; i++) { const e = g.spawnEnemy('hound', WORLD.treeX - 180 + i * 6, 1); g.damageEnemy(e, 9999); }
+    let maxCarry = 0;
+    for (let i = 0; i < 60 * 12; i++) { g.step(); for (const w of g.state.workers) maxCarry = Math.max(maxCarry, w.carry.n); }
+    expect(maxCarry).toBeGreaterThan(1);
+  });
+
   it('shadows drop Amber, worms also drop Star Blood', () => {
     const g = new Game();
     const e = g.spawnEnemy('stalker', 100, 1);
@@ -69,13 +93,14 @@ describe('economy', () => {
     expect(sum('star')).toBe(ENEMIES.worm.star);
   });
 
-  it('level 3 nests branch into a specialization paid with Star Blood', () => {
+  it('nests branch into a specialization at level 3, paid with Star Blood', () => {
     const g = new Game();
     g.state.amber = 1000;
     g.build('L0', 'hive');
     const st = g.state.structures[0];
-    g.upgrade(st.id); g.upgrade(st.id);
-    expect(st.tier).toBe(2);
+    g.upgrade(st.id);
+    expect(st.tier).toBe(1);
+    expect(g.upgrade(st.id)).toBe(false);
     expect(g.specialize(st.id, 'B')).toBe(false); // no star blood yet
     g.state.star = 50;
     expect(g.specialize(st.id, 'B')).toBe(true);
@@ -102,7 +127,7 @@ describe('economy', () => {
 
   it('Igg-light burns worm-type enemies standing in it', () => {
     const g = new Game();
-    const f = g.spawnEnemy('forager', 480, 1);
+    const f = g.spawnEnemy('forager', WORLD.treeX, 1);
     f.speedMul = 0;
     const hp0 = f.hp;
     for (let i = 0; i < 60; i++) g.step();
@@ -111,7 +136,7 @@ describe('economy', () => {
 
   it('light regenerates faster near the trunk', () => {
     const g = new Game();
-    expect(g.lightRegenFactor(480)).toBeGreaterThan(g.lightRegenFactor(480 + 300) * 3);
+    expect(g.lightRegenFactor(WORLD.treeX)).toBeGreaterThan(g.lightRegenFactor(WORLD.treeX + 300) * 3);
   });
 
   it('dawn offers a choice of 3 and the chosen rune changes mods', () => {

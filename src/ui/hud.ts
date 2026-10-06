@@ -1,4 +1,4 @@
-import { ABILITIES, ATTR_MAX, ATTRIBUTES, KEEPER_RANKS, SLOTS, WORLD, attrCost, type AbilityId, type AttrId } from '../data/balance';
+import { ABILITIES, ATTR_MAX, ATTRIBUTES, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
 import { NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   APOTHEOSIS_RANK, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, RUNE_RANK_COST,
@@ -8,9 +8,10 @@ import { TREE_BRANCHES, TREE_STAGES } from '../data/tree';
 import type { Game } from '../sim/game';
 import type { GameEvent } from '../sim/types';
 import { icon } from './icons';
+import { QUESTS } from './quests';
 
-const AB_IDS: AbilityId[] = ['spear', 'hammer', 'starfall'];
-const RUNE_IDS: KeeperRuneId[] = ['spear', 'hammer', 'starfall', 'light'];
+const AB_IDS: AbilityId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm'];
+const RUNE_IDS: KeeperRuneId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'light'];
 
 export type MenuTarget =
   | { kind: 'slot'; slotId: string }
@@ -90,6 +91,9 @@ export class Hud {
   private notice!: HTMLElement;
   private tip!: HTMLElement;
   private reviveBox!: HTMLElement;
+  private questBox!: HTMLElement;
+  private questIdx = 0;
+  private questSig = '';
   private reviveSig = '';
   private title!: HTMLElement;
   private end!: HTMLElement;
@@ -224,6 +228,9 @@ export class Hud {
     this.tip = el('div');
     this.tip.id = 'tip';
     r.appendChild(this.tip);
+    this.questBox = el('div', 'panel plain');
+    this.questBox.id = 'quest';
+    r.appendChild(this.questBox);
     this.reviveBox = el('div', 'panel plain hit');
     this.reviveBox.id = 'revive';
     this.reviveBox.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -271,6 +278,8 @@ export class Hud {
     this.title.querySelector('[data-a=meta]')!.addEventListener('click', () => this.cb.onOpenMeta());
   }
 
+  resetQuests() { this.questIdx = 0; this.questSig = ''; }
+
   hideTitle() { this.title.classList.add('hidden'); this.root.classList.remove('title-mode'); }
   showTitle() { this.title.classList.remove('hidden'); this.root.classList.add('title-mode'); }
   setPaused(p: boolean) { this.pause.classList.toggle('hidden', !p); }
@@ -285,7 +294,7 @@ export class Hud {
     const st = Array.from({ length: 3 }, (_, i) => `<span class="${i < stars ? 'on' : 'off'}">★</span>`).join('');
     this.end.innerHTML = `
       <div class="box">
-        <h1>Древо угасло</h1>
+        <h1>${g.retired ? 'Ушёл в Вечность' : 'Древо угасло'}</h1>
         <h2>${record ? 'НОВЫЙ РЕКОРД · ' : ''}ПЕРЕЖИТО НОЧЕЙ: ${s.night} · РЕКОРД: ${best}</h2>
         ${won ? `<div class="stars">${st}</div><p class="stat">Звёзды за 10-ю ночь (Тот-Кто-Посадил-новое-Древо)</p>` : '<p>Тьма сомкнулась над Кругом до 10-й ночи.</p>'}
         <div class="tablet inline">Восходящий! Тот-Кто-Наблюдает награждает тебя: <b>+${coins} Монет</b>.</div>
@@ -421,13 +430,20 @@ export class Hud {
     const rows = [
       fam !== 'beetle' || next.damage ? this.statDelta('Урон', cur?.damage, next.damage || undefined, '', f) : '',
       next.rate ? this.statDelta('Раз в', cur?.rate, next.rate, ' с', (v) => v.toFixed(2)) : '',
-      next.range && fam !== 'beetle' ? this.statDelta(fam === 'caterpillar' ? 'Охват' : 'Дальность', cur?.range, next.range) : '',
+      next.range && fam !== 'beetle' ? this.statDelta(fam === 'caterpillar' || fam === 'termite' ? 'Охват' : 'Дальность', cur?.range, next.range) : '',
       next.light ? this.statDelta('Свет', cur?.light, next.light) : '',
       next.burn ? this.statDelta('Ожог', cur?.burn, next.burn, '/с', f) : '',
       next.slow ? this.statDelta('Замедление', cur?.slow, next.slow, '%', pct) : '',
       next.vuln ? this.statDelta('Высвечивание', cur?.vuln, next.vuln, '% урона', (v) => `+${Math.round(v * 100)}`) : '',
       next.heal ? this.statDelta('Лечит гнёзда', cur?.heal, next.heal, '/с') : '',
       next.workers ? this.statDelta('Сборщиц', cur?.workers, next.workers) : '',
+      next.carry ? this.statDelta('Капель за ходку', cur?.carry, next.carry) : '',
+      next.soldiers ? this.statDelta('Воинов', cur?.soldiers, next.soldiers) : '',
+      next.income ? this.statDelta('Янтарь', cur?.income, next.income, '/с', (v) => v.toFixed(1)) : '',
+      next.starIncome ? this.statDelta('Кровь', cur?.starIncome, next.starIncome, '/с', (v) => v.toFixed(2)) : '',
+      next.healTree ? this.statDelta('Лечит Древо', cur?.healTree, next.healTree, '/с') : '',
+      next.soldierHp ? this.statDelta('HP воина', cur?.soldierHp, next.soldierHp) : '',
+      next.respawn ? this.statDelta('Вылупление', cur?.respawn, next.respawn, ' с') : '',
       next.speed ? this.statDelta('Скорость', cur?.speed, next.speed) : '',
       next.bonus ? this.statDelta('К добыче', cur?.bonus, next.bonus, '%', (v) => `+${Math.round(v * 100)}`) : '',
       next.volley ? this.statDelta('Целей', cur?.volley, next.volley) : '',
@@ -450,7 +466,7 @@ export class Hud {
     const opts: RingOpt[] = [];
     if (t.kind === 'slot') {
       const slot = SLOTS.find((sl) => sl.id === t.slotId)!;
-      const fams: Family[] = slot.underground ? ['spider'] : ['hive', 'beetle', 'dragonfly', 'caterpillar'];
+      const fams: Family[] = slot.underground ? ['spider'] : slot.crown ? ['hive', 'caterpillar', 'honeycomb', 'mender'] : ['hive', 'beetle', 'dragonfly', 'termite'];
       fams.forEach((fam, i) => {
         const def = NESTS[fam];
         const price = g.buildPrice(fam);
@@ -462,7 +478,8 @@ export class Hud {
           act: () => { if (g.build(t.slotId, fam)) this.closeMenu(); },
         });
       });
-      return { x: slot.x, y: slot.underground ? slot.y : WORLD.groundY - 10, title: slot.underground ? 'Корневой узел' : 'Руна призыва', opts };
+      const cp = slot.crown ? crownPos(s.tree.stage, Number(slot.id.slice(1))) : null;
+      return { x: cp ? cp.x : slot.x, y: cp ? cp.y : slot.underground ? slot.y : WORLD.groundY - 10, title: slot.underground ? 'Корневой узел' : slot.crown ? 'Слот кроны Древа' : 'Руна призыва', opts };
     }
     if (t.kind !== 'structure') return null;
     const st = s.structures.find((q) => q.id === t.id);
@@ -470,22 +487,22 @@ export class Hud {
     const def = NESTS[st.family];
     const cur = g.nestStats(st);
     const rng = (n: NestStats) => (st.family === 'dragonfly' ? n.light! : n.range);
-    if (st.tier < 2 || st.tier === 3) {
+    if (st.tier < 1 || st.tier === 2) {
       const price = g.upgradePrice(st)!;
       const next = g.nestStats({ family: st.family, tier: st.tier + 1, spec: st.spec });
       opts.push({
-        icon: icon('upgrade'), title: st.tier === 3 ? `Мастерство: ${def.specs[st.spec!].name}` : `Уровень ${st.tier + 2}`,
-        sub: st.tier === 3 ? 'Высшая форма специализации' : 'Сильнее и крепче', key: 'U',
+        icon: icon('upgrade'), title: st.tier === 2 ? `Мастерство: ${def.specs[st.spec!].name}` : `Уровень ${st.tier + 2}`,
+        sub: st.tier === 2 ? 'Высшая форма специализации' : 'Сильнее и крепче', key: 'U',
         body: this.statsBlock(st.family, cur, next), price, ok: g.canPay(price),
         preview: { x: st.x, r: rng(next), underground: st.underground, y: st.y },
         act: () => { g.upgrade(st.id); },
       });
     }
-    if (st.tier === 2) {
+    if (st.tier === 1) {
       (['A', 'B'] as SpecId[]).forEach((sp) => {
         const spec = def.specs[sp];
         const price = g.specPrice(st, sp);
-        const next = g.nestStats({ family: st.family, tier: 3, spec: sp });
+        const next = g.nestStats({ family: st.family, tier: 2, spec: sp });
         opts.push({
           icon: icon(st.family), title: spec.name, sub: `${spec.desc} · <i>${spec.perk}</i>`, key: sp === 'A' ? 'Q' : 'E',
           body: this.statsBlock(st.family, cur, next), price, ok: g.canPay(price),
@@ -500,7 +517,7 @@ export class Hud {
       body: '', price: sv, ok: true, act: () => { if (g.sell(st.id)) this.closeMenu(); },
     });
     const name = st.spec ? `${def.name}: ${def.specs[st.spec].name}` : def.name;
-    const y = st.underground ? st.y : WORLD.groundY - (st.family === 'beetle' ? 12 : 26);
+    const y = st.underground || st.crown ? st.y : WORLD.groundY - (st.family === 'beetle' ? 12 : 26);
     return { x: st.x, y, title: `${name} · ур. ${st.tier + 1}`, opts };
   }
 
@@ -535,6 +552,7 @@ export class Hud {
           this.ringOpts[i]?.act();
           this.ringSig = '';
           this.renderRevive(g);
+    this.updateQuest(g);
     if (this.menuTarget) this.renderRing();
           this.showCard();
         });
@@ -654,6 +672,7 @@ export class Hud {
         const props = g.runeProps(rid);
         const cap = k.slots[rid];
         const rr = k.runeRank[rid];
+        const hasForms = rid === 'spear' || rid === 'hammer' || rid === 'starfall';
         html += `<div class="rblock ${unlocked ? '' : 'dim'}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b>
           <span class="rrank" style="--c:${RUNE_RANK_COLORS[rr]}">${RUNE_RANKS[rr]} · ×${RUNE_RANK_POWER[rr]}</span><span class="cap">${props.length}/${cap}</span>`;
         if (s.devRunes > 0 && cap < MAX_SLOTS) html += btn('+слот', true, () => { g.developRune(rid); }, 'tiny');
@@ -661,9 +680,9 @@ export class Hud {
         if (unlocked && rr < RUNE_RANK_COST.length - 1) {
           const cost = RUNE_RANK_COST[rr + 1];
           html += `<div class="row left">${btn(`Повышение → ${RUNE_RANKS[rr + 1]} (<img class="icon" src="${icon('star')}"> ${cost})`, s.star >= cost, () => { g.promoteRune(rid); }, 'tiny')}
-            <span class="hint">${rr + 1 === FORM_RANK && rid !== 'light' ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && rid !== 'light' ? 'Апофеоз Формы' : 'урон, площадь, перезарядка'}</span></div>`;
+            <span class="hint">${rr + 1 === FORM_RANK && hasForms ? 'откроет выбор Формы' : rr + 1 === APOTHEOSIS_RANK && hasForms ? 'Апофеоз Формы' : 'сила, площадь, перезарядка'}</span></div>`;
         }
-        if (rid !== 'light' && unlocked) {
+        if ((rid === 'spear' || rid === 'hammer' || rid === 'starfall') && unlocked) {
           const forms = RUNE_FORMS[rid];
           const cur = k.forms[rid];
           if (cur) {
@@ -736,7 +755,7 @@ export class Hud {
     if (c.kind === 'dawn') {
       html = `<div class="tablet big"><div class="orbit-wrap"><div class="orbit">${'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃ'.split('').map((r, i) => `<span style="--i:${i}">${r}</span>`).join('')}</div></div>
         <div class="who">Скрижаль · Тот-Кто-Наблюдает</div>
-        <h3>Восходящий! Ночь пережита.</h3><div class="sub">Рулетка Наблюдателя: выбери одну награду. Свойство встанет в свободный слот руны.</div>
+        <h3>Восходящий! Ночь пережита.</h3><div class="sub">Рулетка Наблюдателя: по дару для Восходящего, для созданий и для Древа. Выбери один.</div>
         <div class="cards">${c.offers.map((id, i) => {
           const p = propertyById(id);
           const b = boonById(id);
@@ -746,7 +765,16 @@ export class Hud {
           return `<div class="rcard" data-i="${i}" style="--c:${RUNE_RANK_COLORS[rank]}">
             <div class="rank">${RUNE_RANKS[rank]}</div><img src="${icon(ic)}"><div class="cat">${cat}</div>
             <div class="nm">${p ? p.name : b!.name}</div><div class="ds">${p ? p.desc : b!.desc}</div><div class="hk">[${i + 1}]</div></div>`;
-        }).join('')}</div></div>`;
+        }).join('')}</div>
+        <div class="row"><button class="btn reroll" ${g.state.star >= g.rerollCost() ? '' : 'disabled'}>Перебросить <img class="icon" src="${icon('star')}"> ${g.rerollCost()} [R]</button></div></div>`;
+    } else if (c.kind === 'feat') {
+      html = `<div class="tablet big"><div class="who">Скрижаль · Подвиг</div>
+        <h3>Восходящий! Подвиг совершён: ${c.night} ночей.</h3>
+        <div class="sub">Тот-Кто-Наблюдает предлагает уйти в Вечность с наградой — или держать Круг дальше за рекордом.</div>
+        <div class="cards two">
+          <div class="rcard" data-i="0" style="--c:#8fd0ff"><img src="${icon('tree')}"><div class="nm">Держать Круг</div><div class="ds">Ночи станут тяжелее. Гибель Древа — меньше Монет.</div><div class="hk">[1]</div></div>
+          <div class="rcard" data-i="1" style="--c:#ffd24a"><img src="${icon('star')}"><div class="nm">Уйти в Вечность</div><div class="ds">Завершить забег: Монеты Наблюдателя ×1.5</div><div class="hk">[2]</div></div>
+        </div></div>`;
     } else {
       const pair = TREE_BRANCHES[c.stage];
       html = `<div class="branch-box"><div class="who">${TREE_STAGES[c.stage].name}</div>
@@ -756,6 +784,7 @@ export class Hud {
     }
     this.modal.innerHTML = html;
     this.modal.classList.remove('hidden');
+    this.modal.querySelector('.reroll')?.addEventListener('click', () => { if (g.rerollDawn()) { this.modalSig = ''; this.renderChoice(); } });
     this.modal.querySelectorAll<HTMLElement>('.rcard').forEach((n) => {
       n.addEventListener('click', () => { g.choose(Number(n.dataset.i)); this.modalSig = ''; this.renderChoice(); });
     });
@@ -764,6 +793,10 @@ export class Hud {
   /** Number keys while a choice is open. */
   choiceKey(key: string): boolean {
     if (!this.choiceOpen) return false;
+    if (key === 'r' && this.game().choice?.kind === 'dawn') {
+      if (this.game().rerollDawn()) { this.modalSig = ''; this.renderChoice(); }
+      return true;
+    }
     const i = Number(key) - 1;
     if (Number.isInteger(i) && i >= 0 && i < 3) {
       this.game().choose(i);
@@ -854,6 +887,7 @@ export class Hud {
     this.keeperBtn.title = `Ранг ${KEEPER_RANKS[s.keeper.rank].name}${slotsFree ? ' · можно купить Свойство' : ''}`;
 
     this.renderRevive(g);
+    this.updateQuest(g);
     if (this.menuTarget) this.renderRing();
     if (this.panelKind) this.renderPanel();
     this.renderChoice();
@@ -863,6 +897,28 @@ export class Hud {
     this.noticeTimer -= dt;
     if (this.noticeTimer <= 0) this.notice.classList.remove('show');
     this.updateTips(g);
+  }
+
+  /** Observer's tasks: one goal at a time with a highlight and a reward. */
+  private updateQuest(g: Game) {
+    while (this.questIdx < QUESTS.length && QUESTS[this.questIdx].done(g)) {
+      const q = QUESTS[this.questIdx];
+      g.grantReward(q.reward);
+      this.say(`Задание выполнено: «${q.text}». Награда: ${q.reward} Янтаря.`);
+      this.questIdx++;
+    }
+    document.querySelectorAll('.hl').forEach((n) => n.classList.remove('hl'));
+    const q = QUESTS[this.questIdx];
+    if (!q || g.over) { this.questBox.classList.remove('show'); return; }
+    if (q.focus) document.querySelector(q.focus)?.classList.add('hl');
+    const sig = `${this.questIdx}`;
+    if (sig !== this.questSig) {
+      this.questSig = sig;
+      this.questBox.innerHTML = `<div class="who">Задание Наблюдателя · ${this.questIdx + 1}/${QUESTS.length}</div>
+        <div class="qt">${q.text}</div>${q.hint ? `<div class="qh">${q.hint}</div>` : ''}
+        <div class="qr"><img class="icon" src="${icon('amber')}"> ${q.reward}</div>`;
+    }
+    this.questBox.classList.add('show');
   }
 
   private renderRevive(g: Game) {
@@ -906,7 +962,8 @@ export class Hud {
     if (s.structures.some((x) => x.family === 'spider')) mark('spider');
     if (Object.values(s.keeper.props).some((a) => a.length > 0)) mark('shop');
     let text = '';
-    const nestT2 = s.structures.find((x) => x.tier === 2);
+    if (this.questIdx < QUESTS.length) { const q = QUESTS[this.questIdx]; if (this.tip.innerHTML !== (q.hint ?? '')) this.tip.innerHTML = q.hint ?? ''; return; }
+    const nestT2 = s.structures.find((x) => x.tier === 1);
     if (g.over || this.bannerTimer > 0.5 || this.choiceOpen) text = '';
     else if (!done('build')) text = 'Кликни по золотой <b>руне</b> у Древа — призови гнездо светоносных. <kbd>A</kbd>/<kbd>D</kbd> — ходить';
     else if (s.phase === 'night' && s.night === 0 && !done('spear')) text = '<kbd>1</kbd> — Копьё Игг-Света летит к курсору. Бьёт и во тьме';
@@ -914,7 +971,7 @@ export class Hud {
     else if (s.phase === 'day' && !done('feed') && s.amber >= g.growNeed() && s.night >= 1) text = 'Кликни по <b>Древу</b>: стадии роста открывают умения, руны и силу гнёзд';
     else if (s.night >= 1 && s.phase === 'day' && !done('spider')) text = 'Черви ползут под землёй — призови <b>Паука-ткача</b> на корневой узел';
     else if (s.star >= 6 && !this.tipsDone.has('shop') && s.phase === 'day') { text = '<kbd>R</kbd> — Скрижаль: купи у Наблюдателя Свойства для рун за Звёздную Кровь'; }
-    else if (nestT2 && s.star >= 4 && !done('spec')) text = 'Гнездо 3 ур. можно <b>специализировать</b> — кликни по нему (нужна Звёздная Кровь)';
+    else if (nestT2 && s.star >= 4 && !done('spec')) text = 'Гнездо 2 ур. можно <b>специализировать</b> — кликни по нему (нужна Звёздная Кровь)';
     else if (s.phase === 'day' && s.amber >= 60 && !done('upgrade') && s.night >= 1) text = 'Кликни по гнезду, чтобы усилить его <kbd>U</kbd>';
     if (this.tip.innerHTML !== text) this.tip.innerHTML = text;
   }

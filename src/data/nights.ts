@@ -52,9 +52,10 @@ export const NIGHTS: NightDef[] = [
   },
   {
     title: 'Четвёртая ночь', hpMul: 1.8,
-    hint: 'Тьма давит на Круг со всех сторон.',
+    hint: 'Тьма давит на Круг. Имаго-Прыгуны перескакивают Светожуков!',
     groups: [
       g(2, 'hound', 'B', 6, 1), g(8, 'stalker', 'L', 2, 4), g(10, 'spitter', 'R', 3, 2.5), g(14, 'worm', 'B', 1), g(24, 'stalker', 'B', 1),
+      g(32, 'jumper', 'L', 4, 0.8),
       g(20, 'forager', 'B', 6, 0.8), g(26, 'stalker', 'R', 2, 4), g(30, 'spitter', 'L', 3, 2.5), g(36, 'worm', 'B', 1),
       g(42, 'hound', 'B', 8, 0.7), g(50, 'stalker', 'B', 1),
     ],
@@ -70,9 +71,10 @@ export const NIGHTS: NightDef[] = [
   },
   {
     title: 'Шестая ночь', hpMul: 2.7,
-    hint: 'Имаго-Стражи в броне идут под землёй. Слабые укусы их не берут — нужен Луч или яд.',
+    hint: 'Имаго-Стражи в броне идут под землёй, Землерой роет ход прямо к стволу. С этой ночи бывают элитные твари.',
     groups: [
-      g(2, 'hound', 'B', 8, 0.9), g(8, 'guard', 'L', 1), g(14, 'reaper', 'L', 1), g(30, 'reaper', 'R', 1), g(12, 'stalker', 'R', 2, 4), g(16, 'worm', 'B', 2, 4),
+      g(2, 'hound', 'B', 8, 0.9), g(8, 'guard', 'L', 1), g(14, 'reaper', 'L', 1), g(30, 'reaper', 'R', 1),
+      g(20, 'tunneler', 'R', 1), g(40, 'jumper', 'B', 3, 0.8), g(12, 'stalker', 'R', 2, 4), g(16, 'worm', 'B', 2, 4),
       g(22, 'spitter', 'B', 3, 2.5), g(28, 'guard', 'R', 1), g(34, 'forager', 'B', 8, 0.6), g(42, 'stalker', 'B', 2, 4),
       g(50, 'hound', 'B', 10, 0.5),
     ],
@@ -89,7 +91,7 @@ export const NIGHTS: NightDef[] = [
     title: 'Восьмая ночь', hpMul: 4.0,
     hint: 'Ледозубы стадом. Держи их Светожуками и Молотом.',
     groups: [
-      g(2, 'hound', 'B', 10, 0.6), g(8, 'stalker', 'B', 4, 3), g(24, 'reaper', 'B', 2, 4), g(14, 'guard', 'B', 2, 6), g(20, 'spitter', 'B', 4, 2),
+      g(2, 'hound', 'B', 10, 0.6), g(8, 'stalker', 'B', 4, 3), g(24, 'reaper', 'B', 2, 4), g(18, 'tunneler', 'B', 1), g(30, 'jumper', 'B', 4, 0.6), g(14, 'guard', 'B', 2, 6), g(20, 'spitter', 'B', 4, 2),
       g(28, 'worm', 'B', 3, 3), g(34, 'forager', 'B', 10, 0.5), g(42, 'stalker', 'B', 3, 3), g(52, 'hound', 'B', 12, 0.45),
     ],
   },
@@ -142,7 +144,7 @@ export const ENDLESS = {
 
 /** Threat cost of one creature (for the generator's budget). */
 const THREAT: Partial<Record<EnemyKind, number>> = {
-  hound: 1, forager: 1, spitter: 2.5, stalker: 5, worm: 3.5, guard: 7, reaper: 9,
+  hound: 1, forager: 1, spitter: 2.5, stalker: 5, worm: 3.5, guard: 7, reaper: 9, jumper: 1.8, tunneler: 5,
 };
 /** Night index from which a kind appears in generated nights, and its weight. */
 const POOL: Array<{ kind: EnemyKind; from: number; w: number; size: [number, number] }> = [
@@ -153,6 +155,8 @@ const POOL: Array<{ kind: EnemyKind; from: number; w: number; size: [number, num
   { kind: 'worm', from: 0, w: 2, size: [1, 3] },
   { kind: 'guard', from: 0, w: 1.8, size: [1, 3] },
   { kind: 'reaper', from: 0, w: 2.2, size: [1, 3] },
+  { kind: 'jumper', from: 0, w: 2.2, size: [3, 6] },
+  { kind: 'tunneler', from: 0, w: 1.6, size: [1, 3] },
 ];
 
 const LORE_HINTS = [

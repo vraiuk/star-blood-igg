@@ -25,7 +25,8 @@ export const PLANS: Record<string, BotPlan> = {
 };
 
 /** Desired layout per side, by slot index (0 = closest to the tree). */
-const LAYOUT: Family[] = ['hive', 'beetle', 'dragonfly', 'caterpillar', 'hive', 'beetle', 'dragonfly', 'hive', 'hive', 'beetle'];
+const LAYOUT: Family[] = ['hive', 'beetle', 'dragonfly', 'termite', 'hive', 'beetle', 'dragonfly', 'hive', 'hive', 'beetle'];
+const CROWN: Family[] = ['caterpillar', 'mender', 'honeycomb', 'hive', 'mender'];
 
 export interface BotResult {
   phase: string;
@@ -84,8 +85,8 @@ function act(g: Game, plan: BotPlan) {
   if (plan.defend && (!plan.grow || need === 0 || s.amber > need * 0.5 + 30)) buildDefense(g, plan, false);
   if (plan.specialize) {
     for (const st of s.structures) {
-      if (st.tier === 2) g.specialize(st.id, st.family === 'hive' ? (st.slotId.endsWith('0') ? 'A' : 'B') : 'A');
-      else if (st.tier === 3) g.upgrade(st.id);
+      if (st.tier === 1) g.specialize(st.id, st.family === 'hive' ? (st.slotId.endsWith('0') ? 'A' : 'B') : 'A');
+      else if (st.tier === 2) g.upgrade(st.id);
     }
     if (s.star >= 25) g.ascend();
     // Observer's treasury: power properties first
@@ -140,7 +141,12 @@ function act(g: Game, plan: BotPlan) {
 
 function buildDefense(g: Game, plan: BotPlan, coreOnly: boolean) {
   const s = g.state;
-  const surface = SLOTS.filter((sl) => !sl.underground && g.slotUnlocked(sl))
+  if (!coreOnly) {
+    for (const sl of SLOTS.filter((x) => x.crown && g.slotUnlocked(x))) {
+      if (!g.structureAt(sl.id)) g.build(sl.id, CROWN[Number(sl.id.slice(1))]);
+    }
+  }
+  const surface = SLOTS.filter((sl) => !sl.underground && !sl.crown && g.slotUnlocked(sl))
     .sort((a, b) => Math.abs(a.x - WORLD.treeX) - Math.abs(b.x - WORLD.treeX));
   for (const sl of surface) {
     if (g.structureAt(sl.id)) continue;
@@ -159,6 +165,6 @@ function buildDefense(g: Game, plan: BotPlan, coreOnly: boolean) {
   if (coreOnly) return;
   for (const st of s.structures) {
     const next = g.upgradePrice(st);
-    if (next && st.tier < 2 && s.amber >= next.amber + 40) g.upgrade(st.id);
+    if (next && st.tier < 1 && s.amber >= next.amber + 40) g.upgrade(st.id);
   }
 }
