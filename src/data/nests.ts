@@ -209,8 +209,8 @@ export const NESTS: Record<Family, FamilyDef> = {
       B: {
         name: 'Термиты-щитоносцы', desc: 'Живучие бойцы держат строй и отвлекают тварей', perk: 'бойцы ×3 HP, шипы',
         levels: [
-          { hp: 520, damage: 13, rate: 0.75, range: 100, soldiers: 4, soldierHp: 380, respawn: 9, thorns: 6 },
-          { hp: 620, damage: 18, rate: 0.7, range: 115, soldiers: 5, soldierHp: 560, respawn: 8, thorns: 10 },
+          { hp: 520, damage: 16, rate: 0.75, range: 100, soldiers: 4, soldierHp: 380, respawn: 9, thorns: 6 },
+          { hp: 620, damage: 22, rate: 0.7, range: 115, soldiers: 5, soldierHp: 560, respawn: 8, thorns: 10 },
         ],
         costs: [p(150, 6), p(120, 12)],
       },

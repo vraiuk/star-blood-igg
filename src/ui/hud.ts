@@ -30,6 +30,7 @@ export interface HudCallbacks {
   onRestart(): void;
   onOpenMeta(): void;
   onOpenStats(): void;
+  onGiveUp(): void;
   onCast(id: AbilityId): void;
   onCallNight(): void;
   onToggleSpeed(): void;
@@ -264,8 +265,24 @@ export class Hud {
 
     this.pause = el('div', 'screen hidden');
     this.pause.id = 'pause';
-    this.pause.innerHTML = `<div class="box"><h1>Пауза</h1><p>Тьма ждёт.</p><button class="btn gold">Продолжить</button></div>`;
-    this.pause.querySelector('button')!.addEventListener('click', () => this.cb.onResume());
+    this.pause.innerHTML = `<div class="box"><h1>Пауза</h1><p>Тьма ждёт.</p><button class="btn gold" data-a="resume">Продолжить</button></div>
+      <button class="btn giveup" data-a="giveup" title="Завершить забег: Древо падёт, Монеты Наблюдателя начислятся как обычно">Уйти в Вечность</button>`;
+    this.pause.querySelector('[data-a=resume]')!.addEventListener('click', () => this.cb.onResume());
+    // tucked into a corner and needs a second click — never pressed by accident
+    const give = this.pause.querySelector<HTMLButtonElement>('[data-a=giveup]')!;
+    let armed = 0;
+    give.addEventListener('click', () => {
+      if (performance.now() - armed > 3000) {
+        armed = performance.now();
+        give.textContent = 'Точно? Нажми ещё раз';
+        give.classList.add('armed');
+        setTimeout(() => { if (performance.now() - armed >= 3000) { give.textContent = 'Уйти в Вечность'; give.classList.remove('armed'); } }, 3100);
+        return;
+      }
+      give.textContent = 'Уйти в Вечность';
+      give.classList.remove('armed');
+      this.cb.onGiveUp();
+    });
     r.appendChild(this.pause);
   }
 
@@ -599,7 +616,7 @@ export class Hud {
     const rng = (n: NestStats) => (st.family === 'dragonfly' ? n.light! : n.range);
     if (st.tier < 1 || st.tier === 2) {
       const price = g.upgradePrice(st)!;
-      const next = g.nestStats({ family: st.family, tier: st.tier + 1, spec: st.spec });
+      const next = g.nestStats({ family: st.family, tier: st.tier + 1, spec: st.spec, merge: st.merge, ascend: st.ascend });
       opts.push({
         icon: icon('upgrade'), title: st.tier === 2 ? `Мастерство: ${def.specs[st.spec!].name}` : `Уровень ${st.tier + 2}`,
         sub: st.tier === 2 ? 'Высшая форма специализации' : 'Сильнее и крепче', key: '1',
@@ -613,7 +630,7 @@ export class Hud {
       (['A', 'B'] as SpecId[]).forEach((sp) => {
         const spec = def.specs[sp];
         const price = g.specPrice(st, sp);
-        const next = g.nestStats({ family: st.family, tier: 2, spec: sp });
+        const next = g.nestStats({ family: st.family, tier: 2, spec: sp, merge: st.merge, ascend: st.ascend });
         opts.push({
           icon: icon(st.family), title: spec.name, sub: `${spec.desc} · <i>${spec.perk}</i>`, key: sp === 'A' ? '1' : '2',
           body: this.statsBlock(st.family, cur, next), price, ok: g.canPay(price),

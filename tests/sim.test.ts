@@ -143,6 +143,20 @@ describe('merge keeps the best', () => {
   });
 });
 
+describe('upgrade previews', () => {
+  it('no nest loses damage on its upgrade path, merged or ascended stats included', () => {
+    const g = new Game();
+    for (const fam of Object.keys(NESTS) as Array<keyof typeof NESTS>) {
+      for (const spec of ['A', 'B'] as const) {
+        const seq = ([[0, null], [1, null], [2, spec], [3, spec]] as const).map(([t, sp]) =>
+          g.nestStats({ family: fam, tier: t, spec: sp, merge: 1, ascend: 2 }));
+        const d = seq.map((n) => n.damage * (n.volley ?? 1));
+        for (let i = 1; i < d.length; i++) expect(d[i]).toBeGreaterThanOrEqual(d[i - 1]);
+      }
+    }
+  });
+});
+
 describe('time stop', () => {
   it('freezes creatures and the night, then recovers over nights, not seconds', () => {
     const g = new Game();

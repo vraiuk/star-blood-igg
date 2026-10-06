@@ -491,3 +491,7 @@ body { display: grid; place-items: center; }
 .gloss-tip.hidden { display: none; }
 .ropt.locked { opacity: 0.45; border-style: dashed; cursor: help; box-shadow: none; }
 .slot .rm .icon { width: calc(5 * var(--u)); height: calc(5 * var(--u)); vertical-align: middle; }
+/* «Уйти в Вечность» — small, in the corner, two clicks */
+#pause .giveup { position: absolute; left: calc(10 * var(--u)); bottom: calc(10 * var(--u)); font-size: calc(6 * var(--u)); opacity: 0.55; border-color: #6a2a3a; }
+#pause .giveup:hover { opacity: 1; }
+#pause .giveup.armed { opacity: 1; background: #5a1420; color: #ffd0d0; border-color: #ff6a6a; }

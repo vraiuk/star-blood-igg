@@ -222,3 +222,7 @@
 - Dragonflies fly slower (orbit and sorties).
 - Defeat: the Tree leans, falls (clipped at the ground), its leaves dim and scatter, the crash
   shakes the screen, the Circle's light goes out; the summary appears after 3.6 s.
+- Upgrade previews include merge stars and ascension (they showed a fake damage drop);
+  Термитник B levels 16/22 (was 13/18 — a real dip); a test guards every upgrade path.
+- Pause screen: «Уйти в Вечность» in the corner, two clicks to confirm — ends the run (the Tree
+  falls, coins counted as usual).

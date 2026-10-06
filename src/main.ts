@@ -63,6 +63,10 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     renderer.resetCamera(game.state.tree.radius);
     endShown = false;
   },
+  onGiveUp() {
+    setPaused(false);
+    game.surrender();
+  },
   onOpenStats() {
     metaOpen = true;
     openStats(uiRoot, () => { metaOpen = false; });

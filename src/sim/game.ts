@@ -730,6 +730,16 @@ export class Game {
     return true;
   }
 
+  /** «Уйти в Вечность»: end the run now (the Tree falls; coins are counted as usual). */
+  surrender(): boolean {
+    const s = this.state;
+    if (this.over) return false;
+    s.tree.hp = 0;
+    s.phase = 'lost';
+    this.emit({ type: 'lost' });
+    return true;
+  }
+
   /** «Натиск» is possible: every creature of this night is out and the next night isn't the last one. */
   canRush(): boolean {
     const s = this.state;
