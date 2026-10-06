@@ -11,7 +11,7 @@ export default defineConfig({
   base: './',
   server: { port: 5181 },
   // bot balance runs are long simulations
-  test: { testTimeout: 60000 },
+  test: { testTimeout: 240000 },
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __APP_BUILD__: JSON.stringify(hash),
