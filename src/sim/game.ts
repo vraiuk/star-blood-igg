@@ -767,7 +767,8 @@ export class Game {
   /** «Натиск» is possible: every creature of this night is out and the next night isn't the last one. */
   canRush(): boolean {
     const s = this.state;
-    return s.phase === 'night' && this.rushProgress() >= ECONOMY.rushOpen && s.enemies.length > 0 && s.choices.length === 0;
+    // no gate: call as many nights on top of each other as you dare
+    return s.phase === 'night' && s.choices.length === 0;
   }
 
   /** Share of tonight's creatures already out of the darkness (0..1). */
@@ -796,7 +797,7 @@ export class Game {
    */
   private rushNight(): boolean {
     const s = this.state;
-    if (!this.canRush()) return this.deny(`Натиск — когда выйдет ${Math.round(ECONOMY.rushOpen * 100)}% тварей этой ночи`);
+    if (!this.canRush()) return this.deny('Натиск — только ночью');
     const r = this.rushReward();
     s.amber += r.amber;
     s.star += r.star;

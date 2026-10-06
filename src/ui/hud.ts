@@ -1,4 +1,4 @@
-import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, ECONOMY, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
+import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
 import { MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   APOTHEOSIS_RANK, DEV_SLOTS, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
@@ -1138,14 +1138,6 @@ export class Hud {
         const html = `Натиск: ночь ${s.night + 2} <span style="opacity:.8">[Пробел] +${r.amber}<img class="icon" src="${icon('amber')}"> +${r.star}<img class="icon" src="${icon('star')}"></span>`;
         if (this.callBtn.innerHTML !== html) this.callBtn.innerHTML = html;
         this.callBtn.title = 'Призвать следующую ночь, не добивая эту. Награда сразу, пропущенный рассвет (дар и выбор рун) придёт на ближайшем рассвете.';
-      } else if (s.phase === 'night' && s.pending.length > 0) {
-        // not yet: show how close «Натиск» is
-        this.callBtn.classList.remove('hidden');
-        this.callBtn.classList.add('rush', 'wait');
-        const pct = Math.round((g.rushProgress() / ECONOMY.rushOpen) * 100);
-        const html = `Натиск: ${Math.min(99, pct)}% <span style="opacity:.7">— вышло ${Math.round(g.rushProgress() * 100)}% тварей</span>`;
-        if (this.callBtn.innerHTML !== html) this.callBtn.innerHTML = html;
-        this.callBtn.title = `Натиск откроется, когда выйдет ${Math.round(ECONOMY.rushOpen * 100)}% тварей этой ночи.`;
       } else this.callBtn.classList.add('hidden');
     }
 

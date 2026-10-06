@@ -15,8 +15,7 @@ describe('rush (Натиск)', () => {
     const g = new Game();
     while (g.choice) g.choose(0);
     g.callNight();
-    expect(g.canRush()).toBe(false); // too few creatures out yet
-    expect(g.rushProgress()).toBeLessThan(0.6);
+    expect(g.canRush()).toBe(true); // any time during the night
     // keep the night's creatures alive and standing until all of them are out
     for (let i = 0; i < 60 * 120 && g.state.pending.length; i++) {
       g.step();

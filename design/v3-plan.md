@@ -232,3 +232,4 @@
 - Nests grow visibly: size by level, merge stars and ascension (surface up to ×1.7, crown ×1.35,
   roots ×1.4 — space is tight there), a halo coloured by progress (gold level 2, warm amber
   branch A, cool blue branch B) and a spark crown at Mastery (level 4).
+- «Натиск» has no gate any more: any moment of the night, as many times in a row as you dare.
