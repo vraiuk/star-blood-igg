@@ -10,6 +10,60 @@ const run = (g: Game, seconds: number) => {
   for (let i = 0; i < seconds * 60; i++) g.step();
 };
 
+describe('rush (Натиск)', () => {
+  it('calls the next night on top of stragglers, pays up front and postpones the dawn', () => {
+    const g = new Game();
+    while (g.choice) g.choose(0);
+    g.callNight();
+    expect(g.canRush()).toBe(false); // creatures still to come
+    // keep the night's creatures alive and standing until all of them are out
+    for (let i = 0; i < 60 * 120 && g.state.pending.length; i++) {
+      g.step();
+      for (const e of g.state.enemies) { e.speedMul = 0; e.hp = e.maxHp; }
+    }
+    expect(g.canRush()).toBe(true);
+    const amber = g.state.amber, star = g.state.star, night = g.state.night;
+    const r = g.rushReward();
+    expect(g.callNight()).toBe(true);
+    expect(g.state.night).toBe(night + 1);
+    expect(g.state.phase).toBe('night');
+    expect(g.state.amber).toBe(amber + r.amber);
+    expect(g.state.star).toBe(star + r.star);
+    expect(g.state.pending.length).toBeGreaterThan(0);
+    expect(g.state.rushedDawns).toBe(1);
+    // finish both nights: two roulettes wait at dawn
+    for (let i = 0; i < 60 * 600 && g.state.phase === 'night'; i++) {
+      for (const e of g.state.enemies) g.damageEnemy(e, 1e6);
+      g.step();
+    }
+    expect(g.state.phase).toBe('day');
+    expect(g.state.choices.filter((c) => c.kind === 'dawn').length).toBe(2);
+    expect(g.state.rushedDawns).toBe(0);
+  });
+});
+
+describe('time stop', () => {
+  it('freezes creatures and the night, then recovers over nights, not seconds', () => {
+    const g = new Game();
+    while (g.choice) g.choose(0);
+    g.state.keeper.learned.timestop = true;
+    g.state.keeper.light = 999;
+    expect(g.cast('timestop', 0)).toBe(false); // only at night
+    g.callNight();
+    const h = g.spawnEnemy('hound', 200, 1);
+    const at = g.state.pending[0]?.at ?? 0;
+    expect(g.cast('timestop', 0)).toBe(true);
+    const x = h.x;
+    run(g, 2);
+    expect(h.x).toBe(x);
+    if (g.state.pending.length) expect(g.state.pending[0].at).toBeGreaterThan(at);
+    expect(g.state.keeper.timeStopNights).toBe(2);
+    g.state.keeper.cooldowns.timestop = 0;
+    g.state.keeper.timeStopT = 0;
+    expect(g.cast('timestop', 0)).toBe(false); // still recovering
+  });
+});
+
 describe('tunnels and flyers', () => {
   const dig = () => {
     const g = new Game();

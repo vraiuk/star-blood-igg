@@ -171,6 +171,14 @@ const PAINTERS: Record<string, Painter> = {
     for (const [x, y] of [[4, 5], [11, 4], [8, 9], [3, 11], [12, 11]]) { rect(c, x, y, 2, 2, PAL.gold3); rect(c, x - 1, y - 1, 1, 1, PAL.gold5); rect(c, x + 2, y - 1, 1, 1, PAL.gold5); }
     rect(c, 7, 13, 3, 2, '#9cff8a');
   },
+  timestop: (c) => {
+    // an hourglass of amber light inside a frozen ring
+    for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; rect(c, 8 + Math.cos(a) * 7, 8 + Math.sin(a) * 7, 1, 1, i % 2 ? '#8fd0ff' : '#d8f0ff'); }
+    rect(c, 5, 3, 6, 1, PAL.gold3); rect(c, 5, 12, 6, 1, PAL.gold3);
+    line(c, 5, 4, 8, 8, '#b8e4ff'); line(c, 11, 4, 8, 8, '#b8e4ff');
+    line(c, 8, 8, 5, 11, '#b8e4ff'); line(c, 8, 8, 11, 11, '#b8e4ff');
+    rect(c, 7, 5, 3, 1, PAL.gold5); rect(c, 6, 10, 5, 1, PAL.gold4); rect(c, 8, 8, 1, 2, PAL.gold5);
+  },
   merge: (c) => {
     disc(c, 4, 11, 2, PAL.gold2); disc(c, 12, 11, 2, PAL.gold2); disc(c, 8, 5, 3, PAL.gold4);
     line(c, 5, 10, 7, 7, PAL.gold3); line(c, 11, 10, 9, 7, PAL.gold3);

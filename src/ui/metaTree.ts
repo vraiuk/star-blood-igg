@@ -1,6 +1,6 @@
 import './metaTree.css';
-import { META_BRANCH_NAMES, META_NODES, PATHS, type MetaBranch, type MetaNode } from '../data/meta';
-import { buyNode, canBuy, respec, writeSave, type MetaSave } from '../state/save';
+import { META_BRANCH_NAMES, META_INFINITE, META_NODES, PATHS, infiniteCost, type MetaBranch, type MetaNode } from '../data/meta';
+import { buyNode, buyRing, canBuy, respec, treeComplete, writeSave, type MetaSave } from '../state/save';
 import { PAL, dither, disc, lerp, makeCanvas, rect, ring, seeded, type Ctx } from '../render/pixel';
 
 /*
@@ -384,6 +384,8 @@ export function openMetaTree(root: HTMLElement, save: MetaSave, onClose: () => v
     <aside class="mt-side">
       <h2>Тропы</h2>
       <div class="mt-paths"></div>
+      <h2 class="mt-rings-h">Кольца памяти</h2>
+      <div class="mt-rings"></div>
     </aside>
     <div class="mt-actions">
       <button class="btn mt-respec" type="button">Сбросить (вернуть всё)</button>
@@ -402,6 +404,7 @@ export function openMetaTree(root: HTMLElement, save: MetaSave, onClose: () => v
   const quoteEl = q<HTMLElement>('.mt-quote');
   const progressEl = q<HTMLElement>('.mt-progress');
   const pathsEl = q<HTMLElement>('.mt-paths');
+  const ringsEl = q<HTMLElement>('.mt-rings');
   const labelsEl = q<HTMLElement>('.mt-labels');
   const respecBtn = q<HTMLButtonElement>('.mt-respec');
   const u = (v: number) => `calc(${v} * var(--u))`;
@@ -690,7 +693,29 @@ export function openMetaTree(root: HTMLElement, save: MetaSave, onClose: () => v
       b.setAttribute('aria-label', `${v.n.name}. ${v.n.desc}. ${stateText(v.n, st)}`);
     }
     renderPaths();
+    renderRings();
     renderTip();
+  }
+
+  /** Endless Coin sinks, open once every node is awakened. */
+  function renderRings() {
+    const open = treeComplete(save);
+    ringsEl.innerHTML = open ? '' : '<small class="mt-rings-lock">Откроются, когда пробуждено всё Древо Игг. Каждое кольцо — небольшой вечный дар, цена растёт.</small>';
+    for (const n of META_INFINITE) {
+      const lvl = save.rings[n.id] ?? 0;
+      const cost = infiniteCost(n, lvl);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mt-path mt-ring' + (open && save.coins >= cost ? '' : ' locked');
+      b.disabled = !open || save.coins < cost;
+      b.innerHTML = `<span class="nm">${n.name} <em>${lvl}</em></span><span class="st"><img alt="" src="${coinIcon()}"> ${cost}</span><small>${n.desc}</small>`;
+      b.addEventListener('click', () => {
+        if (!buyRing(save, n.id)) { flash(coinsRow, 'deny'); return; }
+        flash(coinsRow, 'spend');
+        renderHud();
+      });
+      ringsEl.appendChild(b);
+    }
   }
 
   function stateText(n: MetaNode, st: NodeState): string {

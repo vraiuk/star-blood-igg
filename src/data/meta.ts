@@ -72,6 +72,20 @@ export const META_NODES: MetaNode[] = [
   ]),
 ];
 
+/**
+ * Кольца памяти: endless Coin sinks that open once the whole Igg-Tree is awakened.
+ * Each level adds a small, steady bonus; prices grow linearly so there's always a next ring.
+ */
+export interface MetaInfinite { id: string; name: string; desc: string; base: number; step: number; mods: (lvl: number) => ModPatch }
+export const META_INFINITE: MetaInfinite[] = [
+  { id: 'i-amber', name: 'Вечная живица', desc: '+15 Янтаря в начале за кольцо', base: 4, step: 2, mods: (l) => ({ startAmber: 15 * l }) },
+  { id: 'i-tree', name: 'Кольцо памяти', desc: 'Древо +3% здоровья за кольцо', base: 5, step: 3, mods: (l) => ({ treeHp: 0.03 * l }) },
+  { id: 'i-nest', name: 'Память роя', desc: 'Все гнёзда +2% урона за кольцо', base: 6, step: 3, mods: (l) => ({ famDamage: { hive: 0.02 * l, beetle: 0.02 * l, dragonfly: 0.02 * l, spider: 0.02 * l, termite: 0.02 * l } }) },
+  { id: 'i-keeper', name: 'Шрам Восходящего', desc: 'Умения +2% урона за кольцо', base: 6, step: 3, mods: (l) => ({ abilityDamage: 0.02 * l }) },
+  { id: 'i-star', name: 'Звёздная капля', desc: '+1 Звёздной Крови в начале за кольцо', base: 8, step: 4, mods: (l) => ({ startStar: l }) },
+];
+export const infiniteCost = (n: MetaInfinite, lvl: number) => n.base + n.step * lvl;
+
 /** Coins awarded after a run. */
 export function coinsForRun(nightsSurvived: number, stars: number, path: number): number {
   return Math.round((nightsSurvived + stars * 2) * (1 + (path - 1) * 0.5));

@@ -142,6 +142,10 @@ export class Renderer {
             p.goldBurst(WORLD.treeX, WORLD.groundY - 80, 120);
             p.addFx('growWave', WORLD.treeX, WORLD.groundY, 1, game.state.tree.radius);
             this.flash = Math.max(this.flash, 0.25);
+          } else if (e.ability === 'timestop') {
+            p.addFx('growWave', WORLD.treeX, WORLD.groundY, 1.2, WORLD.width);
+            p.emit(40, e.x, WORLD.groundY - 20, { speed: 120, max: 0.9, colors: ['#d8f0ff', '#8fd0ff', PAL.white], glow: true });
+            this.flash = Math.max(this.flash, 0.3);
           } else if (e.ability === 'swarm') {
             p.addFx('ring', e.x, WORLD.groundY - 8, 0.6, game.swarmReach());
             p.emit(30, e.x, WORLD.groundY - 10, { speed: 90, max: 0.8, colors: ['#c8ffb0', PAL.gold4, '#5ac85a'], glow: true });
@@ -237,6 +241,24 @@ export class Renderer {
     // ── above darkness: eyes, light, drops, projectiles
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
     for (const e of s.enemies) drawFogEdge(c, e, time, s.night);
+    // Остановка Времени: a pale-blue hush over the world, frost glints on the frozen
+    const ts = s.keeper.timeStopT;
+    if (ts > 0) {
+      const fade = Math.min(1, ts / 0.6, (s.keeper.timeStopMax - ts) / 0.3 + 0.2);
+      c.fillStyle = `rgba(140,190,255,${0.13 * fade})`;
+      c.fillRect(0, 0, WORLD.width, WORLD.height);
+      for (const e of s.enemies) {
+        if (!game.frozen(e)) continue;
+        const ey = e.layer === 'ground' ? WORLD.groundY - ENEMIES[e.kind].height * 0.6 : e.y - 4;
+        if (Math.sin(time * 5 + e.id) > 0.3) rect(c, e.x - 3, ey - 2, 1, 1, '#e8f6ff');
+        if (Math.sin(time * 4 + e.id * 1.7) > 0.4) rect(c, e.x + 3, ey + 2, 1, 1, '#b8e4ff');
+      }
+      // the clock face on the trunk
+      const cy = WORLD.groundY - 46;
+      const a = (1 - ts / Math.max(0.01, s.keeper.timeStopMax)) * Math.PI * 2 - Math.PI / 2;
+      for (let i = 0; i < 24; i++) { const b = (i / 24) * Math.PI * 2; rect(c, WORLD.treeX + Math.cos(b) * 14, cy + Math.sin(b) * 14, 1, 1, i % 6 ? '#8fd0ff' : PAL.white); }
+      line(c, WORLD.treeX, cy, WORLD.treeX + Math.cos(a) * 11, cy + Math.sin(a) * 11, '#e8f6ff');
+    }
     this.drawDragonflies(c, game, time, dt);
     // lasting Igg-Beams of the hives
     for (const st of s.structures) {

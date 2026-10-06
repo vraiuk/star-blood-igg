@@ -11,7 +11,7 @@ export type RuneRank = 0 | 1 | 2 | 3 | 4;
 export const RUNE_RANKS = ['Дерево', 'Бронза', 'Серебро', 'Золото', 'Небо'] as const;
 export const RUNE_RANK_COLORS = ['#b08a5a', '#d9883a', '#c9d4e6', '#ffd24a', '#8fd0ff'] as const;
 
-export type KeeperRuneId = 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm' | 'light';
+export type KeeperRuneId = 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm' | 'timestop' | 'light';
 
 export const KEEPER_RUNES: Record<KeeperRuneId, { name: string; icon: string; desc: string }> = {
   spear: { name: 'Копьё Игг-Света', icon: 'spear', desc: 'Руна-Предмет (золото)' },
@@ -19,11 +19,16 @@ export const KEEPER_RUNES: Record<KeeperRuneId, { name: string; icon: string; de
   starfall: { name: 'Звездопад', icon: 'starfall', desc: 'Руна-Заклинание' },
   radiance: { name: 'Сияние Игг', icon: 'radiance', desc: 'Руна-Умение' },
   swarm: { name: 'Зов Роя', icon: 'swarm', desc: 'Руна-Умение' },
+  timestop: { name: 'Остановка Времени', icon: 'timestop', desc: 'Руна-Заклинание' },
   light: { name: 'Руна Света', icon: 'light', desc: 'Руна-Свойство Восходящего' },
 };
 
 export const BASE_SLOTS = 3;
-export const MAX_SLOTS = 4;
+/** the 4th slot comes from a Lesser Rune of Development */
+export const DEV_SLOTS = 4;
+/** the 5th and 6th are forged for a fortune */
+export const MAX_SLOTS = 6;
+export const EXTRA_SLOT_PRICE = [{ amber: 1500, star: 120 }, { amber: 4000, star: 300 }];
 
 export interface PropertyDef {
   id: string;
@@ -72,6 +77,11 @@ export const PROPERTIES: PropertyDef[] = [
   P({ id: 'sw-cheap', rune: 'swarm', type: 'Уменьшение', name: 'Уменьшение: Зов', desc: 'Зов Роя на 35% дешевле и перезаряжается на 20% быстрее', rank: 1, price: 7, stack: 2, mods: {} }),
   P({ id: 'sw-long', rune: 'swarm', type: 'Усиление', name: 'Долгий зов', desc: 'Зов Роя длится на 50% дольше', rank: 1, price: 7, stack: 4, mods: {} }),
   P({ id: 'sw-shield', rune: 'swarm', type: 'Изменение', name: 'Хитиновый зов', desc: 'Гнёзда под Зовом получают на 30% меньше урона', rank: 2, price: 10, stack: 1, mods: {} }),
+  // ── Остановка Времени
+  P({ id: 'ts-long', rune: 'timestop', type: 'Усиление', name: 'Долгий миг', desc: 'Время стоит на 25% дольше', rank: 1, price: 9, stack: 4, mods: {} }),
+  P({ id: 'ts-cheap', rune: 'timestop', type: 'Уменьшение', name: 'Уменьшение: Миг', desc: 'Остановка на 35% дешевле по Свету', rank: 1, price: 7, stack: 2, mods: {} }),
+  P({ id: 'ts-quick', rune: 'timestop', type: 'Изменение', name: 'Короткая ночь', desc: 'Руна восстанавливается на 1 ночь быстрее', rank: 3, price: 18, stack: 1, mods: {} }),
+  P({ id: 'ts-shatter', rune: 'timestop', type: 'Изменение', name: 'Хрупкий лёд', desc: 'Замершие твари получают +35% урона', rank: 2, price: 12, stack: 1, mods: {} }),
   // ── Руна Света
   P({ id: 'lt-spring', rune: 'light', type: 'Усиление', name: 'Родник Света', desc: '+30% регенерации Света', rank: 1, price: 6, stack: 4, mods: { lightRegen: 0.3 } }),
   P({ id: 'lt-vessel', rune: 'light', type: 'Усиление', name: 'Сосуд', desc: '+40 к запасу Света, +40 HP', rank: 1, price: 6, stack: 4, mods: { lightMax: 40, keeperHp: 40 } }),
@@ -111,6 +121,7 @@ export const BOONS: BoonDef[] = [
   { id: 'l-swarm', kind: 'gift', category: 'Руна-Умение в дар', name: 'Зов Роя', icon: 'swarm', rank: 0, desc: 'Наблюдатель дарит руну: гнёзда рядом бьют быстрее и чинятся', mods: {}, learn: 'swarm' },
   { id: 'l-radiance', kind: 'gift', category: 'Руна-Умение в дар', name: 'Сияние Игг', icon: 'radiance', rank: 1, desc: 'Наблюдатель дарит руну: Древо вспыхивает, Круг шире', mods: {}, learn: 'radiance' },
   { id: 'l-starfall', kind: 'gift', category: 'Руна-Заклинание в дар', name: 'Звездопад', icon: 'starfall', rank: 1, desc: 'Наблюдатель дарит руну: звёзды падают у курсора', mods: {}, learn: 'starfall' },
+  { id: 'l-timestop', kind: 'gift', category: 'Руна-Заклинание в дар', name: 'Остановка Времени', icon: 'timestop', rank: 2, desc: 'Наблюдатель дарит руну: время в Круге застывает', mods: {}, learn: 'timestop' },
   { id: 'g-resin', kind: 'gift', category: 'Руна-Свойство', name: 'Янтарная жила', icon: 'amber', rank: 1, desc: '+20% Янтаря с тварей до конца ночей', mods: { amberGain: 0.2 } },
 ];
 

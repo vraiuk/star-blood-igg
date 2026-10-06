@@ -26,7 +26,7 @@ export type EnemyKind =
   | 'forager' | 'worm' | 'guard' | 'larva' | 'reaper' | 'jumper' | 'tunneler' | 'tunnelerUp'
   | 'moth' | 'bomber'
   | 'mother' | 'executioner';
-export type AbilityId = 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm';
+export type AbilityId = 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm' | 'timestop';
 
 export interface EnemyDef {
   name: string;
@@ -344,6 +344,11 @@ export const ABILITIES = {
     cost: 40, cooldown: 28, unlockStage: 2, learn: 8, key: '5',
     duration: 6, reach: 170, haste: 0.6, heal: 0.25,
   },
+  timestop: {
+    name: 'Остановка Времени', desc: 'Руна-Заклинание: время в Круге застывает — твари замирают (боссы вдвое короче), новые не выходят из тьмы. Восстанавливается за ночи, а не секунды.',
+    cost: 60, cooldown: 0, unlockStage: 3, learn: 25, key: '6',
+    duration: 7, nights: 2,
+  },
 } satisfies Record<AbilityId, AbilityDef & Record<string, number | string>>;
 
 /** Ability damage multiplier per tree stage above the first. */
@@ -355,6 +360,12 @@ export const ECONOMY = {
   dawnBase: 50,
   dawnPerNight: 12,
   earlyCallPerSecond: 1,
+  /**
+   * «Натиск»: call the next night while stragglers of this one still roam (all of them
+   * already spawned). Pays a share of the skipped dawn gift up front plus a bounty per
+   * creature still alive; the skipped dawn (gift, roulette) arrives at the next real dawn.
+   */
+  rushGiftShare: 0.5, rushPerEnemy: 3, rushStar: 2,
   dropLifeLit: 25,
   dropLifeDark: 12,
 } as const;

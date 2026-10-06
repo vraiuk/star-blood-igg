@@ -431,3 +431,7 @@ body { display: grid; place-items: center; }
 .abtip .tags i { font-style: normal; font-size: calc(5 * var(--u)); border: 1px solid var(--c); color: var(--c); border-radius: 3px; padding: 0 calc(2 * var(--u)); }
 .slot .rm { margin-left: calc(2 * var(--u)); font-size: calc(4.5 * var(--u)); background: #3a1420; color: #ffb0b0; border: 1px solid #ff6a6a66; border-radius: 3px; cursor: pointer; padding: 0 calc(1.5 * var(--u)); }
 .slot .rm.no { opacity: .4; cursor: default; }
+
+/* v4.4: «Натиск» — call the next night early */
+#callnight.rush { background: linear-gradient(180deg, #a0402a, #5a1a14); border-color: #ff9a6a; color: #fff0e0; animation: rushPulse 1.4s ease-in-out infinite; }
+@keyframes rushPulse { 0%,100% { box-shadow: 0 0 0 rgba(255,120,60,0); } 50% { box-shadow: 0 0 calc(8 * var(--u)) rgba(255,120,60,0.7); } }

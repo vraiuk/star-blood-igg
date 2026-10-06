@@ -1,4 +1,4 @@
-import { META_NODES, type MetaNode } from '../data/meta';
+import { META_INFINITE, META_NODES, infiniteCost, type MetaNode } from '../data/meta';
 import type { ModPatch } from '../data/mods';
 
 const KEY = 'igg-tree-save-v1';
@@ -20,10 +20,12 @@ export interface MetaSave {
   runs: number;
   /** best nights survived per difficulty path */
   bestNight: number[];
+  /** levels of the endless «Кольца памяти» */
+  rings: Record<string, number>;
 }
 
 export function emptySave(): MetaSave {
-  return { coins: 0, earned: 0, nodes: [], bestStars: [0, 0, 0], pathUnlocked: 0, path: 0, runs: 0, bestNight: [0, 0, 0] };
+  return { coins: 0, earned: 0, nodes: [], bestStars: [0, 0, 0], pathUnlocked: 0, path: 0, runs: 0, bestNight: [0, 0, 0], rings: {} };
 }
 
 export function loadSave(): MetaSave {
@@ -57,15 +59,36 @@ export function buyNode(s: MetaSave, id: string): boolean {
   return true;
 }
 
+/** The whole Igg-Tree is awakened: the endless rings open. */
+export function treeComplete(s: MetaSave) { return META_NODES.every((n) => s.nodes.includes(n.id)); }
+
+export function buyRing(s: MetaSave, id: string): boolean {
+  const n = META_INFINITE.find((x) => x.id === id);
+  if (!n || !treeComplete(s)) return false;
+  const lvl = s.rings[id] ?? 0;
+  const cost = infiniteCost(n, lvl);
+  if (s.coins < cost) return false;
+  s.coins -= cost;
+  s.rings[id] = lvl + 1;
+  writeSave(s);
+  return true;
+}
+
 /** Free full respec (Kingdom Rush style). */
 export function respec(s: MetaSave) {
   for (const id of s.nodes) s.coins += nodeById(id)?.cost ?? 0;
   s.nodes = [];
+  for (const n of META_INFINITE) {
+    for (let l = 0; l < (s.rings[n.id] ?? 0); l++) s.coins += infiniteCost(n, l);
+  }
+  s.rings = {};
   writeSave(s);
 }
 
 export function metaPatches(s: MetaSave): ModPatch[] {
-  return s.nodes.map((id) => nodeById(id)?.mods).filter((m): m is ModPatch => !!m);
+  const out = s.nodes.map((id) => nodeById(id)?.mods).filter((m): m is ModPatch => !!m);
+  for (const n of META_INFINITE) { const l = s.rings[n.id] ?? 0; if (l > 0) out.push(n.mods(l)); }
+  return out;
 }
 
 export function hasStartRune(s: MetaSave) { return s.nodes.includes('r5'); }

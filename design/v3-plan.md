@@ -120,3 +120,13 @@
   can be pulled out for Star Blood; each rune rank adds cooldown (×1.08 … ×1.35).
 - Keeper Tablet pauses time; ability hover card with live numbers; no rune offer under the
   title screen.
+
+## v4.4 — Натиск, Остановка Времени, кольца памяти
+- «Натиск»: once a night's creatures are all out, Space calls the next night on top of the
+  stragglers: half the dawn gift + 3 Amber per living creature + Star Blood up front; the
+  skipped dawn (other half of the gift, roulette) arrives at the next real dawn.
+- Rune «Остановка Времени» [6]: freezes creatures (bosses half as long) and the spawn clock
+  for 7 s; recovers over 2 nights. Properties: Долгий миг, Уменьшение, Короткая ночь, Хрупкий лёд.
+- Rune slots: 4th by a Lesser Rune of Development, 5th/6th forged for 1500/120 and 4000/300.
+- Pierce-beam spear form: 6 s minimum cooldown.
+- Meta: «Кольца памяти» — endless Coin sinks after the whole Igg-Tree is awakened.

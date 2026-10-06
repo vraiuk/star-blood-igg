@@ -220,6 +220,10 @@ export interface Keeper {
   runeRank: Record<KeeperRuneId, number>;
   /** chosen Form of each ability rune */
   forms: Record<'spear' | 'hammer' | 'starfall', 'A' | 'B' | null>;
+  /** Остановка Времени: seconds of frozen time left, its full length, nights until the rune is ready */
+  timeStopT: number;
+  timeStopMax: number;
+  timeStopNights: number;
   /** chosen rune facets (Грани) */
   facets: string[];
   /** runes the Keeper has learned (bought or gifted by the Observer) */
@@ -338,6 +342,7 @@ export type GameEvent =
   | { type: 'meteor'; x: number }
   | { type: 'spikeStrike'; x: number; y: number; tx: number; ty: number; web: boolean }
   | { type: 'nightStart'; night: number }
+  | { type: 'rush'; night: number; amber: number; star: number }
   | { type: 'dawn'; night: number; gift: number }
   | { type: 'brood'; x: number }
   | { type: 'won' }
@@ -369,6 +374,8 @@ export interface GameState {
   star: number;
   /** unspent Lesser Runes of Development */
   devRunes: number;
+  /** «Натиск»: nights called early whose dawn rewards wait for the next real dawn */
+  rushedDawns: number;
   /** «Гнев Тьмы»: adaptive strength of the endless night (1 = baseline) */
   wrath: number;
   enemies: Enemy[];

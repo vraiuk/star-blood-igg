@@ -11,7 +11,7 @@ import { ASCEND, BASE_TIERS, MAX_TIER, MERGE, NESTS, SELL_REFUND, type Family, t
 const CROWN_FAMILIES = new Set<Family>(['caterpillar', 'honeycomb', 'mender']);
 import { ENDLESS, nightDef, type NightDef } from '../data/nights';
 import {
-  APOTHEOSIS_RANK, BASE_SLOTS, BOONS, FACETS, FACET_RANKS, RUNE_RANKS, removeCost, FORM_RANK, MAX_SLOTS, PROPERTIES, runeRankArea, runeRankCd, runeRankCost, runeRankLight,
+  APOTHEOSIS_RANK, BASE_SLOTS, BOONS, DEV_SLOTS, EXTRA_SLOT_PRICE, FACETS, FACET_RANKS, RUNE_RANKS, removeCost, FORM_RANK, MAX_SLOTS, PROPERTIES, runeRankArea, runeRankCd, runeRankCost, runeRankLight,
   runeRankPower, boonById, maxRankForNight, propertyById,
   type FormId, type KeeperRuneId, type PropertyDef,
 } from '../data/runes';
@@ -89,20 +89,21 @@ export class Game {
     const st0 = TREE_STAGES[0];
     this.state = {
       phase: 'day', night: 0, phaseTime: 0, dayLeft: DAY.firstLength,
-      amber: ECONOMY.startAmber + this.mods.startAmber, star: this.mods.startStar, devRunes: 0, wrath: 1,
+      amber: ECONOMY.startAmber + this.mods.startAmber, star: this.mods.startStar, devRunes: 0, wrath: 1, rushedDawns: 0,
       enemies: [], structures: [], projectiles: [], drops: [], workers: [], soldiers: [], tempLights: [], burns: [], tunnels: [],
       keeper: {
         x: WORLD.treeX - 28, dir: 1, hp: KEEPER.hp, alive: true, respawn: 0, light: KEEPER.startLight, move: 0,
-        cooldowns: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0 },
-        cdMax: { spear: 1, hammer: 1, starfall: 1, radiance: 1, swarm: 1 }, charge: 0, rank: 0,
+        cooldowns: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0, timestop: 0 },
+        cdMax: { spear: 1, hammer: 1, starfall: 1, radiance: 1, swarm: 1, timestop: 1 }, charge: 0, rank: 0,
+        timeStopT: 0, timeStopMax: 0, timeStopNights: 0,
         radianceT: 0, swarmT: 0, swarmX: 0, channel: 0, channelDir: 1, channelDps: 0,
-        props: { spear: [], hammer: [], starfall: [], radiance: [], swarm: [], light: [] },
-        slots: { spear: BASE_SLOTS, hammer: BASE_SLOTS, starfall: BASE_SLOTS, radiance: BASE_SLOTS, swarm: BASE_SLOTS, light: BASE_SLOTS }, boons: [],
+        props: { spear: [], hammer: [], starfall: [], radiance: [], swarm: [], timestop: [], light: [] },
+        slots: { spear: BASE_SLOTS, hammer: BASE_SLOTS, starfall: BASE_SLOTS, radiance: BASE_SLOTS, swarm: BASE_SLOTS, timestop: BASE_SLOTS, light: BASE_SLOTS }, boons: [],
         attrs: { might: 0, spirit: 0, body: 0 },
-        runeRank: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0, light: 0 },
+        runeRank: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0, timestop: 0, light: 0 },
         forms: { spear: null, hammer: null, starfall: null },
         facets: [],
-        learned: { spear: true, hammer: false, starfall: false, radiance: false, swarm: false },
+        learned: { spear: true, hammer: false, starfall: false, radiance: false, swarm: false, timestop: false },
         castAnim: 9, hitFlash: 0, walkT: 0, rhythm: 0, rhythmT: 0, freeCast: 0, lastLightCd: 0,
       },
       tree: {
@@ -228,7 +229,8 @@ export class Game {
   abilityCost(id: AbilityId) {
     const own = id === 'spear' ? this.mods.spearCost : id === 'hammer' ? this.mods.hammerCost
       : id === 'radiance' && this.propCount('radiance', 'rd-cheap') ? -0.35
-      : id === 'swarm' && this.propCount('swarm', 'sw-cheap') ? -0.35 : 0;
+      : id === 'swarm' && this.propCount('swarm', 'sw-cheap') ? -0.35
+      : id === 'timestop' ? -0.35 * this.propCount('timestop', 'ts-cheap') : 0;
     const facet = id === 'spear' && this.state?.keeper?.facets.includes('sp-swift') ? -0.25 : 0;
     const rank = this.state ? runeRankLight(this.state.keeper.runeRank[id]) : 1;
     return Math.round(ABILITIES[id].cost * Math.max(0.3, 1 + this.mods.abilityCost + own + facet) * rank);
@@ -636,20 +638,76 @@ export class Game {
     return true;
   }
 
+  /** Price of the 5th/6th rune slot (or null when the next slot is opened by a development rune / none left). */
+  slotPrice(rune: KeeperRuneId): Price | null {
+    const n = this.state.keeper.slots[rune];
+    return n >= DEV_SLOTS && n < MAX_SLOTS ? EXTRA_SLOT_PRICE[n - DEV_SLOTS] : null;
+  }
+
+  /** Forge a 5th or 6th slot into a rune for a lot of Amber and Star Blood. */
+  buyRuneSlot(rune: KeeperRuneId): boolean {
+    const p = this.slotPrice(rune);
+    if (!p) return this.deny(this.state.keeper.slots[rune] < DEV_SLOTS ? 'Сначала 4-й слот — Малой Руной Развития' : 'В руне уже 6 слотов');
+    if (!this.canPay(p)) return this.deny('Нужно больше Янтаря и Звёздной Крови');
+    this.pay(p);
+    this.state.keeper.slots[rune]++;
+    this.emit({ type: 'rankUp', rank: this.state.keeper.rank });
+    return true;
+  }
+
   /** Apply a Lesser Rune of Development: opens the 4th slot of a keeper rune. */
   developRune(rune: KeeperRuneId): boolean {
     const k = this.state.keeper;
     if (this.state.devRunes <= 0) return this.deny('Нет Малой Руны Развития');
-    if (k.slots[rune] >= MAX_SLOTS) return this.deny('Руна уже развита');
+    if (k.slots[rune] >= DEV_SLOTS) return this.deny('4-й слот уже открыт — 5-й и 6-й куются за Янтарь и Кровь');
     this.state.devRunes--;
     k.slots[rune]++;
     this.emit({ type: 'rankUp', rank: k.rank });
     return true;
   }
 
-  /** Ends the day early; pays a bonus per remaining second. */
+  /** «Натиск» is possible: every creature of this night is out and the next night isn't the last one. */
+  canRush(): boolean {
+    const s = this.state;
+    return s.phase === 'night' && s.pending.length === 0 && s.enemies.length > 0 && s.choices.length === 0;
+  }
+
+  /** What «Натиск» pays right now. */
+  rushReward(): { amber: number; star: number } {
+    const s = this.state;
+    const gift = (ECONOMY.dawnBase + ECONOMY.dawnPerNight * (s.night + 1)) * (1 + this.mods.dawnGift);
+    return {
+      amber: Math.round(gift * ECONOMY.rushGiftShare + s.enemies.length * ECONOMY.rushPerEnemy * ENDLESS.bounty(s.night)),
+      star: ECONOMY.rushStar + Math.floor(s.night / 5),
+    };
+  }
+
+  /**
+   * «Натиск»: the next night starts on top of this one. Its dawn (gift, roulette, beetle
+   * revival) is postponed to the next real dawn; the risk is paid up front.
+   */
+  private rushNight(): boolean {
+    const s = this.state;
+    if (!this.canRush()) return this.deny('Натиск — когда все твари этой ночи уже вышли');
+    const r = this.rushReward();
+    s.amber += r.amber;
+    s.star += r.star;
+    this.adaptWrath(s.night);
+    s.night++;
+    s.rushedDawns++;
+    if (s.night === this.campaignNights) {
+      this.milestoneStars = this.computeStars();
+      this.emit({ type: 'milestone', stars: this.milestoneStars });
+    }
+    this.emit({ type: 'rush', night: s.night, amber: r.amber, star: r.star });
+    this.queueNight(s.phaseTime);
+    return true;
+  }
+
+  /** Ends the day early (bonus per remaining second), or at night calls «Натиск». */
   callNight(): boolean {
     const s = this.state;
+    if (s.phase === 'night') return this.rushNight();
     if (s.phase !== 'day') return false;
     if (s.choices.length) return this.deny('Сначала сделай выбор');
     s.amber += Math.floor(s.dayLeft) * ECONOMY.earlyCallPerSecond;
@@ -663,6 +721,8 @@ export class Game {
     if (this.over || !k.alive) return false;
     if (!this.abilityUnlocked(id)) return this.deny(this.abilityAvailable(id) ? `Изучи руну «${ABILITIES[id].name}» в Скрижали [R]` : `Руна откроется на стадии Древа ${ABILITIES[id].unlockStage}`);
     if (k.cooldowns[id] > 0) return false;
+    if (id === 'timestop' && k.timeStopNights > 0) return this.deny(`Остановка Времени восстановится через ${k.timeStopNights} ноч.`);
+    if (id === 'timestop' && s.phase !== 'night') return this.deny('Время останавливают ночью');
     const def = ABILITIES[id];
     const form = id === 'spear' || id === 'hammer' || id === 'starfall' ? k.forms[id] : null;
     if (id === 'starfall') {
@@ -685,6 +745,7 @@ export class Game {
     else if (id === 'hammer') this.castHammer(this.abilityMult('hammer'));
     else if (id === 'radiance') this.castRadiance();
     else if (id === 'swarm') this.castSwarm();
+    else if (id === 'timestop') this.castTimeStop();
     else this.castStarfall(tx, this.abilityMult('starfall'));
     this.emit({ type: 'cast', ability: id, x: k.x, tx });
     return true;
@@ -695,7 +756,7 @@ export class Game {
     const k = this.state.keeper;
     let cd = ABILITIES[id].cooldown * (id === 'hammer' && this.mods.hammerCost < 0 ? 0.75 : 1) * runeRankCd(k.runeRank[id]);
     if ((id === 'radiance' && this.propCount('radiance', 'rd-cheap')) || (id === 'swarm' && this.propCount('swarm', 'sw-cheap'))) cd *= 0.8;
-    if (id === 'spear' && k.forms.spear === 'B') cd = Math.max(cd, 2.2 * runeRankCd(k.runeRank[id]));
+    if (id === 'spear' && k.forms.spear === 'B') cd = Math.max(cd, 6 * runeRankCd(k.runeRank[id]));
     if (id === 'spear' && k.forms.spear === 'A') cd = Math.max(cd, 1.1 * runeRankCd(k.runeRank[id]));
     if (id === 'spear' && this.facet('sp-swift')) cd *= 0.65;
     return cd * Math.max(0.4, 1 + this.mods.abilityCd);
@@ -719,6 +780,19 @@ export class Game {
     }
   }
   radianceActive() { return this.state.keeper.radianceT > 0; }
+
+  /** Остановка Времени: the Circle freezes; the rune recovers over nights. */
+  private castTimeStop() {
+    const k = this.state.keeper;
+    const def = ABILITIES.timestop;
+    k.timeStopMax = k.timeStopT = def.duration * this.runeArea('timestop') * (1 + 0.25 * this.propCount('timestop', 'ts-long'));
+    k.timeStopNights = Math.max(1, def.nights - this.propCount('timestop', 'ts-quick'));
+  }
+  /** Is this creature held by frozen time? (bosses break free at half time) */
+  frozen(e: Enemy) {
+    const k = this.state.keeper;
+    return k.timeStopT > (ENEMIES[e.kind].boss ? k.timeStopMax * 0.5 : 0);
+  }
 
   /** Зов Роя: nests around the Ascended rally. */
   private castSwarm() {
@@ -986,6 +1060,12 @@ export class Game {
     else this.updateSpawns();
 
     this.updateTimers(dt);
+    if (s.keeper.timeStopT > 0) {
+      s.keeper.timeStopT = Math.max(0, s.keeper.timeStopT - dt);
+      // the darkness can't send anyone while time stands
+      for (const p of s.pending) p.at += dt;
+      this.nightDeadline += dt;
+    }
     this.updateKeeper(dt);
     this.updateEnemies(dt);
     this.updateTunnels(dt);
@@ -1041,6 +1121,12 @@ export class Game {
     s.tree.shieldUsed = false;
     this.nightMinReach = Infinity;
     this.nightTreeDmg = 0;
+    this.queueNight(0);
+  }
+
+  /** Schedule the spawns of the current night index, starting at phase time `t0`. */
+  private queueNight(t0: number) {
+    const s = this.state;
     const def = this.night(s.night);
     const handMade = s.night < this.campaignNights;
     const pending: PendingSpawn[] = [];
@@ -1055,12 +1141,12 @@ export class Game {
         const every = boss ? g.every : g.every / Math.sqrt(grow);
         for (let i = 0; i < count; i++) {
           const stagger = g.side === 'B' && side === 'R' ? every * 0.5 : 0;
-          pending.push({ at: g.at + i * every + stagger, kind: g.kind, side });
+          pending.push({ at: t0 + g.at + i * every + stagger, kind: g.kind, side });
         }
       }
     }
     pending.sort((a, b) => a.at - b.at);
-    s.pending = pending;
+    s.pending = [...s.pending, ...pending].sort((a, b) => a.at - b.at);
     this.nightDeadline = (pending[pending.length - 1]?.at ?? 0) + NIGHT_GRACE;
     this.emit({ type: 'nightStart', night: s.night });
   }
@@ -1073,7 +1159,13 @@ export class Game {
       this.milestoneStars = this.computeStars();
       this.emit({ type: 'milestone', stars: this.milestoneStars });
     }
-    const gift = Math.round((ECONOMY.dawnBase + ECONOMY.dawnPerNight * (finished + 1)) * (1 + this.mods.dawnGift));
+    let gift = Math.round((ECONOMY.dawnBase + ECONOMY.dawnPerNight * (finished + 1)) * (1 + this.mods.dawnGift));
+    // dawns skipped by «Натиск» arrive now: their gifts (the half not paid up front) and roulettes
+    for (let i = 1; i <= s.rushedDawns; i++) {
+      gift += Math.round((ECONOMY.dawnBase + ECONOMY.dawnPerNight * (finished + 1 - i)) * (1 + this.mods.dawnGift) * (1 - ECONOMY.rushGiftShare));
+    }
+    const extraDawns = s.rushedDawns;
+    s.rushedDawns = 0;
     s.amber += gift;
     s.phase = 'day';
     s.phaseTime = 0;
@@ -1091,10 +1183,12 @@ export class Game {
     }
     this.graveyard = [];
     s.tunnels = [];
+    s.keeper.timeStopNights = Math.max(0, s.keeper.timeStopNights - 1);
     if (!s.keeper.alive) s.keeper.respawn = 0.5;
     this.adaptWrath(finished);
     this.emit({ type: 'dawn', night: finished, gift });
     this.offerDawn(false);
+    for (let i = 0; i < extraDawns; i++) this.offerDawn(false);
   }
 
   /**
@@ -1420,6 +1514,7 @@ export class Game {
       }
       if (e.dead) continue;
 
+      if (this.frozen(e)) { e.attacking = false; continue; }
       if (e.kick !== 0) {
         e.x += e.kick * dt;
         e.kick *= Math.pow(0.02, dt);
@@ -1706,8 +1801,9 @@ export class Game {
 
   /** «Высвечивание»: the strongest dragonfly light covering this enemy. */
   private vulnAt(e: Enemy): number {
-    if ((e.layer === 'under')) return 0;
-    let v = this.state.keeper.radianceT > 0 && e.lit ? ABILITIES.radiance.vuln * runeRankPower(this.state.keeper.runeRank.radiance) ** 0.5 : 0;
+    const shatter = this.frozen(e) && this.propCount('timestop', 'ts-shatter') ? 0.35 : 0;
+    if ((e.layer === 'under')) return shatter;
+    let v = shatter + this.state.keeper.radianceT > 0 && e.lit ? ABILITIES.radiance.vuln * runeRankPower(this.state.keeper.runeRank.radiance) ** 0.5 : 0;
     for (const st of this.state.structures) {
       if (st.family !== 'dragonfly') continue;
       const ns = this.nestStats(st);

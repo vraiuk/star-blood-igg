@@ -1,7 +1,7 @@
 import { ABILITIES, ATTR_MAX, ATTRIBUTES, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
 import { MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
-  APOTHEOSIS_RANK, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
+  APOTHEOSIS_RANK, DEV_SLOTS, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
   runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, FACETS, FACET_RANKS, type FormId, type KeeperRuneId,
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, pathCounts, type TreePath } from '../data/tree';
@@ -10,7 +10,7 @@ import type { GameEvent } from '../sim/types';
 import { icon } from './icons';
 import { QUESTS } from './quests';
 
-const AB_IDS: AbilityId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm'];
+const AB_IDS: AbilityId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'timestop'];
 const RUNE_IDS: KeeperRuneId[] = ['spear', 'hammer', 'starfall', 'radiance', 'swarm', 'light'];
 
 export type MenuTarget =
@@ -326,6 +326,9 @@ export class Hud {
           this.showBanner(def.title, def.hint, true, 4.5);
           break;
         }
+        case 'rush':
+          this.showBanner(`Натиск! ${g.night(e.night).title}`, `Тьма идёт без передышки. +${e.amber} Янтаря, +${e.star} Звёздной Крови · рассвет отложен`, true, 3.5);
+          break;
         case 'milestone':
           this.showBanner('Тот-Кто-Посадил-новое-Древо!', `Десять ночей позади. ${'★'.repeat(e.stars)} Дальше — Бесконечная ночь: держись за рекорд.`, false, 6);
           break;
@@ -412,11 +415,13 @@ export class Hud {
       rows.push(['Урон звезды', n0(ABILITIES.starfall.damage * mult)], ['Звёзд', String(ABILITIES.starfall.meteors + g.mods.starfallMeteors)], ['Заряд', `${Math.floor(k.charge)}/${ABILITIES.starfall.chargeMax} (убийства)`]);
     } else if (id === 'radiance') {
       rows.push(['Длительность', `${(ABILITIES.radiance.duration * g.runeArea('radiance')).toFixed(1)} с`], ['Круг', `+${Math.round(ABILITIES.radiance.radius * 100)}%`], ['Ожог Червей', `×${ABILITIES.radiance.burn}`]);
+    } else if (id === 'timestop') {
+      rows.push(['Время стоит', `${(ABILITIES.timestop.duration * g.runeArea('timestop')).toFixed(1)} с (боссы вдвое меньше)`], ['Восстановление', `${ABILITIES.timestop.nights} ноч.${k.timeStopNights ? ` · осталось ${k.timeStopNights}` : ''}`]);
     } else {
       rows.push(['Длительность', `${(ABILITIES.swarm.duration * g.runeArea('swarm')).toFixed(1)} с`], ['Охват', n0(g.swarmReach())], ['Ускорение гнёзд', `+${Math.round(ABILITIES.swarm.haste * 100)}%`]);
     }
     if (def.cost) rows.push(['Свет', String(g.abilityCost(id))]);
-    if (id !== 'starfall') rows.push(['Перезарядка', `${g.abilityCooldown(id).toFixed(1)} с`]);
+    if (id !== 'starfall' && id !== 'timestop') rows.push(['Перезарядка', `${g.abilityCooldown(id).toFixed(1)} с`]);
     const props = g.runeProps(id);
     const facets = k.facets.map((f) => facetById(f)).filter((f) => f && f.rune === id);
     const locked = !g.abilityUnlocked(id);
@@ -766,7 +771,7 @@ export class Hud {
         const hasForms = rid === 'spear' || rid === 'hammer' || rid === 'starfall';
         html += `<div class="rblock ${unlocked ? '' : 'dim'}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b>
           <span class="rrank" style="--c:${runeColor(rr)}">${runeRankName(rr)} · ×${runeRankPower(rr).toFixed(2)}</span><span class="cap">${props.length}/${cap}</span>`;
-        if (s.devRunes > 0 && cap < MAX_SLOTS) html += btn('+слот', true, () => { g.developRune(rid); }, 'tiny');
+        if (s.devRunes > 0 && cap < DEV_SLOTS) html += btn('+слот', true, () => { g.developRune(rid); }, 'tiny');
         html += `</div>`;
         if (unlocked) {
           const cost = runeRankCost(rr + 1);
@@ -806,7 +811,11 @@ export class Hud {
             html += `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}">${p.name}<button class="rm ${s.star >= rc ? '' : 'no'}" data-i="${actions.length - 1}" title="Вынуть Свойство за ${rc} Звёздной Крови">✕${rc}</button></span>`;
           } else html += `<span class="slot">пусто</span>`;
         }
-        if (cap < MAX_SLOTS) html += `<span class="slot locked" title="Нужна Малая Руна Развития">+</span>`;
+        if (cap < DEV_SLOTS) html += `<span class="slot locked" title="Нужна Малая Руна Развития">+</span>`;
+        else if (cap < MAX_SLOTS && unlocked) {
+          const sp = g.slotPrice(rid)!;
+          html += btn(`Выковать ${cap + 1}-й слот (${priceHtml(sp, g)})`, g.canPay(sp), () => { g.buyRuneSlot(rid); }, 'tiny');
+        }
         html += `</div>`;
         if (unlocked) {
           html += `<div class="shop">`;
@@ -988,12 +997,20 @@ export class Hud {
     const total = g.campaignNights;
     if (s.phase === 'day') {
       this.nightInfo.innerHTML = `День · до ночи <span class="t">${Math.ceil(s.dayLeft)}с</span> · ночь ${s.night + 1}${s.night < total ? `/${total}` : ' · ∞'}`;
-      this.callBtn.classList.remove('hidden');
+      this.callBtn.classList.remove('hidden', 'rush');
+      this.callBtn.title = '';
       this.callBtn.innerHTML = `Призвать ночь <span style="opacity:.75">[Пробел] +${Math.floor(s.dayLeft)}</span>`;
     } else {
       const left = s.enemies.length + s.pending.length;
-      this.nightInfo.innerHTML = s.phase === 'night' ? `${g.night(s.night).title}${s.night < total ? ` · ${s.night + 1}/${total}` : ' · ∞'} · тварей: <span class="t">${left}</span>${s.wrath > 1.01 ? ` · <span style="color:#ff8a8a">Гнев ×${s.wrath.toFixed(1)}</span>` : ''}` : '';
-      this.callBtn.classList.add('hidden');
+      this.nightInfo.innerHTML = s.phase === 'night' ? `${g.night(s.night).title}${s.night < total ? ` · ${s.night + 1}/${total}` : ' · ∞'} · тварей: <span class="t">${left}</span>${s.rushedDawns ? ` · <span style="color:#ffb070">Натиск ×${s.rushedDawns}</span>` : ''}${s.wrath > 1.01 ? ` · <span style="color:#ff8a8a">Гнев ×${s.wrath.toFixed(1)}</span>` : ''}` : '';
+      if (g.canRush()) {
+        const r = g.rushReward();
+        this.callBtn.classList.remove('hidden');
+        this.callBtn.classList.add('rush');
+        const html = `Натиск: ночь ${s.night + 2} <span style="opacity:.8">[Пробел] +${r.amber}<img class="icon" src="${icon('amber')}"> +${r.star}<img class="icon" src="${icon('star')}"></span>`;
+        if (this.callBtn.innerHTML !== html) this.callBtn.innerHTML = html;
+        this.callBtn.title = 'Призвать следующую ночь, не добивая эту. Награда сразу, пропущенный рассвет (дар и выбор рун) придёт на ближайшем рассвете.';
+      } else this.callBtn.classList.add('hidden');
     }
 
     for (const id of AB_IDS) {
@@ -1008,9 +1025,10 @@ export class Hud {
         box.classList.toggle('learnable', g.abilityAvailable(id) && s.star >= ABILITIES[id].learn);
       }
       const c = s.keeper.cooldowns[id];
-      const frac = c > 0 ? Math.min(1, c / Math.max(0.01, s.keeper.cdMax[id])) : 0;
+      const nights = id === 'timestop' ? s.keeper.timeStopNights : 0;
+      const frac = nights > 0 ? Math.min(1, nights / ABILITIES.timestop.nights) : c > 0 ? Math.min(1, c / Math.max(0.01, s.keeper.cdMax[id])) : 0;
       cd.style.transform = `scaleY(${frac})`;
-      const txt = c > 0.5 ? String(Math.ceil(c)) : '';
+      const txt = nights > 0 ? `${nights}н` : c > 0.5 ? String(Math.ceil(c)) : '';
       if (cdt.textContent !== txt) cdt.textContent = txt;
       let ready: boolean;
       if (id === 'starfall') {
@@ -1018,7 +1036,7 @@ export class Hud {
         charge.style.height = `${ch * 100}%`;
         ready = unlocked && ch >= 1 && c <= 0;
       } else {
-        ready = unlocked && c <= 0 && (s.keeper.light >= g.abilityCost(id) || s.keeper.freeCast > 0) && s.keeper.alive;
+        ready = unlocked && c <= 0 && nights === 0 && (id !== 'timestop' || s.phase === 'night') && (s.keeper.light >= g.abilityCost(id) || s.keeper.freeCast > 0) && s.keeper.alive;
         box.classList.toggle('nolight', unlocked && s.keeper.light < g.abilityCost(id) && s.keeper.freeCast <= 0);
       }
       box.classList.toggle('ready', ready);
