@@ -55,7 +55,10 @@ let lobby: import('./net/coop').LobbyView | null = null;
 const coop = new Coop({
   lobby(v) { lobby = v; coopPanel.renderLobby(v); },
   start(info, you) { beginRun(info, you); },
-  paused(on) { coopPanel.hostPaused = on; },
+  paused(on, why) {
+    coopPanel.hostPaused = on;
+    coopPanel.pauseWhy = why === 'hidden' ? 'Пауза: хост свернул игру — ждём, пока он вернётся' : 'Пауза: хост открыл меню';
+  },
   desync() { coopPanel.desync = true; },
   hostGone() {
     // the host left: a guest's run can't go on — back to the lobby
@@ -392,7 +395,7 @@ function frame(now: number) {
   const running = started && !game.over;
   if (running && coop.isGuest) {
     coop.guestTicks(dt);
-  } else if (running && !paused) {
+  } else if (running && !paused && !coop.hidden) {
     acc += dt * speed;
     let n = 0;
     while (acc >= STEP && n < 60) { acc -= STEP; n++; }

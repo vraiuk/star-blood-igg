@@ -29,6 +29,8 @@ const GUEST_BUFFER = 4;
  */
 const PING_EVERY = 2000;
 const HOST_SILENT = 7000;
+/** A minimized host's timers are throttled (down to once a minute): wait for it this long. */
+const HOST_HIDDEN_SILENT = 150000;
 /** Give up on a host that doesn't answer (a TURN relay over TCP/TLS takes a few seconds more). */
 const CONNECT_TIMEOUT = 16000;
 /** A signalling socket that hasn't opened by now is cut by the network (it hangs, no error). */
@@ -116,10 +118,12 @@ type Msg =
   | { t: 'cmd'; m: string; a: unknown[]; s?: string }
   | { t: 'f'; at: number; n: number; c: FrameCmd[] }
   | { t: 'h'; tick: number; h: number }
-  | { t: 'pause'; on: boolean }
+  | { t: 'pause'; on: boolean; why?: PauseWhy }
   | { t: 'ping' };
 
 export type Role = 'connecting' | 'host' | 'guest' | 'offline' | 'lost';
+/** Why the host's world stands: its pause menu, or its tab is minimized / in the background. */
+export type PauseWhy = 'menu' | 'hidden';
 
 export interface LobbyView {
   role: Role;
@@ -138,8 +142,8 @@ export interface CoopEvents {
   lobby(v: LobbyView): void;
   /** a run starts on every peer: build the Game from `info`, play as keeper `you` */
   start(info: StartInfo, you: number): void;
-  /** the host paused / resumed */
-  paused(on: boolean): void;
+  /** the host paused / resumed (and why) */
+  paused(on: boolean, why: PauseWhy): void;
   /** the peers' worlds drifted apart */
   desync(tick: number): void;
   /** the host is gone: a guest's run is over, the lobby is being searched again */
@@ -174,13 +178,24 @@ export class Coop {
   private expect = new Map<number, number>();
   private acc = 0;
 
-  /** guest: when the host was last heard from */
+  /** guest: when the host was last heard from, and whether it said its tab went to the background */
   private heard = 0;
+  private hostHidden = false;
+  /** host: its pause menu is open / its tab is hidden */
+  private menuPaused = false;
+  private tabHidden = false;
 
   constructor(private ev: CoopEvents) {
+    // a minimized or backgrounded host tab stops its game loop: tell the guests why the world stands
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        this.tabHidden = document.hidden;
+        this.sendPause();
+      });
+    }
     setInterval(() => {
       if (this.role === 'host') for (const c of this.guests) c.send({ t: 'ping' } satisfies Msg);
-      else if (this.role === 'guest' && performance.now() - this.heard > HOST_SILENT) {
+      else if (this.role === 'guest' && performance.now() - this.heard > (this.hostHidden ? HOST_HIDDEN_SILENT : HOST_SILENT)) {
         this.host?.close();
         this.hostLost();
       }
@@ -459,10 +474,20 @@ export class Coop {
     this.broadcastLobby();
   }
 
-  /** Host: pause or resume everyone. */
+  /** Host: its tab is minimized / in the background — the world holds still for everyone. */
+  get hidden() { return this.tabHidden && this.role === 'host'; }
+
+  /** Host: its pause menu holds everyone. */
   setPaused(on: boolean) {
+    this.menuPaused = on;
+    this.sendPause();
+  }
+
+  private sendPause() {
     if (this.role !== 'host') return;
-    for (const c of this.guests) c.send({ t: 'pause', on } satisfies Msg);
+    const on = this.menuPaused || this.tabHidden;
+    const why: PauseWhy = this.tabHidden ? 'hidden' : 'menu';
+    for (const c of this.guests) c.send({ t: 'pause', on, why } satisfies Msg);
   }
 
   // ───────────────────────────── messages ──────────────────────────
@@ -494,7 +519,8 @@ export class Coop {
         this.expect.set(m.tick, m.h);
         break;
       case 'pause':
-        this.ev.paused(m.on);
+        this.hostHidden = m.on && m.why === 'hidden';
+        this.ev.paused(m.on, m.why ?? 'menu');
         break;
       default: break;
     }

@@ -1002,7 +1002,8 @@ export class Hud {
   private renderChoice() {
     const g = this.game();
     // nothing to choose while the title screen is up (the run hasn't started yet)
-    const c = this.inRun && this.title.classList.contains('hidden') ? g.choice : null;
+    // co-op: only my own picks (and shared ones, like a Tree branch) — the others choose on their screens
+    const c = this.inRun && this.title.classList.contains('hidden') ? g.choiceFor(g.local) : null;
     if (!c || g.over) {
       if (!this.modal.classList.contains('hidden')) { this.modal.classList.add('hidden'); this.modalSig = ''; }
       return;

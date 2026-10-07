@@ -19,6 +19,10 @@ const CSS = `
 .coop-roster .dead { opacity: 0.45; text-decoration: line-through; }
 .coop-roster .warn { color: #ff9a7a; }
 .coop-roster.hidden { display: none; }
+.coop-pause { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); pointer-events: none; text-align: center;
+  font-family: var(--serif); font-size: calc(13 * var(--u)); color: var(--gold-hi); text-shadow: 0 0 calc(8 * var(--u)) rgba(0, 0, 0, 0.9), 0 1px 0 #000;
+  padding: calc(6 * var(--u)) calc(12 * var(--u)); background: rgba(6, 5, 16, 0.72); border: 1px solid rgba(255, 210, 120, 0.35); }
+.coop-pause.hidden { display: none; }
 `;
 
 /** Names of the seats, in cloak colour order. */
@@ -28,9 +32,13 @@ const dot = (i: number) => `<span class="coop-dot" style="background:${(KEEPER_C
 
 export class CoopPanel {
   private roster: HTMLElement;
+  /** big notice over the world while the host holds it */
+  private pause: HTMLElement;
+  private pauseSig = '';
   private sig = '';
-  /** shown in the roster: the host paused / the peers drifted apart */
+  /** shown in the roster: the host paused (and why) / the peers drifted apart */
   hostPaused = false;
+  pauseWhy = 'Хост поставил паузу';
   desync = false;
 
   constructor(private root: HTMLElement) {
@@ -40,6 +48,9 @@ export class CoopPanel {
     this.roster = document.createElement('div');
     this.roster.className = 'coop-roster hidden';
     root.appendChild(this.roster);
+    this.pause = document.createElement('div');
+    this.pause.className = 'coop-pause hidden';
+    root.appendChild(this.pause);
   }
 
   /** Put the lobby block into the title screen and set up its start button. */
@@ -70,12 +81,23 @@ export class CoopPanel {
   /** Roster of the Ascended during a run (hidden in a solo run). */
   update(game: Game | null, inRun: boolean, lag: number) {
     const ks = game?.state.keepers ?? [];
+    const pauseSig = inRun && this.hostPaused && !game?.over ? `⏸ ${this.pauseWhy}` : '';
+    if (pauseSig !== this.pauseSig) {
+      this.pauseSig = pauseSig;
+      this.pause.textContent = pauseSig;
+      this.pause.classList.toggle('hidden', !pauseSig);
+    }
     if (!game || !inRun || ks.length < 2) {
       if (this.sig !== 'off') { this.sig = 'off'; this.roster.classList.add('hidden'); }
       return;
     }
     const rows = ks.map((k, i) => `<div class="row${k.alive ? '' : ' dead'}">${dot(i)} ${SEAT_NAMES[i]}${i === game.local ? ' (ты)' : ''}</div>`).join('');
-    const extra = (this.hostPaused ? '<div class="row warn">⏸ Хост поставил паузу</div>' : '')
+    // the world holds still while somebody else still has a pick to make
+    const waiting = game.state.choices.length && !game.choiceFor(game.local)
+      ? [...new Set(game.state.choices.map((c) => c.k).filter((k): k is number => k !== undefined))].map((k) => SEAT_NAMES[k]).join(', ')
+      : '';
+    const extra = (waiting ? `<div class="row warn">⏸ Ждём выбора: ${waiting}</div>` : '')
+      + (this.hostPaused ? `<div class="row warn">⏸ ${this.pauseWhy}</div>` : '')
       + (this.desync ? '<div class="row warn">⚠ Рассинхрон миров — перезапустите забег</div>' : '')
       + (lag > 20 ? `<div class="row warn">Отставание ${Math.round(lag / 60 * 1000)} мс</div>` : '');
     const sig = rows + extra;

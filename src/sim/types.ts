@@ -324,13 +324,17 @@ export interface Worker {
 
 export type Phase = 'day' | 'night' | 'lost';
 
-/** A pending choice that pauses the day timer until resolved. */
-export type Choice =
+/**
+ * A pending choice that pauses the day timer until resolved. `k` is the Ascended it belongs to
+ * (their dawn roulette, their rune's facets); without it anyone may pick (a Tree branch).
+ */
+export type Choice = (
   | { kind: 'dawn'; offers: string[]; start?: boolean }
   | { kind: 'branch'; stage: number }
   | { kind: 'facet'; rune: KeeperRuneId; rank: number; offers: string[] }
   | { kind: 'form'; rune: KeeperRuneId; rank: number; offers: string[] }
-  | { kind: 'facetUp'; rune: KeeperRuneId; rank: number; offers: string[] };
+  | { kind: 'facetUp'; rune: KeeperRuneId; rank: number; offers: string[] }
+) & { k?: number };
 
 export type GameEvent =
   | { type: 'hit'; x: number; y: number; amount: number; crit: boolean }

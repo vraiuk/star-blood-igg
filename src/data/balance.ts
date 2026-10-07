@@ -148,6 +148,19 @@ export const AFFIXES: Record<Affix, { name: string; glyph: string; color: string
   regen: { name: 'Регенерирующий', glyph: '+', color: '#8aff8a' },
   volatile: { name: 'Взрывной', glyph: '!', color: '#ff8a4a' },
 };
+/**
+ * Online co-op scaling, per Ascended beyond the first. Each one grows their own runes from the
+ * shared Star Blood, so the creatures drop more of it; the extra hands are paid back with
+ * tougher creatures. Tuned with the co-op bot (tests/coopBot.ts): a team lives about as many
+ * nights as a lone Ascended.
+ */
+export const COOP = {
+  /** creature HP: +share per extra Ascended */
+  enemyHp: 0.2,
+  /** Star Blood dropped by creatures: +share per extra Ascended */
+  star: 0.25,
+} as const;
+
 export const ELITE = {
   fromNight: 5,
   chance: (n: number) => Math.min(0.35, 0.04 + 0.015 * n),

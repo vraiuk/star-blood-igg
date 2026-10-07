@@ -302,11 +302,11 @@ export class Renderer {
     // ── darkness
     this.lighting.drawDarkness(c);
     this.lighting.drawGlow(c, (s.phase === 'day' ? 0.32 : 0.4) + (s.keepers.some((k) => k.radianceT > 0) ? 0.25 : 0));
-    for (const k of s.keepers) {
-      if (k.swarmT <= 0) continue;
-      const r = game.swarmReach();
+    s.keepers.forEach((k, ki) => {
+      if (k.swarmT <= 0) return;
+      const r = game.asKeeper(ki, () => game.swarmReach());
       for (let i = -r; i <= r; i += 4) if (Math.sin(time * 8 + i * 0.2) > 0) rect(c, k.swarmX + i, WORLD.groundY + 2, 2, 1, '#9cff8a');
-    }
+    });
 
     // ── above darkness: eyes, light, drops, projectiles
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
@@ -379,9 +379,12 @@ export class Renderer {
       }
     }
     for (const d of s.drops) drawDrop(c, d, time);
-    const spearTint = s.keeper.runeRank.spear > 0 ? runeColor(s.keeper.runeRank.spear) : undefined;
-    const starTint = s.keeper.runeRank.starfall > 0 ? runeColor(s.keeper.runeRank.starfall) : undefined;
-    for (const p of s.projectiles) drawProjectile(c, p, p.kind === 'spear' ? spearTint : p.kind === 'meteor' ? starTint : undefined);
+    // spears and stars glow in the colour of their caster's rune rank
+    const tint = (rank: number) => (rank > 0 ? runeColor(rank) : undefined);
+    for (const p of s.projectiles) {
+      const own = s.keepers[p.owner ?? 0] ?? s.keeper;
+      drawProjectile(c, p, p.kind === 'spear' ? tint(own.runeRank.spear) : p.kind === 'meteor' ? tint(own.runeRank.starfall) : undefined);
+    }
     for (const k of s.keepers) if (k.channel > 0 && k.alive) this.drawChannel(c, k, time);
     for (const t of s.tempLights) if (t.dps) this.drawDome(c, t.x, t.radius, t.life / t.maxLife, time);
     this.particles.draw(c, true);
@@ -393,7 +396,7 @@ export class Renderer {
     s.keepers.forEach((k, i) => {
       const lpHp = leapOf(k);
       if (lpHp >= 0) { c.save(); c.translate(0, -Math.round(Math.sin(lpHp * Math.PI) * 46)); }
-      drawKeeperHp(c, k, game.keeperMaxHp(), coop ? i : -1, i === game.local);
+      drawKeeperHp(c, k, game.asKeeper(i, () => game.keeperMaxHp()), coop ? i : -1, i === game.local);
       if (lpHp >= 0) c.restore();
     });
     if (view.aiming) this.drawAim(c, game, view, time);
