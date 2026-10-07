@@ -44,14 +44,18 @@ const isNetError = (t: string) => t === 'network' || t === 'server-error' || t =
  * with it only the WebSocket is needed, same as for the host.
  */
 const guestId = () => `igg-${typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)}`;
+/** Our server in Russia (REG.RU): Russian ISPs don't filter traffic that stays inside the country. */
+const RU_HOST = 'xn-----6kcbheeifa5dqigsy.xn--p1ai';
+/** Our server in the Netherlands (nl-vmpico): for players abroad; some Russian ISPs stall TLS to it. */
+const NL_HOST = '5-39-217-211.sslip.io';
 /**
- * Signalling servers, tried in order: ours on nl-vmpico (Netherlands — TCP to it gets through
- * from Russian home ISPs, where 0.peerjs.com may not), then the public PeerJS cloud as a
- * fallback. Peers on different servers can't see each other, so everyone lands on the first
- * one that answers.
+ * Signalling servers, tried in order by guests; the host holds the lobby on all of them at once,
+ * so everyone finds it on whichever one their network lets through. The public PeerJS cloud is
+ * the last resort (it answers 403 to Russian IPs).
  */
 const SERVERS: PeerOptions[] = [
-  { host: '5-39-217-211.sslip.io', port: 8443, path: '/', secure: true, key: 'peerjs' },
+  { host: RU_HOST, port: 8443, path: '/', secure: true, key: 'peerjs' },
+  { host: NL_HOST, port: 8443, path: '/', secure: true, key: 'peerjs' },
   {},
 ];
 /**
@@ -59,23 +63,27 @@ const SERVERS: PeerOptions[] = [
  * whose NATs can't reach each other directly. Over TCP/TLS — UDP from RU home ISPs doesn't reach
  * that IP. Without them only the STUN path is tried.
  */
-const TURN_CRED_URL = 'https://5-39-217-211.sslip.io:8443/turn';
+const TURN_CRED_URLS = [`https://${RU_HOST}:8443/turn`, `https://${NL_HOST}:8443/turn`];
 const STUN: RTCIceServer = { urls: 'stun:stun.l.google.com:19302' };
 /** `?relay` in the address forces the relay path (diagnostics). */
 const FORCE_RELAY = typeof location !== 'undefined' && new URLSearchParams(location.search).has('relay');
 
+/** STUN plus a relay on every one of our servers this network can reach (each signs its own). */
 async function loadIce(): Promise<RTCIceServer[]> {
-  const ctl = new AbortController();
-  const t = setTimeout(() => ctl.abort(), 4000);
-  try {
-    const r = await fetch(TURN_CRED_URL, { signal: ctl.signal, cache: 'no-store' });
-    const d = await r.json() as { urls: string[]; username: string; credential: string };
-    return [STUN, { urls: d.urls, username: d.username, credential: d.credential }];
-  } catch {
-    return [STUN];
-  } finally {
-    clearTimeout(t);
-  }
+  const relays = await Promise.all(TURN_CRED_URLS.map(async (url): Promise<RTCIceServer | null> => {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 4000);
+    try {
+      const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
+      const d = await r.json() as { urls: string[]; username: string; credential: string };
+      return { urls: d.urls, username: d.username, credential: d.credential };
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(t);
+    }
+  }));
+  return [STUN, ...relays.filter((r): r is RTCIceServer => !!r)];
 }
 /** Can this browser reach `url` (DNS, port, TLS, CORS all included)? */
 async function probe(url: string): Promise<string> {
@@ -93,10 +101,10 @@ async function probe(url: string): Promise<string> {
 
 /** One line on what this computer reaches: our server, its relay, the public PeerJS cloud. */
 async function diagnose(): Promise<string> {
-  const [ours, relay, cloud] = await Promise.all([
-    probe('https://5-39-217-211.sslip.io:8443/peerjs/id'), probe(TURN_CRED_URL), probe('https://0.peerjs.com/peerjs/id'),
+  const [ru, nl, cloud] = await Promise.all([
+    probe(`https://${RU_HOST}:8443/peerjs/id`), probe(`https://${NL_HOST}:8443/peerjs/id`), probe('https://0.peerjs.com/peerjs/id'),
   ]);
-  return `наш сервер — ${ours}, реле — ${relay}, peerjs.com — ${cloud}`;
+  return `сервер РФ — ${ru}, сервер NL — ${nl}, peerjs.com — ${cloud}`;
 }
 
 /** What a run is started with — the same on every peer. */
