@@ -2,6 +2,7 @@ import { Audio } from './audio/audio';
 import { ABILITIES, SLOTS, WORLD, crownPos, treeScale, type AbilityId } from './data/balance';
 import { PATHS, coinsForRun } from './data/meta';
 import { Renderer, type ViewState } from './render/renderer';
+import { Camera } from './render/camera';
 import { treeHeight } from './render/tree';
 import { Game, STEP } from './sim/game';
 import { hasStartRune, loadSave, metaPatches, writeSave } from './state/save';
@@ -11,9 +12,12 @@ import { buildRunLog, saveRunLog } from './state/runlog';
 import { openStats } from './ui/stats';
 import { hideWorldTip, showWorldTip } from './ui/glossary';
 import { VERSION_LABEL } from './version';
+import { goFullscreen, isTouch } from './ui/touch';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
+const stage = document.getElementById('stage') as HTMLElement;
+if (isTouch) { document.documentElement.classList.add('touch'); Camera.tight = true; }
 const ctx = canvas.getContext('2d')!;
 ctx.imageSmoothingEnabled = false;
 
@@ -33,7 +37,7 @@ let speed = 1;
 let scale = 2;
 const audio = new Audio();
 const renderer = new Renderer(ctx);
-const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null };
+const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null, walkTo: null };
 let endShown = false;
 const SPEEDS = [1, 1.25, 1.5, 2, 5];
 let sacrificeArmed = 0;
@@ -73,6 +77,7 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     endShown = false;
     audio.start();
     hud.hideTitle();
+    goFullscreen();
   },
   onFeedback() {
     // a prefilled GitHub issue: the author sees the version and this run's numbers
@@ -90,6 +95,7 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     endShown = false;
     audio.start();
     hud.hideTitle();
+    goFullscreen();
   },
   onRestart() {
     logQuit();
@@ -118,6 +124,15 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     });
   },
   onCast(id) { beginAim(id); },
+  onCastHold(id, on) {
+    if (on) heldRunes.add(id);
+    else {
+      heldRunes.delete(id);
+      if (id === 'spear') game.releaseBeam();
+    }
+  },
+  onPause() { if (!game.over) setPaused(true); },
+  onSacrifice() { game.sacrificeKeeper(); },
   onCallNight() { game.callNight(); },
   onToggleSpeed() { speed = nextSpeed(); hud.setSpeed(speed); },
   onSpeed(step) { speed = stepSpeed(step); hud.setSpeed(speed); },
@@ -145,9 +160,23 @@ titleInfo();
 let cssW = 1280;
 let cssH = 720;
 function fit() {
-  cssW = Math.floor(Math.min(window.innerWidth, (window.innerHeight * 16) / 9));
-  cssH = Math.floor((cssW * 9) / 16);
-  scale = cssW / 640;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  if (isTouch && vw > vh) {
+    // a phone fills the whole landscape screen; the camera shows less sky instead of black bars
+    cssW = vw;
+    cssH = vh;
+  } else {
+    cssW = Math.floor(Math.min(vw, (vh * 16) / 9));
+    cssH = Math.floor((cssW * 9) / 16);
+  }
+  renderer.camera.aspect = cssH / cssW;
+  // on a phone the interface is sized for a finger, not for the 640×360 frame
+  const base = Math.min(cssW / 640, cssH / 360);
+  scale = isTouch ? Math.max(base, Math.min(cssH / 230, cssW / 480)) : base;
+  stage.style.width = `${cssW}px`;
+  stage.style.height = `${cssH}px`;
+  // turning the phone to portrait mid-run pauses it (the «turn your phone» screen is up)
+  if (isTouch && vh > vw && started && !game.over && !paused) setPaused(true);
   document.documentElement.style.setProperty('--s', String(scale));
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   canvas.width = Math.round(cssW * dpr);
@@ -156,17 +185,39 @@ function fit() {
   hud.setScale(scale);
 }
 window.addEventListener('resize', fit);
+window.addEventListener('orientationchange', () => setTimeout(fit, 120));
 fit();
 
 // ───────────────────────────── input ───────────────────────────────
 
 const held = new Set<string>();
+/** rune buttons held down with a finger (hold-to-cast, the Piercing Beam) */
+const heldRunes = new Set<AbilityId>();
 
 function updateMove() {
   const l = held.has('a') || held.has('arrowleft') || held.has('ф');
   const r = held.has('d') || held.has('arrowright') || held.has('в');
+  // the keyboard overrides a tap-to-walk target
+  if (l || r) view.walkTo = null;
+  if (view.walkTo != null) return;
   game.setMove(l === r ? 0 : l ? -1 : 1);
 }
+
+/** Tap-to-walk: steer the Ascended towards the tapped point, stop when there. */
+function steerWalk() {
+  if (view.walkTo == null) return;
+  const k = game.state.keeper;
+  if (!k.alive) { view.walkTo = null; game.setMove(0); return; }
+  const dx = view.walkTo - k.x;
+  if (Math.abs(dx) < 3) {
+    game.setMove(0);
+    // a finger still on the glass keeps the target; a lifted one clears it
+    if (steerPointer === null) view.walkTo = null;
+    return;
+  }
+  game.setMove(dx < 0 ? -1 : 1);
+}
+let steerPointer: number | null = null;
 
 function setPaused(p: boolean) {
   paused = p;
@@ -180,6 +231,7 @@ function beginAim(id: AbilityId) {
   if (id !== 'starfall' && id !== 'hammer') { game.cast(id, game.state.keeper.x); return; }
   hud.aiming = id;
   view.aiming = id;
+  if (isTouch) hud.observerSay(id === 'hammer' ? 'Коснись поля — куда прыгнуть с Молотом (веди пальцем, отпусти — удар)' : 'Коснись поля — куда обрушить Звездопад (веди пальцем, отпусти — удар)');
 }
 
 function cancelAim() {
@@ -244,9 +296,9 @@ window.addEventListener('keyup', (e) => {
   if (ABILITY_KEYS[k] === 'spear') game.releaseBeam();
   updateMove();
 });
-window.addEventListener('blur', () => { held.clear(); updateMove(); });
+window.addEventListener('blur', () => { held.clear(); heldRunes.clear(); updateMove(); });
 
-function toWorld(ev: MouseEvent): [number, number] {
+function toWorld(ev: MouseEvent | PointerEvent): [number, number] {
   const r = canvas.getBoundingClientRect();
   return renderer.camera.toWorld(ev.clientX - r.left, ev.clientY - r.top, r.width, r.height);
 }
@@ -255,26 +307,29 @@ hud.setProjector((x, y) => renderer.camera.toScreen(x, y, cssW, cssH));
 /** Clickable height of surface nests (matches their sprites). */
 const PICK_H: Record<string, number> = { hive: 42, beetle: 20, dragonfly: 36, termite: 22, spider: 12 };
 
+/** A finger is wider than a cursor: touch picks with a larger radius (world px). */
+const PAD = isTouch ? 7 : 0;
+
 function pick(mx: number, my: number): MenuTarget | null {
   const s = game.state;
   // the crown first: on a young tree its slots hang low, right above the surface nests
   for (const st of s.structures) {
-    if (st.crown && Math.hypot(mx - st.x, my - st.y - 3) < 10) return { kind: 'structure', id: st.id };
+    if (st.crown && Math.hypot(mx - st.x, my - st.y - 3) < 10 + PAD) return { kind: 'structure', id: st.id };
   }
   for (const sl of SLOTS) {
     if (!sl.crown || !game.slotUnlocked(sl) || game.structureAt(sl.id)) continue;
     const p = crownPos(s.tree.stage, Number(sl.id.slice(1)), s.tree.rings);
-    if (Math.hypot(mx - p.x, my - p.y) < 10) return { kind: 'slot', slotId: sl.id };
+    if (Math.hypot(mx - p.x, my - p.y) < 10 + PAD) return { kind: 'slot', slotId: sl.id };
   }
   for (const st of s.structures) {
-    if (st.crown || Math.abs(mx - st.x) > 10) continue;
-    if (st.underground ? Math.abs(my - st.y) < 12 : my > WORLD.groundY - PICK_H[st.family] && my < WORLD.groundY + 6) {
+    if (st.crown || Math.abs(mx - st.x) > 10 + PAD) continue;
+    if (st.underground ? Math.abs(my - st.y) < 12 + PAD : my > WORLD.groundY - PICK_H[st.family] - PAD && my < WORLD.groundY + 6 + PAD) {
       return { kind: 'structure', id: st.id };
     }
   }
   for (const sl of SLOTS) {
-    if (sl.crown || !game.slotUnlocked(sl) || game.structureAt(sl.id) || Math.abs(mx - sl.x) > 10) continue;
-    if (sl.underground ? Math.abs(my - sl.y) < 12 : my > WORLD.groundY - 30 && my < WORLD.groundY + 10) {
+    if (sl.crown || !game.slotUnlocked(sl) || game.structureAt(sl.id) || Math.abs(mx - sl.x) > 10 + PAD) continue;
+    if (sl.underground ? Math.abs(my - sl.y) < 12 + PAD : my > WORLD.groundY - 30 - PAD && my < WORLD.groundY + 10 + PAD) {
       return { kind: 'slot', slotId: sl.id };
     }
   }
@@ -320,6 +375,60 @@ canvas.addEventListener('mousedown', (ev) => {
   else view.selectedSlot = null;
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ───────────────────────────── touch ───────────────────────────────
+// A finger: tap a slot / nest / the Tree to open its menu, tap the ground to walk there
+// (hold and slide to steer), an aimed rune is dragged and cast when the finger lifts.
+
+let aimPointer: number | null = null;
+canvas.addEventListener('pointerdown', (ev) => {
+  if (ev.pointerType === 'mouse') return;
+  ev.preventDefault();
+  hideWorldTip();
+  if (!started || paused || game.over || hud.choiceOpen) return;
+  const [mx, my] = toWorld(ev);
+  view.mouseX = mx;
+  view.mouseY = my;
+  if (view.aiming) {
+    aimPointer = ev.pointerId;
+    canvas.setPointerCapture(ev.pointerId);
+    return;
+  }
+  const t = pick(mx, my);
+  if (t) {
+    hud.openMenu(t);
+    if (t.kind === 'slot') view.selectedSlot = t.slotId;
+    else if (t.kind === 'structure') view.selectedSlot = game.state.structures.find((s) => s.id === t.id)?.slotId ?? null;
+    else view.selectedSlot = null;
+    return;
+  }
+  if (hud.menuOpen) { hud.closeMenu(); return; }
+  view.walkTo = Math.max(0, Math.min(WORLD.width, mx));
+  steerPointer = ev.pointerId;
+  canvas.setPointerCapture(ev.pointerId);
+});
+canvas.addEventListener('pointermove', (ev) => {
+  if (ev.pointerType === 'mouse') return;
+  if (ev.pointerId !== steerPointer && ev.pointerId !== aimPointer) return;
+  const [mx, my] = toWorld(ev);
+  view.mouseX = mx;
+  view.mouseY = my;
+  if (ev.pointerId === steerPointer) view.walkTo = Math.max(0, Math.min(WORLD.width, mx));
+});
+const fingerUp = (ev: PointerEvent, cancelled: boolean) => {
+  if (ev.pointerType === 'mouse') return;
+  if (ev.pointerId === steerPointer) steerPointer = null;
+  if (ev.pointerId === aimPointer) {
+    aimPointer = null;
+    if (view.aiming && !cancelled && started && !paused && !game.over) {
+      const [mx, my] = toWorld(ev);
+      game.cast(view.aiming, mx, my);
+    }
+    cancelAim();
+  }
+};
+canvas.addEventListener('pointerup', (ev) => fingerUp(ev, false));
+canvas.addEventListener('pointercancel', (ev) => fingerUp(ev, true));
 
 /**
  * Q / E — previous / next build node (like Shift+Tab / Tab): surface left→right, then the
@@ -385,11 +494,14 @@ function frame(now: number) {
   // the Piercing Beam is held while its key is down
   if (started && !paused && !game.over && !game.choice && !hud.target && !hud.tabletOpen) {
     for (const [key, id] of Object.entries(ABILITY_KEYS)) {
-      if (!held.has(key)) continue;
+      if (!held.has(key) && !heldRunes.has(id)) continue;
       if (id === 'spear' && game.state.keeper.forms.spear === 'B') continue;
+      // aimed runes are cast where the finger lifts, not repeated
+      if (heldRunes.has(id) && (id === 'hammer' || id === 'starfall')) continue;
       if (game.abilityReady(id)) game.cast(id, view.mouseX, view.mouseY);
     }
   }
+  steerWalk();
   const frozen = !started || paused || game.over || !!game.choice || metaOpen || hud.panelOpen || hud.ringOpen || hud.deathPause;
   if (!frozen) {
     acc += dt * speed;

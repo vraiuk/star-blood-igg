@@ -11,6 +11,7 @@ import { gloss, installGlossary } from './glossary';
 import type { GameEvent } from '../sim/types';
 import { icon } from './icons';
 import { QUESTS } from './quests';
+import { isTouch, touchText } from './touch';
 
 /** Roman numerals for facet levels */
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
@@ -34,6 +35,10 @@ export interface HudCallbacks {
   onFeedback(): void;
   onGiveUp(): void;
   onCast(id: AbilityId): void;
+  /** a rune button pressed / released with a finger (hold-to-cast, the Piercing Beam) */
+  onCastHold(id: AbilityId, on: boolean): void;
+  onPause(): void;
+  onSacrifice(): void;
   onCallNight(): void;
   onToggleSpeed(): void;
   onSpeed(step: 1 | -1): void;
@@ -99,6 +104,7 @@ export class Hud {
   private speedBtn!: HTMLButtonElement;
   private soundBtn!: HTMLButtonElement;
   private keeperBtn!: HTMLElement;
+  private sacBtn: HTMLButtonElement | null = null;
   private ring!: HTMLElement;
   private card!: HTMLElement;
   private panel!: HTMLElement;
@@ -194,17 +200,42 @@ export class Hud {
     AB_IDS.forEach((id) => {
       const def = ABILITIES[id];
       const box = el('div', `ab hit ${id === 'starfall' ? 'ult' : ''}`);
-      box.addEventListener('mouseenter', () => this.showAbTip(id, box));
-      box.addEventListener('mouseleave', () => this.abTip.classList.add('hidden'));
+      if (!isTouch) {
+        box.addEventListener('mouseenter', () => this.showAbTip(id, box));
+        box.addEventListener('mouseleave', () => this.abTip.classList.add('hidden'));
+      }
       box.innerHTML = `<img src="${icon(id)}"><div class="charge"></div><div class="cd"></div><span class="cdt"></span>
         <div class="lock"><img src="${icon('lock')}"><span class="lk">ст. ${def.unlockStage}</span></div>
         ${def.cost ? `<span class="cost">${def.cost}</span>` : ''}<span class="key">${def.key}</span>`;
       box.addEventListener('mousedown', (ev) => {
         ev.stopPropagation();
+        if (isTouch) return;
         // a rune not learned yet: open the Tablet right on it (that's where it's learned)
         if (!this.game().abilityUnlocked(id)) { this.openTabletAt(id); return; }
         this.cb.onCast(id);
       });
+      if (isTouch) {
+        // a finger: press casts (and keeps casting while held); a long press shows the rune's card
+        let tipT: ReturnType<typeof setTimeout> | undefined;
+        const up = () => {
+          clearTimeout(tipT);
+          this.abTip.classList.add('hidden');
+          box.classList.remove('pressed');
+          this.cb.onCastHold(id, false);
+        };
+        box.addEventListener('pointerdown', (ev) => {
+          ev.preventDefault();
+          box.setPointerCapture(ev.pointerId);
+          box.classList.add('pressed');
+          tipT = setTimeout(() => this.showAbTip(id, box), 550);
+          if (!this.game().abilityUnlocked(id)) { this.openTabletAt(id); return; }
+          this.cb.onCast(id);
+          this.cb.onCastHold(id, true);
+        });
+        box.addEventListener('pointerup', up);
+        box.addEventListener('pointercancel', up);
+        box.addEventListener('contextmenu', (e) => e.preventDefault());
+      }
       abs.appendChild(box);
       this.abEls[id] = { box, cd: box.querySelector('.cd')!, lock: box.querySelector('.lock')!, charge: box.querySelector('.charge')!, cdt: box.querySelector('.cdt')!, wasReady: false };
     });
@@ -232,6 +263,22 @@ export class Hud {
     this.soundBtn.title = 'Звук [M]';
     this.soundBtn.onclick = () => this.cb.onToggleSound();
     ctr.append(this.keeperBtn, slower, this.speedBtn, faster, this.soundBtn);
+    if (isTouch) {
+      // no Esc and no X on a phone: a pause button and the Sacrifice of Light (two taps)
+      const pauseBtn = el('button', 'btn pausebtn', '❚❚') as HTMLButtonElement;
+      pauseBtn.onclick = () => this.cb.onPause();
+      ctr.prepend(pauseBtn);
+      this.sacBtn = el('button', 'btn sacbtn hidden', '✶ Жертва') as HTMLButtonElement;
+      let armed = 0;
+      this.sacBtn.onclick = () => {
+        if (performance.now() - armed < 2000) { armed = 0; this.sacBtn!.textContent = '✶ Жертва'; this.cb.onSacrifice(); return; }
+        armed = performance.now();
+        this.sacBtn!.textContent = '✶ Ещё раз!';
+        this.say('Жертва Света: коснись ещё раз — Хранитель взорвётся светом и падёт', true);
+        setTimeout(() => { if (this.sacBtn && performance.now() - armed >= 2000) this.sacBtn.textContent = '✶ Жертва'; }, 2100);
+      };
+      ctr.append(this.sacBtn);
+    }
     r.appendChild(ctr);
 
     this.callBtn = el('button', 'btn gold', '') as HTMLButtonElement;
@@ -315,7 +362,11 @@ export class Hud {
         <h1>Звёздная Кровь</h1>
         <h2>ДРЕВО ИГГ</h2>
         <p>«Каждое Игг-Древо — это форпост людей в борьбе против Червей.»<br>Восходящий, посади Семя у границы Теней, вырасти его в Великое Игг-Древо и держи Круг — сколько сможешь.</p>
-        <div class="keys">
+        ${isTouch ? `<div class="keys touchkeys">
+          <span><b>Коснись земли</b> — Восходящий идёт туда (веди пальцем)</span><span><b>Руна у земли</b> — призвать гнездо</span>
+          <span><b>Кнопки внизу</b> — руны Хранителя (держи — повтор)</span><span><b>Древо</b> или полоса наверху — рост</span>
+          <span><b>В кольце</b>: касание — описание, ещё раз — купить</span><span><b>Долгое касание</b> руны — её карточка</span>
+        </div>` : ''}<div class="keys${isTouch ? ' hidden' : ''}">
           <span><b>A / D</b> — ходить, собирать Янтарь и Кровь</span><span><b>Клик</b> по руне у земли — призвать гнездо</span>
           <span><b>1–6</b> — руны Хранителя</span><span><b>Клик</b> по Древу — стадии и рост</span>
           <span><b>Q / E</b> — переключать гнёзда и руны призыва · <b>1–4</b> — действие в меню</span>
@@ -461,12 +512,13 @@ export class Hud {
 
   private showBanner(title: string, hint: string, night: boolean, secs: number) {
     this.banner.className = night ? 'night show' : 'show';
-    this.banner.innerHTML = `<div class="title">${title}</div><div class="rule"></div><div class="hint">${hint}</div>`;
+    this.banner.innerHTML = `<div class="title">${title}</div><div class="rule"></div><div class="hint">${touchText(hint)}</div>`;
     this.bannerTimer = secs;
   }
 
   /** The Observer's voice: an azure Tablet notice. */
   say(text: string, warn = false) {
+    text = touchText(text);
     this.notice.className = `tablet show ${warn ? 'warn' : ''}`;
     this.notice.innerHTML = warn ? text : `<span class="who">Тот-Кто-Наблюдает:</span> ${text}`;
     this.noticeTimer = warn ? 1.6 : 4;
@@ -824,7 +876,7 @@ export class Hud {
         const ang = (-90 - spread / 2 + (n <= 1 ? 0 : (spread / (n - 1)) * at)) * (Math.PI / 180);
         const ox = Math.cos(ang) * R;
         const oy = Math.sin(ang) * R;
-        html += `<div class="ropt ${o.ok ? '' : 'no'} ${o.locked ? 'locked' : ''} ${o.danger ? 'danger' : ''}" data-i="${i}" style="left:calc(${ox} * var(--u));top:calc(${oy} * var(--u))">
+        html += `<div class="ropt ${o.ok ? '' : 'no'} ${o.locked ? 'locked' : ''} ${o.danger ? 'danger' : ''} ${isTouch && this.hoverOpt === i ? 'sel' : ''}" data-i="${i}" style="left:calc(${ox} * var(--u));top:calc(${oy} * var(--u))">
           <img src="${o.icon}"><span class="rk">${o.key}</span>
           <span class="rp">${o.price ? priceHtml(o.price, g).replace(/<img[^>]*>/g, (m) => m) : ''}</span></div>`;
       });
@@ -880,9 +932,20 @@ export class Hud {
       });
       this.ring.querySelectorAll<HTMLElement>('.ropt').forEach((node) => {
         const i = Number(node.dataset.i);
-        node.addEventListener('mouseenter', () => { this.hoverOpt = i; this.showCard(); });
-        node.addEventListener('mouseleave', () => { if (this.hoverOpt === i) { this.hoverOpt = -1; this.showCard(); } });
+        // a tap fires emulated mouseenter too: on a phone only taps select
+        if (!isTouch) {
+          node.addEventListener('mouseenter', () => { this.hoverOpt = i; this.showCard(); });
+          node.addEventListener('mouseleave', () => { if (this.hoverOpt === i) { this.hoverOpt = -1; this.showCard(); } });
+        }
         node.addEventListener('click', () => {
+          // a finger has no hover: the first tap shows the card, the second one buys
+          if (isTouch && this.hoverOpt !== i) {
+            this.hoverOpt = i;
+            this.ring.querySelectorAll('.ropt.sel').forEach((n) => n.classList.remove('sel'));
+            node.classList.add('sel');
+            this.showCard();
+            return;
+          }
           this.ringOpts[i]?.act();
           this.ringSig = '';
           this.renderRevive(g);
@@ -892,7 +955,14 @@ export class Hud {
         });
       });
     }
-    const [px, py] = this.project(data.x, data.y);
+    let [px, py] = this.project(data.x, data.y);
+    if (isTouch) {
+      // a nest by the screen's edge: pull the ring in so every option stays under a finger
+      const rw = this.root.clientWidth;
+      const m = 64 * sc;
+      px = Math.max(m, Math.min(rw - m, px));
+      py = Math.max(66 * sc, py);
+    }
     this.ring.style.left = `${px}px`;
     this.ring.style.top = `${py}px`;
     void sc;
@@ -908,11 +978,22 @@ export class Hud {
     }
     const g = this.game();
     this.card.innerHTML = `<h4>${o.title}</h4><div class="sub">${o.sub}</div>${o.body}
-      <div class="price-row">${o.price ? priceHtml(o.price, g) : ''}<span class="hk">[${o.key}]</span></div>`;
+      <div class="price-row">${o.price ? priceHtml(o.price, g) : ''}<span class="hk">${isTouch ? (o.locked ? '' : 'тапни ещё раз') : `[${o.key}]`}</span></div>`;
     const r = this.ring.getBoundingClientRect();
     const root = this.root.getBoundingClientRect();
     const cx = r.left - root.left;
     const top = r.top - root.top - 46 * this.scale;
+    if (isTouch) {
+      // a phone: the card sits beside the ring (above it there is no room), inside the screen
+      this.card.classList.add('show');
+      const w = this.card.offsetWidth, h = this.card.offsetHeight;
+      const side = cx < root.width / 2 ? 1 : -1;
+      const x = cx + side * (70 * this.scale + w / 2);
+      this.card.style.left = `${Math.max(w / 2 + 4, Math.min(root.width - w / 2 - 4, x))}px`;
+      this.card.style.top = `${Math.max(h + 4, Math.min(root.height - 4, r.top - root.top + h / 2))}px`;
+      this.cb.onPreview(o.preview ?? null);
+      return;
+    }
     this.card.style.left = `${Math.max(80 * this.scale, Math.min(560 * this.scale, cx))}px`;
     this.card.style.top = `${Math.max(36 * this.scale, top)}px`;
     this.card.classList.add('show');
@@ -1278,7 +1359,7 @@ export class Hud {
       this.nightInfo.innerHTML = `День · до ночи <span class="t">${Math.ceil(s.dayLeft)}с</span> · ночь ${s.night + 1}${s.night < total ? `/${total}` : ' · ∞'}`;
       this.callBtn.classList.remove('hidden', 'rush', 'wait');
       this.callBtn.title = '';
-      this.callBtn.innerHTML = `Призвать ночь <span style="opacity:.75">[Пробел] +${Math.floor(s.dayLeft)}</span>`;
+      this.callBtn.innerHTML = `Призвать ночь <span style="opacity:.75">${isTouch ? '' : '[Пробел] '}+${Math.floor(s.dayLeft)}</span>`;
     } else {
       const left = s.enemies.length + s.pending.length;
       this.nightInfo.innerHTML = s.phase === 'night' ? `${g.night(s.night).title}${s.night < total ? ` · ${s.night + 1}/${total}` : ' · ∞'} · тварей: <span class="t">${left}</span>${s.rushedDawns ? ` · <span style="color:#ffb070">Натиск ×${s.rushedDawns}</span>` : ''}${s.wrath > 1.01 ? ` · <span style="color:#ff8a8a">Гнев ×${s.wrath.toFixed(1)}</span>` : ''}` : '';
@@ -1286,7 +1367,7 @@ export class Hud {
         const r = g.rushReward();
         this.callBtn.classList.remove('hidden', 'wait');
         this.callBtn.classList.add('rush');
-        const html = `Натиск: ночь ${s.night + 2} <span style="opacity:.8">[Пробел] +${r.amber}<img class="icon" src="${icon('amber')}"> +${r.star}<img class="icon" src="${icon('star')}"></span>`;
+        const html = `Натиск: ночь ${s.night + 2} <span style="opacity:.8">${isTouch ? '' : '[Пробел] '}+${r.amber}<img class="icon" src="${icon('amber')}"> +${r.star}<img class="icon" src="${icon('star')}"></span>`;
         if (this.callBtn.innerHTML !== html) this.callBtn.innerHTML = html;
         this.callBtn.title = 'Призвать следующую ночь, не добивая эту. Награда сразу, пропущенный рассвет (дар и выбор рун) придёт на ближайшем рассвете.';
       } else this.callBtn.classList.add('hidden');
@@ -1356,6 +1437,11 @@ export class Hud {
     if (this.keeperBtn.dataset.badge !== badge) this.keeperBtn.dataset.badge = badge;
     this.keeperBtn.title = `Ранг ${KEEPER_RANKS[s.keeper.rank].name}${slotsFree ? ' · можно купить Свойство' : ''}`;
 
+    if (this.sacBtn) {
+      // the last resort shows up only when it matters: a night with the Tree badly hurt
+      const want = s.phase === 'night' && s.keeper.alive && !g.over && s.tree.hp < g.treeMaxHp() * 0.5;
+      if (this.sacBtn.classList.contains('hidden') === want) this.sacBtn.classList.toggle('hidden', !want);
+    }
     this.renderRevive(g);
     this.updateQuest(g);
     if (this.menuTarget) this.renderRing();
@@ -1386,7 +1472,7 @@ export class Hud {
       this.questSig = sig;
       this.callout(`${q.text} ${q.hint ?? ''}`);
       this.questBox.innerHTML = `<div class="who">Задание Наблюдателя · ${this.questIdx + 1}/${QUESTS.length}</div>
-        <div class="qt">${q.text}</div>${q.hint ? `<div class="qh">${q.hint}</div>` : ''}
+        <div class="qt">${touchText(q.text)}</div>${q.hint ? `<div class="qh">${touchText(q.hint)}</div>` : ''}
         <div class="qr"><img class="icon" src="${icon('amber')}"> ${q.reward}</div>`;
     }
     this.questBox.classList.add('show');
@@ -1439,7 +1525,7 @@ export class Hud {
     if (s.structures.some((x) => x.family === 'spider')) mark('spider');
     if (Object.values(s.keeper.props).some((a) => a.length > 0)) mark('shop');
     let text = '';
-    if (this.questIdx < QUESTS.length) { const q = QUESTS[this.questIdx]; if (this.tip.innerHTML !== (q.hint ?? '')) this.tip.innerHTML = q.hint ?? ''; return; }
+    if (this.questIdx < QUESTS.length) { const q = QUESTS[this.questIdx]; const h = touchText(q.hint ?? ''); if (this.tip.innerHTML !== h) this.tip.innerHTML = h; return; }
     const nestT2 = s.structures.find((x) => x.tier === 1);
     if (g.over || this.bannerTimer > 0.5 || this.choiceOpen) text = '';
     else if (!done('build')) text = 'Кликни по золотой <b>руне</b> у Древа — призови гнездо светоносных. <kbd>A</kbd>/<kbd>D</kbd> — ходить';
@@ -1450,6 +1536,7 @@ export class Hud {
     else if (s.star >= 6 && !this.tipsDone.has('shop') && s.phase === 'day') { text = '<kbd>R</kbd> — Скрижаль: купи у Наблюдателя Свойства для рун за Звёздную Кровь'; }
     else if (nestT2 && s.star >= 4 && !done('spec')) text = 'Гнездо 2 ур. можно <b>специализировать</b> — кликни по нему (нужна Звёздная Кровь)';
     else if (s.phase === 'day' && s.amber >= 60 && !done('upgrade') && s.night >= 1) text = 'Кликни по гнезду, чтобы усилить его <kbd>U</kbd>';
+    text = touchText(text);
     if (this.tip.innerHTML !== text) this.tip.innerHTML = text;
   }
 }

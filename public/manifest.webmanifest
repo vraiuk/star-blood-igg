@@ -1,0 +1,11 @@
+{
+  "name": "Звёздная Кровь: Древо Игг",
+  "short_name": "Древо Игг",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#030308",
+  "theme_color": "#030308",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

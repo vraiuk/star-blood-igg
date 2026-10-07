@@ -1,0 +1,112 @@
+/* ═══════════════ phone / tablet (html.touch) ═══════════════
+   The stage fills the whole landscape screen and --u is sized for a finger, so the HUD
+   frame is roughly 480×240 u instead of 640×360: corners are re-packed, panels scroll. */
+
+html.touch, html.touch body {
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+html.touch {
+  --sl: env(safe-area-inset-left, 0px);
+  --sr: env(safe-area-inset-right, 0px);
+  --sb: env(safe-area-inset-bottom, 0px);
+}
+html.touch #stage { box-shadow: none; }
+html.touch #game { touch-action: none; cursor: default; }
+html.touch .btn, html.touch .ab, html.touch .ropt, html.touch .aspect, html.touch .rcard { touch-action: manipulation; }
+
+/* keyboard hints mean nothing on a phone */
+html.touch .ab .key, html.touch .ropt .rk, html.touch .btn .k, html.touch .rcard .hk, html.touch #revive .btn .k { display: none !important; }
+
+/* ── corners, clear of the notch ── */
+html.touch #res { left: calc(6 * var(--u) + var(--sl)); top: calc(4 * var(--u)); padding: calc(2 * var(--u)) calc(5 * var(--u)); gap: calc(6 * var(--u)); }
+html.touch #res .item { font-size: calc(8 * var(--u)); }
+html.touch #res .num { min-width: calc(12 * var(--u)); }
+html.touch #res .kbar, html.touch #res .lightbar { width: calc(36 * var(--u)); }
+html.touch #treebar { top: calc(4 * var(--u)); width: calc(132 * var(--u)); }
+html.touch #treebar .caption { font-size: calc(6 * var(--u)); }
+html.touch #push { right: calc(6 * var(--u) + var(--sr)); top: calc(4 * var(--u)); padding: calc(2 * var(--u)) calc(5 * var(--u)); }
+html.touch #push .track img { width: calc(8 * var(--u)); height: calc(8 * var(--u)); }
+html.touch #push .track .seg { width: calc(4 * var(--u)); }
+html.touch #night { right: calc(6 * var(--u) + var(--sr)); top: calc(20 * var(--u)); font-size: calc(6 * var(--u)); max-width: calc(150 * var(--u)); }
+html.touch #quest { left: calc(6 * var(--u) + var(--sl)); top: calc(24 * var(--u)); width: calc(128 * var(--u)); padding: calc(3 * var(--u)) calc(5 * var(--u)); }
+html.touch #quest .qh { font-size: calc(5.8 * var(--u)); }
+
+/* ── bottom: runes in the middle, the Tablet + time controls on the left, the night on the right ── */
+html.touch #abilities { bottom: calc(5 * var(--u) + var(--sb)); gap: calc(6 * var(--u)); }
+html.touch .ab { width: calc(28 * var(--u)); height: calc(28 * var(--u)); }
+html.touch .ab img { width: calc(19 * var(--u)); height: calc(19 * var(--u)); }
+html.touch .ab.pressed { transform: scale(0.93); border-color: var(--gold-hi); }
+html.touch .ab .cost { font-size: calc(6 * var(--u)); }
+
+html.touch #controls {
+  left: calc(6 * var(--u) + var(--sl)); bottom: calc(5 * var(--u) + var(--sb));
+  display: grid; grid-template-columns: repeat(5, auto); grid-auto-flow: row; gap: calc(3 * var(--u)); align-items: end; justify-items: start;
+  width: calc(112 * var(--u));
+}
+html.touch #controls .btn { min-height: calc(17 * var(--u)); min-width: calc(17 * var(--u)); font-size: calc(7.5 * var(--u)); padding: calc(2 * var(--u)) calc(4 * var(--u)); display: grid; place-items: center; }
+/* row 1: ❚❚ − ×1 + ♪ · row 2: the Tablet (wide) and, in danger, the Sacrifice */
+html.touch #controls .btn.keeper { grid-row: 2; grid-column: 1 / span 3; display: flex; width: 100%; font-size: calc(7.5 * var(--u)); }
+html.touch #controls .btn.keeper img { width: calc(12 * var(--u)); height: calc(12 * var(--u)); }
+html.touch #controls .sacbtn { grid-row: 2; grid-column: 4 / span 2; color: #ffd0d0; border-color: #a04050; background: linear-gradient(180deg, #5a1a24, #2a0c12); white-space: nowrap; animation: rushPulse 1.2s ease-in-out infinite; }
+html.touch #controls .sacbtn.hidden { display: none !important; }
+html.touch #callnight { right: calc(6 * var(--u) + var(--sr)); bottom: calc(5 * var(--u) + var(--sb)); min-height: calc(22 * var(--u)); font-size: calc(7.5 * var(--u)); padding: calc(3 * var(--u)) calc(7 * var(--u)); max-width: calc(120 * var(--u)); }
+html.touch #tip { bottom: calc(47 * var(--u) + var(--sb)); font-size: calc(6.5 * var(--u)); white-space: normal; width: max-content; max-width: calc(220 * var(--u)); }
+html.touch #toast { bottom: calc(42 * var(--u) + var(--sb)); }
+html.touch #notice { top: calc(30 * var(--u)); max-width: calc(210 * var(--u)); }
+html.touch #abilities .chord { font-size: calc(6 * var(--u)); }
+
+/* ── ring menu: finger-sized steppers, the card beside the ring ── */
+html.touch .ropt { width: calc(24 * var(--u)); height: calc(24 * var(--u)); }
+html.touch .ropt.sel { border-color: var(--gold-hi); box-shadow: 0 0 calc(10 * var(--u)) rgba(255, 220, 120, 0.9); }
+html.touch .starstep button { width: calc(11 * var(--u)); height: calc(11 * var(--u)); font-size: calc(8 * var(--u)); }
+html.touch .aspect { min-width: calc(22 * var(--u)); padding: calc(2 * var(--u)) calc(3 * var(--u)); }
+html.touch #card { transform: translate(-50%, -100%); max-width: calc(150 * var(--u)); max-height: calc(100% - 8 * var(--u)); overflow: hidden; }
+html.touch #card .hk { color: var(--gold-hi); }
+
+/* ── panels and screens scroll with a finger ── */
+html.touch #sidepanel, html.touch .screen .box, html.touch .st-box, html.touch .tablet.big, html.touch .branch-box, html.touch .mt-screen * {
+  touch-action: pan-y;
+}
+html.touch #sidepanel {
+  top: calc(4 * var(--u)) !important; bottom: calc(4 * var(--u)); right: calc(6 * var(--u) + var(--sr));
+  max-height: none; width: calc(210 * var(--u)); z-index: 7; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+}
+html.touch #sidepanel .close { font-size: calc(11 * var(--u)); padding: calc(2 * var(--u)) calc(4 * var(--u)); }
+html.touch #sidepanel .btn.tiny { font-size: calc(6.5 * var(--u)) !important; padding: calc(1.5 * var(--u)) calc(4 * var(--u)); }
+html.touch .screen .box { max-height: 100%; overflow-y: auto; padding: calc(6 * var(--u)) calc(8 * var(--u)); overscroll-behavior: contain; }
+html.touch .screen h1 { font-size: calc(24 * var(--u)); }
+html.touch .screen p { margin: calc(4 * var(--u)) 0; font-size: calc(6.5 * var(--u)); }
+html.touch .screen .keys { margin: calc(4 * var(--u)) 0 calc(6 * var(--u)); gap: calc(2 * var(--u)) calc(8 * var(--u)); font-size: calc(6 * var(--u)); }
+html.touch .screen .btn { font-size: calc(8 * var(--u)); padding: calc(4 * var(--u)) calc(10 * var(--u)); }
+html.touch .row { flex-wrap: wrap; }
+html.touch .tablet.big { max-height: calc(100% - 8 * var(--u)); overflow-y: auto; width: calc(360 * var(--u)); padding: calc(6 * var(--u)) calc(8 * var(--u)); }
+html.touch .branch-box { max-height: calc(100% - 8 * var(--u)); overflow-y: auto; width: calc(360 * var(--u)); padding: calc(6 * var(--u)) calc(8 * var(--u)); }
+html.touch .orbit-wrap { display: none; }
+html.touch #revive { top: 50%; transform: translate(-50%, -50%); max-height: calc(100% - 8 * var(--u)); overflow-y: auto; }
+html.touch #revive .btn { min-height: calc(18 * var(--u)); }
+html.touch #pause .box .btn { min-height: calc(20 * var(--u)); }
+html.touch .gloss-tip { max-width: calc(170 * var(--u)); }
+
+/* ── «turn the phone» ── */
+#rotate { display: none; }
+@media (orientation: portrait) {
+  html.touch #rotate {
+    display: grid; place-items: center; position: fixed; inset: 0; z-index: 100; background: #05040c; color: var(--gold-hi);
+    font-family: var(--serif); text-align: center; padding: 24px;
+  }
+  html.touch #rotate .ph { width: 54px; height: 90px; margin: 0 auto 22px; border: 3px solid var(--gold); border-radius: 10px; animation: rot 2.2s ease-in-out infinite; box-shadow: 0 0 18px rgba(255, 200, 70, 0.4); }
+  html.touch #rotate b { display: block; font-size: 26px; letter-spacing: 0.04em; }
+  html.touch #rotate span { display: block; margin-top: 8px; font-family: var(--text); font-size: 16px; color: var(--ink); opacity: 0.8; }
+}
+@keyframes rot { 0%, 25% { transform: rotate(0); } 55%, 100% { transform: rotate(-90deg); } }
+
+/* the pause screen hides the HUD under it (on a phone the buttons would show through and overlap) */
+html.touch #ui:has(#pause:not(.hidden)) > :not(.screen) { visibility: hidden; }
+html.touch #sidepanel h3 { padding-right: calc(14 * var(--u)); }

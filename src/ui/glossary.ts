@@ -1,4 +1,5 @@
 import { ABILITIES, CHORD, FOG, PLATES, TUNNELS } from '../data/balance';
+import { isTouch } from './touch';
 
 /**
  * Glossary (Baldur's Gate style): game terms in descriptions become underlined and explain
@@ -93,11 +94,15 @@ export function installGlossary(root: HTMLElement) {
     tip.style.left = `${Math.max(4, x)}px`;
     tip.style.top = `${Math.max(4, y)}px`;
   };
+  let touchHide: ReturnType<typeof setTimeout> | undefined;
   document.addEventListener('mouseover', (ev) => {
     const target = ev.target as HTMLElement | null;
     // any element can carry an instant rich tip: data-tip="text", data-tip-title="title"
     const tipEl = target?.closest?.('[data-tip]') as HTMLElement | null;
     const el = target?.closest?.('.term') as HTMLElement | null;
+    // a finger: buttons say what they do themselves — only info chips and terms explain on tap
+    if (isTouch && !el && tipEl?.closest('button')) { tip.classList.add('hidden'); return; }
+    if (isTouch) { clearTimeout(touchHide); touchHide = setTimeout(() => tip.classList.add('hidden'), 4000); }
     if (!el && tipEl) {
       tip.innerHTML = `${tipEl.dataset.tipTitle ? `<b>${tipEl.dataset.tipTitle}</b>` : ''}<div>${tipEl.dataset.tip}</div>`;
       tip.classList.remove('hidden');

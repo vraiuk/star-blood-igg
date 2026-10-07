@@ -10,7 +10,7 @@ import {
   ROOT_SLOT_Y, drawTunnel, drawTunnelMouths, drawFog, drawFogEdge, drawDragonfly, dragonflyHome, drawAffix, drawWeb, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
   drawCrownNest, drawCrownSlot, drawSoldier, drawStructure, drawWorker,
 } from './sprites';
-import { drawGrass, drawRoots, drawTree, treeLook } from './tree';
+import { drawGrass, drawRoots, drawTree, treeHeight, treeLook } from './tree';
 import { TREE } from '../data/tree';
 import { runeColor } from '../data/runes';
 import { disc } from './pixel';
@@ -27,6 +27,8 @@ export interface ViewState {
   preview: { x: number; r: number; underground: boolean; y?: number; merge?: { to: number; from: number[] } } | null;
   /** ability currently aimed (shows a preview) */
   aiming: import('../data/balance').AbilityId | null;
+  /** where a tap sent the Ascended (touch play) */
+  walkTo?: number | null;
 }
 
 /** Hard outlines around nests (off: readability comes from glow and warm colours instead). */
@@ -66,7 +68,7 @@ export class Renderer {
   }
 
   /** Snap the camera (e.g. on a new run). */
-  resetCamera(radius: number) { this.camera.update(radius, 0, true); }
+  resetCamera(radius: number, top = 0) { this.camera.update(radius, 0, true, top); }
 
   /** Feed sim events to visual effects. */
   onEvents(events: GameEvent[], game: Game) {
@@ -213,7 +215,7 @@ export class Renderer {
     this.particles.ambient(s.tree.radius, dt, s.phase === 'night');
     this.particles.update(dt);
     this.lighting.update(game, time, dt);
-    this.camera.update(s.tree.radius, dt);
+    this.camera.update(s.tree.radius, dt, false, treeHeight(s.tree.stage) * treeScale(s.tree.rings));
 
     c.save();
     c.clearRect(0, 0, WORLD.width, WORLD.height);
@@ -397,6 +399,7 @@ export class Renderer {
     drawKeeperHp(c, s.keeper, game.keeperMaxHp());
     if (lpHp >= 0) c.restore();
     if (view.aiming) this.drawAim(c, game, view, time);
+    if (view.walkTo != null && s.keeper.alive) this.drawWalkMark(c, view.walkTo, time);
     if (view.preview?.merge) this.drawMergePreview(c, game, view.preview.merge, time);
     else if (view.preview) this.drawRangeRaw(c, view.preview.x, view.preview.r, view.preview.underground, true, view.preview.y);
     else if (view.selectedSlot) {
@@ -752,6 +755,15 @@ export class Renderer {
         rect(c, x + Math.cos(a) * r, y + (underground ? 1 : -1) * Math.abs(Math.sin(a)) * r * 0.45 * (underground ? 0.6 : 1) * (underground ? 1 : 1), 1, 1, 'rgba(255,230,150,0.55)');
       }
     }
+  }
+
+  /** A small golden mark on the ground where a tap sent the Ascended. */
+  private drawWalkMark(c: Ctx, x: number, time: number) {
+    const a = 0.55 + Math.sin(time * 8) * 0.25;
+    const col = `rgba(255,220,130,${a.toFixed(2)})`;
+    const x0 = Math.round(x);
+    rect(c, x0 - 6, WORLD.groundY + 1, 12, 1, col);
+    for (let i = 0; i < 3; i++) rect(c, x0 - i, WORLD.groundY - 3 - i, 1 + i * 2, 1, col);
   }
 
   private drawAim(c: Ctx, game: Game, view: ViewState, time: number) {
