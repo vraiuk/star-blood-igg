@@ -57,7 +57,9 @@ const coop = new Coop({
   start(info, you) { beginRun(info, you); },
   paused(on, why) {
     coopPanel.hostPaused = on;
-    coopPanel.pauseWhy = why === 'hidden' ? 'Пауза: хост свернул игру — ждём, пока он вернётся' : 'Пауза: хост открыл меню';
+    coopPanel.pauseWhy = why === 'hidden' ? 'Пауза: хост свернул игру — ждём, пока он вернётся'
+      : why === 'silent' ? 'Хост не отвечает… Если он ушёл, через пару секунд вернёмся в лобби'
+      : 'Пауза: хост открыл меню';
   },
   desync() { coopPanel.desync = true; },
   hostGone() {

@@ -29,6 +29,8 @@ const GUEST_BUFFER = 4;
  */
 const PING_EVERY = 2000;
 const HOST_SILENT = 7000;
+/** A run that hears nothing from the host this long says so (a closed tab, a lost network). */
+const HOST_QUIET = 2500;
 /** A minimized host's timers are throttled (down to once a minute): wait for it this long. */
 const HOST_HIDDEN_SILENT = 150000;
 /** Give up on a host that doesn't answer (a TURN relay over TCP/TLS takes a few seconds more). */
@@ -131,7 +133,7 @@ type Msg =
 
 export type Role = 'connecting' | 'host' | 'guest' | 'offline' | 'lost';
 /** Why the host's world stands: its pause menu, or its tab is minimized / in the background. */
-export type PauseWhy = 'menu' | 'hidden';
+export type PauseWhy = 'menu' | 'hidden' | 'silent';
 
 export interface LobbyView {
   role: Role;
@@ -189,6 +191,8 @@ export class Coop {
   /** guest: when the host was last heard from, and whether it said its tab went to the background */
   private heard = 0;
   private hostHidden = false;
+  /** guest: the host has gone quiet and the players were told */
+  private quiet = false;
   /** host: its pause menu is open / its tab is hidden */
   private menuPaused = false;
   private tabHidden = false;
@@ -206,6 +210,10 @@ export class Coop {
       else if (this.role === 'guest' && performance.now() - this.heard > (this.hostHidden ? HOST_HIDDEN_SILENT : HOST_SILENT)) {
         this.host?.close();
         this.hostLost();
+      } else if (this.role === 'guest' && this.running && !this.hostHidden && !this.quiet && performance.now() - this.heard > HOST_QUIET) {
+        // the world just froze: tell the players why before the host is given up on
+        this.quiet = true;
+        this.ev.paused(true, 'silent');
       }
     }, PING_EVERY / 2);
   }
@@ -416,6 +424,7 @@ export class Coop {
 
   private hostLost() {
     if (this.role !== 'guest') return;
+    this.quiet = false;
     this.role = 'lost';
     this.game = null;
     this.running = false;
@@ -502,6 +511,10 @@ export class Coop {
 
   private fromHost(m: Msg) {
     this.heard = performance.now();
+    if (this.quiet) {
+      this.quiet = false;
+      if (m.t !== 'pause') this.ev.paused(this.hostHidden, this.hostHidden ? 'hidden' : 'menu');
+    }
     switch (m.t) {
       case 'lobby':
         this.lobbyIds = m.ids;
