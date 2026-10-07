@@ -517,3 +517,36 @@ body { display: grid; place-items: center; }
 .slot .up { margin-left: calc(4 * var(--u)); font-size: calc(9 * var(--u) / 2); background: #2a3a14; color: #d8ffb0; border: 1px solid #8fd06a88; border-radius: 3px; cursor: pointer; padding: 0 calc(3 * var(--u)); }
 .slot .up.no { opacity: .4; cursor: default; }
 .slot .up .icon { width: calc(5 * var(--u)); height: calc(5 * var(--u)); vertical-align: middle; }
+/* stronger cards for stronger runes */
+.rcard.rk1 { box-shadow: 0 0 calc(5 * var(--u)) color-mix(in srgb, var(--c) 35%, transparent); }
+.rcard.rk2 { box-shadow: 0 0 calc(8 * var(--u)) color-mix(in srgb, var(--c) 50%, transparent); background: linear-gradient(180deg, color-mix(in srgb, var(--c) 14%, #0c0a1a), #0c0a1a); }
+.rcard.rk3 { box-shadow: 0 0 calc(11 * var(--u)) color-mix(in srgb, var(--c) 65%, transparent); background: linear-gradient(180deg, color-mix(in srgb, var(--c) 22%, #0c0a1a), #0c0a1a); }
+.rcard.rk4 { box-shadow: 0 0 calc(14 * var(--u)) color-mix(in srgb, var(--c) 80%, transparent); background: linear-gradient(180deg, color-mix(in srgb, var(--c) 30%, #0c0a1a), #0c0a1a); animation: rkglow 2s ease-in-out infinite; }
+@keyframes rkglow { 50% { box-shadow: 0 0 calc(20 * var(--u)) var(--c); } }
+.rcard .rank { font-size: 1.15em; }
+.rblock.flashrune { animation: flashrune 1.4s ease-out; }
+@keyframes flashrune { 0% { box-shadow: 0 0 0 calc(2 * var(--u)) #ffe58a; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.ab .lock .lk .icon { width: 1em; height: 1em; vertical-align: middle; }
+/* the Tablet button calls for attention when something can be bought */
+#controls .btn.keeper { position: relative; }
+#controls .btn.keeper.hot { animation: hotPulse 1.2s ease-in-out infinite; border-color: #ffd24a; }
+@keyframes hotPulse { 50% { box-shadow: 0 0 calc(10 * var(--u)) rgba(255, 210, 74, 0.85); } }
+#controls .btn.keeper[data-badge]:not([data-badge=""])::after { content: attr(data-badge); position: absolute; top: calc(-5 * var(--u)); right: calc(-5 * var(--u));
+  min-width: calc(9 * var(--u)); height: calc(9 * var(--u)); border-radius: 50%; background: #ff4a5a; color: #fff; font-size: calc(6 * var(--u)); display: grid; place-items: center; box-shadow: 0 0 calc(4 * var(--u)) #ff4a5a; }
+#controls .btn.spd { padding: 0 calc(4 * var(--u)); }
+#pause .giveup { opacity: 0.85 !important; }
+.btn.slotbtn { margin-left: calc(2 * var(--u)); }
+/* unspent Amber right before the night */
+#res .item.spendme { animation: spendme 0.9s ease-in-out infinite; border-radius: calc(2 * var(--u)); }
+@keyframes spendme { 50% { background: rgba(255, 180, 60, 0.35); box-shadow: 0 0 calc(8 * var(--u)) rgba(255, 180, 60, 0.8); } }
+
+/* v0.5.x readability pass (playtest: «сложно читается»): bigger, brighter body text */
+:root { --ink-dim: #b9b2c8; }
+#card .sub, .rcard .ds { font-size: calc(7 * var(--u)) !important; line-height: 1.35; }
+#card .stats { font-size: calc(6.2 * var(--u)); }
+#sidepanel .sub, .tablet.big .sub, .branch-box .sub { font-size: calc(6.8 * var(--u)) !important; }
+.shop .item .ds, .rune small, .ladder .un, .ladder .br { font-size: calc(6.3 * var(--u)); }
+.slot { font-size: calc(6 * var(--u)); color: #8a84a0; }
+.rcard .cat { font-size: calc(5.8 * var(--u)); }
+.pathc .pb, .pathc .pc { font-size: calc(6.2 * var(--u)); }
+.gloss-tip { font-size: calc(6.6 * var(--u)) !important; }

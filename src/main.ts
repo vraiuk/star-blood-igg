@@ -9,6 +9,7 @@ import { Hud, type MenuTarget } from './ui/hud';
 import { openMetaTree } from './ui/metaTree';
 import { buildRunLog, saveRunLog } from './state/runlog';
 import { openStats } from './ui/stats';
+import { hideWorldTip, showWorldTip } from './ui/glossary';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -35,6 +36,8 @@ const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false,
 let endShown = false;
 const SPEEDS = [1, 1.25, 1.5, 2, 5];
 const nextSpeed = () => SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+/** − / + step through the speeds without wrapping around */
+const stepSpeed = (d: 1 | -1) => SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, SPEEDS.indexOf(speed) + d))];
 let lastRecord = false;
 
 const titleInfo = () => {
@@ -82,6 +85,19 @@ const hud: Hud = new Hud(uiRoot, () => game, {
   onCast(id) { beginAim(id); },
   onCallNight() { game.callNight(); },
   onToggleSpeed() { speed = nextSpeed(); hud.setSpeed(speed); },
+  onSpeed(step) { speed = stepSpeed(step); hud.setSpeed(speed); },
+  onQuitToMenu() {
+    logQuit();
+    setPaused(false);
+    hud.closeMenu();
+    started = false;
+    game = newGame();
+    logged = false;
+    hud.resetQuests();
+    renderer.resetCamera(game.state.tree.radius);
+    hud.showTitle();
+    titleInfo();
+  },
   onToggleSound() { hud.setSound(audio.toggle()); },
   onResume() { setPaused(false); },
   onMenuClosed() { view.selectedSlot = null; view.preview = null; },
@@ -170,6 +186,8 @@ window.addEventListener('keydown', (e) => {
     else game.callNight();
   }
   if (k === 'f') { speed = nextSpeed(); hud.setSpeed(speed); }
+  if (k === '-' || k === '_') { speed = stepSpeed(-1); hud.setSpeed(speed); }
+  if (k === '=' || k === '+') { speed = stepSpeed(1); hud.setSpeed(speed); }
   if (k === 'm') hud.setSound(audio.toggle());
   if (k === 'r' || k === 'b') hud.togglePanel('keeper');
   if (k === 'v') game.revive('amber');
@@ -224,6 +242,8 @@ function pick(mx: number, my: number): MenuTarget | null {
   return null;
 }
 
+canvas.addEventListener('mouseleave', () => hideWorldTip());
+canvas.addEventListener('mousedown', () => hideWorldTip());
 canvas.addEventListener('mousemove', (ev) => {
   const [mx, my] = toWorld(ev);
   view.mouseX = mx;
@@ -232,6 +252,14 @@ canvas.addEventListener('mousemove', (ev) => {
   view.hoverSlot = t?.kind === 'slot' ? t.slotId : null;
   view.hoverTree = t?.kind === 'tree';
   canvas.style.cursor = view.aiming ? 'crosshair' : t ? 'pointer' : 'default';
+  // what a click here will do
+  if (!t || hud.target || hud.panelOpen) hideWorldTip();
+  else if (t.kind === 'tree') showWorldTip('Древо Игг', 'Клик — рост Древа: вложи Янтарь, Древо вырастет, Круг света станет шире, откроются руны и слоты.', ev);
+  else if (t.kind === 'slot') {
+    const sl = SLOTS.find((x) => x.id === t.slotId)!;
+    showWorldTip(sl.underground ? 'Корневой узел' : sl.crown ? 'Слот кроны' : 'Руна призыва',
+      `Клик — призвать сюда ${sl.underground ? 'Паука-ткача (бьёт Червей под землёй)' : sl.crown ? 'гнездо кроны (сборщики, соты, лекари, улей)' : 'гнездо: улей, Светожук, стрекозы или термиты'}.`, ev);
+  } else if (t.kind === 'structure') showWorldTip('Гнездо', 'Клик — улучшить: уровень, специализация, Слияние, Возвышение.', ev);
 });
 
 canvas.addEventListener('mousedown', (ev) => {
@@ -321,7 +349,7 @@ function frame(now: number) {
       if (game.abilityReady(id)) game.cast(id, view.mouseX, view.mouseY);
     }
   }
-  const frozen = !started || paused || game.over || !!game.choice || metaOpen || hud.tabletOpen || hud.ringOpen || hud.deathPause;
+  const frozen = !started || paused || game.over || !!game.choice || metaOpen || hud.panelOpen || hud.ringOpen || hud.deathPause;
   if (!frozen) {
     acc += dt * speed;
     while (acc >= STEP) {

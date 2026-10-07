@@ -47,6 +47,8 @@ export const NIGHT_GRACE = 60;
 
 /** Piercing Beam channel time (seconds) and damage tick. */
 export const BEAM_CHANNEL = 1.6;
+/** the Piercing Beam always burns at least this long after a tap */
+const BEAM_MIN_HOLD = 2.5;
 /** Piercing Beam damage share by distance from the Ascended. */
 export const beamFalloff = (d: number) => Math.max(0.25, 1 - Math.max(0, d - 120) / 500);
 /** the sustained beam drains this many × the spear's Light cost per second */
@@ -733,7 +735,8 @@ export class Game {
       } else {
         const b = boonById(id);
         if (!b) return false;
-        if (b.learn) this.learnAbility(b.learn, true);
+        if (b.learn && s.keeper.learned[b.learn]) s.star += ABILITIES[b.learn].learn; // already known: its price back
+        else if (b.learn) this.learnAbility(b.learn, true);
         else if (b.kind === 'gift' && (b.amber || b.star || b.devRune)) {
           s.amber += b.amber ?? 0;
           s.star += b.star ?? 0;
@@ -929,7 +932,14 @@ export class Game {
   /** Is the Piercing Beam being held? */
   beamHeld() { return this.state.keeper.channel > 0; }
   /** Let go of the Piercing Beam (key released). */
-  releaseBeam() { if (this.state.keeper.channel > 0) this.endChannel(); }
+  releaseBeam() {
+    const k = this.state.keeper;
+    if (k.channel <= 0) return;
+    // a tap holds the beam for a moment; holding the key keeps it as long as there is Light
+    if (k.channel >= BEAM_MIN_HOLD) this.endChannel();
+    else this.beamRelease = true;
+  }
+  private beamRelease = false;
 
   /** Cooldown of an ability after rank, form, properties, facets and tree mods. */
   abilityCooldown(id: AbilityId): number {
@@ -1026,6 +1036,7 @@ export class Game {
       // Пронзающий луч: the Ascended stands still and holds a beam to the edge of the world
       // for as long as the Light lasts (press again to let go); the cooldown starts after
       k.channel = 0.001;
+      this.beamRelease = false;
       k.channelDir = dir;
       k.channelDps = (def.damage * 2.2 * mult) / BEAM_CHANNEL;
       k.move = 0;
@@ -1518,12 +1529,14 @@ export class Game {
       for (const c of pool) { r -= weight(c); if (r <= 0) return c.id; }
       return pool[0].id;
     };
+    // a rune gift already waiting in another queued dawn is never offered twice
+    const queued = new Set(s.choices.flatMap((c) => (c.kind === 'dawn' ? c.offers : [])));
     const keeper = PROPERTIES.filter((p) => p.rank <= maxRank && this.canInstall(p) && this.abilityUnlocked(p.rune === 'light' ? 'spear' : p.rune))
       .map((p) => ({ id: p.id, rank: p.rank }));
     const creatures = BOONS.filter((b) => b.kind === 'creature' && b.rank <= maxRank && !s.keeper.boons.includes(b.id))
       .map((b) => ({ id: b.id, rank: b.rank }));
     const gifts = BOONS.filter((b) => b.kind === 'gift' && b.rank <= maxRank && !(b.mods && Object.keys(b.mods).length && s.keeper.boons.includes(b.id))
-      && (!b.learn || (!s.keeper.learned[b.learn] && this.abilityAvailable(b.learn))))
+      && (!b.learn || (!s.keeper.learned[b.learn] && this.abilityAvailable(b.learn) && !queued.has(b.id))))
       .map((b) => ({ id: b.id, rank: b.rank }));
     const out: string[] = [];
     for (const pool of [keeper, creatures, gifts]) {
@@ -1655,6 +1668,7 @@ export class Game {
     if (k.channel > 0) {
       const before = k.channel;
       k.channel += dt;
+      if (this.beamRelease && k.channel >= BEAM_MIN_HOLD) { this.beamRelease = false; this.endChannel(); k.walkT = 0; return; }
       // the beam feeds on Light; when it runs dry the beam goes out
       // Быстрая рука makes the beam cheaper to hold
       const drain = this.abilityCost('spear') * BEAM_DRAIN * dt * this.fx('sp-swift', 0.75, -0.05, 1);

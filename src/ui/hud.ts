@@ -34,6 +34,8 @@ export interface HudCallbacks {
   onCast(id: AbilityId): void;
   onCallNight(): void;
   onToggleSpeed(): void;
+  onSpeed(step: 1 | -1): void;
+  onQuitToMenu(): void;
   onToggleSound(): void;
   onResume(): void;
   onMenuClosed(): void;
@@ -144,10 +146,10 @@ export class Hud {
     const res = el('div', 'panel');
     res.id = 'res';
     res.innerHTML = `
-      <div class="item" title="Янтарь — смола Игг. Гнёзда, уровни 1–3, рост Древа"><img class="icon" src="${icon('amber')}"><span class="num" id="amber">0</span></div>
-      <div class="item" title="Звёздная Кровь — с Червей. Специализации, Свойства рун у Наблюдателя, ранги"><img class="icon" src="${icon('star')}"><span class="num star" id="star">0</span></div>
-      <div class="item dev" title="Малые Руны Развития: открывают 4-й слот руны"><img class="icon" src="${icon('rune')}"><span class="num" id="dev">0</span></div>
-      <div class="item bars" title="HP и Свет Восходящего. Свет у ствола Древа течёт быстрее, у края Круга — медленно">
+      <div class="item" data-tip-title="Янтарь" data-tip="Смола Игг: падает с тварей, гусеницы и соты приносят её сами.<br><b>Тратится на:</b> новые гнёзда и их уровни, рост Древа (клик по Древу), годичные кольца, Возвышение гнёзд, воскрешение Хранителя."><img class="icon" src="${icon('amber')}"><span class="num" id="amber">0</span></div>
+      <div class="item" data-tip-title="Звёздная Кровь" data-tip="Роняют Черви (крупные — больше).<br><b>Тратится на:</b> изучение и Повышение рун, Свойства у Наблюдателя (Скрижаль, R), специализации гнёзд, ранги и атрибуты Хранителя."><img class="icon" src="${icon('star')}"><span class="num star" id="star">0</span></div>
+      <div class="item dev" data-tip-title="Малая Руна Развития" data-tip="Редкий дар с Червей. Открывает 4-й слот Свойства у любой руны или поднимает атрибут Хранителя (Скрижаль, R)."><img class="icon" src="${icon('rune')}"><span class="num" id="dev">0</span></div>
+      <div class="item bars" data-tip-title="Здоровье и Свет" data-tip="Верхняя полоса — здоровье Хранителя, нижняя — <b>Свет</b>: его тратят руны. Свет восполняется сам и <b>быстрее всего у ствола Древа</b> — вернись к Древу, если Света мало.">
         <div class="kbar hp"><i></i><span></span></div>
         <div class="lightbar"><i></i></div></div>`;
     r.appendChild(res);
@@ -195,7 +197,12 @@ export class Hud {
       box.innerHTML = `<img src="${icon(id)}"><div class="charge"></div><div class="cd"></div><span class="cdt"></span>
         <div class="lock"><img src="${icon('lock')}"><span class="lk">ст. ${def.unlockStage}</span></div>
         ${def.cost ? `<span class="cost">${def.cost}</span>` : ''}<span class="key">${def.key}</span>`;
-      box.addEventListener('mousedown', (ev) => { ev.stopPropagation(); this.cb.onCast(id); });
+      box.addEventListener('mousedown', (ev) => {
+        ev.stopPropagation();
+        // a rune not learned yet: open the Tablet right on it (that's where it's learned)
+        if (!this.game().abilityUnlocked(id)) { this.openTabletAt(id); return; }
+        this.cb.onCast(id);
+      });
       abs.appendChild(box);
       this.abEls[id] = { box, cd: box.querySelector('.cd')!, lock: box.querySelector('.lock')!, charge: box.querySelector('.charge')!, cdt: box.querySelector('.cdt')!, wasReady: false };
     });
@@ -209,13 +216,20 @@ export class Hud {
     ctr.id = 'controls';
     this.keeperBtn = el('button', 'btn keeper', `<img src="${icon('rune')}"> Восходящий <span class="k">[R]</span>`);
     this.keeperBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); this.togglePanel('keeper'); });
-    this.speedBtn = el('button', 'btn', '×1') as HTMLButtonElement;
-    this.speedBtn.title = 'Скорость [F]';
-    this.speedBtn.onclick = () => this.cb.onToggleSpeed();
+    // speed: − ×N + (no wrap-around from ×2 to ×5 by accident)
+    const slower = el('button', 'btn spd', '−') as HTMLButtonElement;
+    slower.dataset.tip = 'Медленнее [−]';
+    slower.onclick = () => this.cb.onSpeed(-1);
+    this.speedBtn = el('button', 'btn spdval', '×1') as HTMLButtonElement;
+    this.speedBtn.dataset.tipTitle = 'Скорость игры';
+    this.speedBtn.dataset.tip = 'Кнопки − и + (или клавиши − и +) меняют скорость: 1 · 1.25 · 1.5 · 2 · 5.';
+    const faster = el('button', 'btn spd', '+') as HTMLButtonElement;
+    faster.dataset.tip = 'Быстрее [+]';
+    faster.onclick = () => this.cb.onSpeed(1);
     this.soundBtn = el('button', 'btn', '♪') as HTMLButtonElement;
     this.soundBtn.title = 'Звук [M]';
     this.soundBtn.onclick = () => this.cb.onToggleSound();
-    ctr.append(this.keeperBtn, this.speedBtn, this.soundBtn);
+    ctr.append(this.keeperBtn, slower, this.speedBtn, faster, this.soundBtn);
     r.appendChild(ctr);
 
     this.callBtn = el('button', 'btn gold', '') as HTMLButtonElement;
@@ -267,9 +281,11 @@ export class Hud {
 
     this.pause = el('div', 'screen hidden');
     this.pause.id = 'pause';
-    this.pause.innerHTML = `<div class="box"><h1>Пауза</h1><p>Тьма ждёт.</p><button class="btn gold" data-a="resume">Продолжить</button></div>
+    this.pause.innerHTML = `<div class="box"><h1>Пауза</h1><p>Тьма ждёт.</p><button class="btn gold" data-a="resume">Продолжить</button>
+      <div class="row"><button class="btn" data-a="menu">Выйти в меню</button></div></div>
       <button class="btn giveup" data-a="giveup" title="Завершить забег: Древо падёт, Монеты Наблюдателя начислятся как обычно">Уйти в Вечность</button>`;
     this.pause.querySelector('[data-a=resume]')!.addEventListener('click', () => this.cb.onResume());
+    this.pause.querySelector('[data-a=menu]')!.addEventListener('click', () => this.cb.onQuitToMenu());
     // tucked into a corner and needs a second click — never pressed by accident
     const give = this.pause.querySelector<HTMLButtonElement>('[data-a=giveup]')!;
     let armed = 0;
@@ -453,7 +469,7 @@ export class Hud {
     const rows: Array<[string, string]> = [];
     const n0 = (v: number) => String(Math.round(v));
     if (id === 'spear') {
-      if (form === 'B') rows.push(['Урон луча', `${n0((ABILITIES.spear.damage * 2.2 * mult) / 1.6)} в секунду`], ['Тянет Света', `${n0(g.abilityCost('spear') * 1.6)} в секунду`]);
+      if (form === 'B') rows.push(['Управление', `<b style="color:#ffe58a">удерживай ${ABILITIES.spear.key}</b>`], ['Урон луча', `${n0((ABILITIES.spear.damage * 2.2 * mult) / 1.6)} в секунду`], ['Тянет Света', `${n0(g.abilityCost('spear') * 1.6)} в секунду`]);
       else if (form === 'A') rows.push(['Урон', `${n0(ABILITIES.spear.damage * 0.8 * mult)} × 5 копий`]);
       else rows.push(['Урон', n0(ABILITIES.spear.damage * mult)], ['Пробивает', `${ABILITIES.spear.pierce + g.mods.spearPierce + (rr >= 1 ? 1 : 0) + (rr >= 3 ? 1 : 0)} тварей`]);
     } else if (id === 'hammer') {
@@ -486,6 +502,18 @@ export class Hud {
     this.abTip.style.bottom = `${pr.bottom - r.top + 10}px`;
   }
 
+  /** Open the Keeper's Tablet scrolled to one rune's block (learn / promote it there). */
+  openTabletAt(rid: KeeperRuneId) {
+    this.togglePanel('keeper', true);
+    requestAnimationFrame(() => {
+      const el = this.panel.querySelector(`[data-rune="${rid}"]`) as HTMLElement | null;
+      if (!el) return;
+      el.scrollIntoView({ block: 'center' });
+      el.classList.add('flashrune');
+      setTimeout(() => el.classList.remove('flashrune'), 1400);
+    });
+  }
+
   /** Show a tip only the first time; returns whether it was shown. */
   private once(key: string, text: string): boolean {
     if (this.seen.has(key)) return false;
@@ -505,6 +533,8 @@ export class Hud {
 
   /** The Keeper's Tablet freezes time so runes can be bought calmly in a crowded night. */
   get tabletOpen() { return this.panelKind === 'keeper'; }
+  /** Any side panel (Tablet or the Tree) stops time so it can be read calmly. */
+  get panelOpen() { return this.panelKind !== null; }
   /** A nest's / slot's ring menu is open: time stands while you decide on an upgrade. */
   get ringOpen() { return this.menuTarget !== null && this.menuTarget.kind !== 'tree'; }
   get target() { return this.menuTarget; }
@@ -534,6 +564,7 @@ export class Hud {
 
   /** Keyboard shortcut for the ring: key matches an option's hotkey. */
   private sellArmed = -1e9;
+  private dawnSeenAt = -1;
   /** the node the ring last opened on (its pop-in animation plays once per node) */
   private ringAnimKey = '';
   /** merge stars a new nest of each family is built with (the − ★N + steppers) */
@@ -741,10 +772,10 @@ export class Hud {
         const n0 = this.buildStars[o.fam] ?? 0;
         const ox = Math.cos(ang) * R, oy = Math.sin(ang) * R;
         // ★N above the icon, + / − stacked on its left
-        html += `<div class="starlbl ${n0 ? 'on' : ''}" style="left:calc(${ox} * var(--u));top:calc(${oy - 16} * var(--u))">★${n0}</div>
+        html += `<div class="starlbl ${n0 ? 'on' : ''}" data-tip-title="Звёзды Слияния" data-tip="С каким числом ★ строится это гнездо. Меняется кнопками ▲ ▼ слева." style="left:calc(${ox} * var(--u));top:calc(${oy - 16} * var(--u))">★${n0}</div>
           <div class="starstep" style="left:calc(${ox - 15} * var(--u));top:calc(${oy} * var(--u))">
-          <button data-fam="${o.fam}" data-d="1" title="Больше звёзд: каждая ★ — как 3 гнезда, слитых в одно">+</button>
-          <button data-fam="${o.fam}" data-d="-1" ${n0 > 0 ? '' : 'disabled'} title="Меньше звёзд">−</button></div>`;
+          <button data-fam="${o.fam}" data-d="1" data-tip-title="Звёзды Слияния ▲" data-tip="Построить сразу со звездой: каждая ★ — как 3 гнезда, слитых в одно (урон и прочность ×2.1). Цена ×3 за звезду.">▲</button>
+          <button data-fam="${o.fam}" data-d="-1" ${n0 > 0 ? '' : 'disabled'} data-tip="Меньше звёзд">▼</button></div>`;
       });
       // the pop-in animation plays only when the menu opens on a new node — re-renders
       // (prices, ★ steppers, affordability) must not make every button blink
@@ -856,7 +887,7 @@ export class Hud {
         const done = n >= PATH_CAPSTONE;
         const mine = s.tree.branches.map((id) => branchById(id)).filter((b) => b && b.path === p).map((b) => b!.name);
         return `<div class="pathc ${done ? 'done' : ''}" style="--c:${d.color}">
-          <div class="ph"><b>${d.name}</b><span>${'●'.repeat(Math.min(n, PATH_CAPSTONE))}${'○'.repeat(Math.max(0, PATH_CAPSTONE - n))}</span></div>
+          <div class="ph"><b>${d.name}</b><span>${'●'.repeat(n)}${'○'.repeat(Math.max(0, PATH_CAPSTONE - n))}</span></div>
           <div class="pb">${mine.length ? mine.join(' · ') : 'ветвей пока нет'}</div>
           <div class="pc"><i>${done ? `✦ ${d.tree}` : `→ ${d.tree}`}</i>${d.capstone.split(', ').map((x) => `<span>${x}</span>`).join('')}</div>
         </div>`;
@@ -904,9 +935,8 @@ export class Hud {
         const cap = k.slots[rid];
         const rr = k.runeRank[rid];
         const hasForms = rid === 'spear' || rid === 'hammer' || rid === 'starfall';
-        html += `<div class="rblock ${unlocked ? '' : 'dim'}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b>
+        html += `<div class="rblock ${unlocked ? '' : 'dim'}" data-rune="${rid}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b>
           <span class="rrank" style="--c:${runeColor(rr)}">${runeRankName(rr)} · ×${runeRankPower(rr).toFixed(2)}</span><span class="cap">${props.length}/${cap}</span>`;
-        if (s.devRunes > 0 && cap < DEV_SLOTS) html += btn(`+слот <img class="icon" src="${icon('rune')}"> 1`, true, () => { g.developRune(rid); }, 'tiny');
         html += `</div>`;
         if (unlocked) {
           const cost = runeRankCost(rr + 1);
@@ -948,7 +978,11 @@ export class Hud {
             html += `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}${lv > 1 ? ` · уровень ${ROMAN[lv]}: ×${propLvFactor(lv).toFixed(1)}` : ''}">${p.name}${lv > 1 ? ` <b>${ROMAN[lv]}</b>` : ''}${up}<button class="rm ${s.star >= rc ? '' : 'no'}" data-i="${actions.length - 1}" title="Вынуть Свойство за ${rc} Звёздной Крови">✕ ${rc} <img class="icon" src="${icon('star')}"></button></span>`;
           } else html += `<span class="slot">пусто</span>`;
         }
-        if (cap < DEV_SLOTS) html += `<span class="slot locked" title="Нужна Малая Руна Развития">+</span>`;
+        if (cap < DEV_SLOTS) {
+          // the 4th slot sits right among the slots: open it with a Lesser Rune of Development
+          if (s.devRunes > 0) html += btn(`+ слот <img class="icon" src="${icon('rune')}"> 1`, true, () => { g.developRune(rid); }, 'tiny slotbtn');
+          else html += `<span class="slot locked" data-tip-title="4-й слот" data-tip="Открывается Малой Руной Развития — редкий дар с Червей.">+</span>`;
+        }
         else if (cap < MAX_SLOTS && unlocked) {
           const sp = g.slotPrice(rid)!;
           html += btn(`Выковать ${cap + 1}-й слот (${priceHtml(sp, g)})`, g.canPay(sp), () => { g.buyRuneSlot(rid); }, 'tiny');
@@ -1005,8 +1039,15 @@ export class Hud {
       if (!this.modal.classList.contains('hidden')) { this.modal.classList.add('hidden'); this.modalSig = ''; }
       return;
     }
+    // let the night end on screen for a moment before the dawn window pops up
+    if (c.kind === 'dawn' && !c.start) {
+      const now = performance.now();
+      if (this.dawnSeenAt < 0) this.dawnSeenAt = now;
+      if (now - this.dawnSeenAt < 1300) return;
+    } else this.dawnSeenAt = -1;
     const sig = JSON.stringify(c);
     if (sig === this.modalSig) return;
+    this.dawnSeenAt = -1;
     this.modalSig = sig;
     // a choice pops over the Keeper's Tablet without closing it (e.g. a Facet after Повышение)
     if (this.panelKind === 'keeper' || this.panelKind === 'tree') { this.menuTarget = null; this.ring.classList.remove('show'); this.card.classList.remove('show'); }
@@ -1022,7 +1063,7 @@ export class Hud {
           const rank = p ? p.rank : b!.rank;
           const ic = p ? KEEPER_RUNES[p.rune].icon : b!.icon;
           const cat = p ? `${p.type} → ${KEEPER_RUNES[p.rune].name}` : b!.category;
-          return `<div class="rcard" data-i="${i}" style="--c:${RUNE_RANK_COLORS[rank]}">
+          return `<div class="rcard rk${rank}" data-i="${i}" style="--c:${RUNE_RANK_COLORS[rank]}">
             <div class="rank">${RUNE_RANKS[rank]}</div><img src="${icon(ic)}"><div class="cat">${cat}</div>
             <div class="nm">${p ? p.name : b!.name}</div><div class="ds">${p ? p.desc : b!.desc}</div></div>`;
         }).join('')}</div>
@@ -1072,7 +1113,7 @@ export class Hud {
           const n = counts[b.path];
           const full = n + 1 >= PATH_CAPSTONE && n < PATH_CAPSTONE;
           return `<div class="rcard gold" data-i="${i}" style="--c:${p.color}">
-          <div class="rank">${p.name} ${'●'.repeat(Math.min(n + 1, PATH_CAPSTONE))}${'○'.repeat(Math.max(0, PATH_CAPSTONE - n - 1))}</div>
+          <div class="rank">${p.name} ${'●'.repeat(n + 1)}${'○'.repeat(Math.max(0, PATH_CAPSTONE - n - 1))}</div>
           <img src="${icon('tree')}"><div class="nm">${b.name}</div><div class="ds">${b.desc}</div>
           ${full ? `<div class="ds" style="color:${p.color}"><b>→ ${p.tree}:</b> ${p.capstone}</div>` : ''}</div>`;
         }).join('')}</div></div>`;
@@ -1176,8 +1217,8 @@ export class Hud {
       lock.style.display = unlocked ? 'none' : 'grid';
       if (!unlocked) {
         const lk = lock.querySelector('.lk')!;
-        const t = g.abilityAvailable(id) ? `★${ABILITIES[id].learn}` : `ст. ${ABILITIES[id].unlockStage}`;
-        if (lk.textContent !== t) lk.textContent = t;
+        const t = g.abilityAvailable(id) ? `<img class="icon" src="${icon('star')}">${ABILITIES[id].learn}` : `ст.${ABILITIES[id].unlockStage}`;
+        if (lk.innerHTML !== t) lk.innerHTML = t;
         box.classList.toggle('learnable', g.abilityAvailable(id) && s.star >= ABILITIES[id].learn);
       }
       const c = s.keeper.cooldowns[id];
@@ -1206,7 +1247,20 @@ export class Hud {
     }
     const slotsFree = RUNE_IDS.some((r) => (r === 'light' || g.abilityUnlocked(r)) && PROPERTIES.some((p) => p.rune === r && s.star >= p.price && g.canInstall(p)));
     const canAscend = !!KEEPER_RANKS[s.keeper.rank + 1] && s.star >= KEEPER_RANKS[s.keeper.rank + 1].cost;
-    this.keeperBtn.classList.toggle('hot', canAscend || slotsFree || s.devRunes > 0);
+    // Amber left over before the night: the counter blinks — spend it
+    const cheapest = Math.min(...SLOTS.filter((sl) => g.slotUnlocked(sl) && !g.structureAt(sl.id))
+      .map((sl) => (sl.underground ? ['spider'] : sl.crown ? ['caterpillar', 'honeycomb', 'mender', 'hive'] : ['hive', 'beetle', 'dragonfly', 'termite']).map((f) => g.buildPrice(f as Family).amber))
+      .flat(), Infinity);
+    const spend = s.phase === 'day' && s.dayLeft < 12 && s.amber >= Math.min(cheapest, g.growNeed() > 0 ? g.growNeed() : Infinity);
+    const amberItem = this.amberNum.parentElement as HTMLElement;
+    if (amberItem.classList.contains('spendme') !== spend) amberItem.classList.toggle('spendme', spend);
+    // how many things the Tablet can buy right now (shown as a badge on its button)
+    const buyable = (canAscend ? 1 : 0) + (s.devRunes > 0 ? 1 : 0)
+      + RUNE_IDS.filter((r) => (r === 'light' || g.abilityUnlocked(r)) && s.star >= runeRankCost(s.keeper.runeRank[r] + 1)).length
+      + (Object.keys(ABILITIES) as AbilityId[]).filter((id) => !g.abilityUnlocked(id) && g.abilityAvailable(id) && s.star >= ABILITIES[id].learn).length;
+    this.keeperBtn.classList.toggle('hot', canAscend || slotsFree || s.devRunes > 0 || buyable > 0);
+    const badge = buyable > 0 ? String(buyable) : '';
+    if (this.keeperBtn.dataset.badge !== badge) this.keeperBtn.dataset.badge = badge;
     this.keeperBtn.title = `Ранг ${KEEPER_RANKS[s.keeper.rank].name}${slotsFree ? ' · можно купить Свойство' : ''}`;
 
     this.renderRevive(g);

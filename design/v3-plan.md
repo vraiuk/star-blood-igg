@@ -254,3 +254,23 @@
   (▲ button, Star Blood: price × (1+lv) × 1.5); each level adds +50% of the Property's effect
   (scalePatch for mod Properties, propPower for rune-specific ones). «Изменения» are on/off —
   Facets strengthen them.
+
+## v0.6 — плейтест-наблюдение (пакет 1: понятность)
+- Instant rich tips (data-tip) on currencies (what they buy), HP/Light («Свет — у ствола
+  Древа»), ★ steppers (▲▼ instead of +/− — «+» means «add to the map»), slots; hover hints on
+  the field for runes of summoning, crown slots, root nodes, nests and the Tree.
+- Locked rune buttons show the real Star Blood price and open the Tablet right at that rune.
+- Tree panel pauses like the Tablet; pause menu: «Выйти в меню»; «Уйти в Вечность» more visible.
+- Speed − ×N + (and −/+ keys), no wrap from ×2 to ×5.
+- Tablet button pulses with a badge of how many things can be bought now.
+- Amber counter blinks when unspent Amber could buy something right before the night.
+- Dawn window appears 1.3 s after the night ends; gifted runes read «Новая способность [N]»,
+  never offered twice across stacked rush dawns (an already known one pays its price back).
+- Choice cards glow stronger by rune rank.
+- Tree stages: … Юный Игг → Малое Игг-Древо → Игг-Древо → Великое Игг-Древо.
+- Tree path pips show the real number of branches (a path can take 4).
+- Piercing beam: a tap holds it 2.5 s, holding keeps it; «Обоюдное древко» now visibly shines
+  backwards; ability card says «удерживай 1».
+- Eyes of the Darkness show at the end of the day where the night's first groups will come from.
+- «+ слот» sits among the property slots.
+- Readability: larger, brighter body text.

@@ -71,10 +71,19 @@ export function gloss(html: string): string {
 }
 
 /** One floating explanation panel for every term on the page. */
+let worldTip: { show: (title: string, html: string, ev: MouseEvent) => void; hide: () => void } | null = null;
+/** A hint for what's under the cursor on the game field (slots, nests, the Tree). */
+export function showWorldTip(title: string, html: string, ev: MouseEvent) { worldTip?.show(title, html, ev); }
+export function hideWorldTip() { worldTip?.hide(); }
+
 export function installGlossary(root: HTMLElement) {
   const tip = document.createElement('div');
   tip.className = 'gloss-tip hidden';
   root.appendChild(tip);
+  worldTip = {
+    show: (title, html, ev) => { tip.innerHTML = `<b>${title}</b><div>${html}</div>`; tip.classList.remove('hidden'); place(ev); },
+    hide: () => tip.classList.add('hidden'),
+  };
   const place = (ev: MouseEvent) => {
     const r = root.getBoundingClientRect();
     const w = tip.offsetWidth, h = tip.offsetHeight;
@@ -85,7 +94,16 @@ export function installGlossary(root: HTMLElement) {
     tip.style.top = `${Math.max(4, y)}px`;
   };
   document.addEventListener('mouseover', (ev) => {
-    const el = (ev.target as HTMLElement | null)?.closest?.('.term') as HTMLElement | null;
+    const target = ev.target as HTMLElement | null;
+    // any element can carry an instant rich tip: data-tip="text", data-tip-title="title"
+    const tipEl = target?.closest?.('[data-tip]') as HTMLElement | null;
+    const el = target?.closest?.('.term') as HTMLElement | null;
+    if (!el && tipEl) {
+      tip.innerHTML = `${tipEl.dataset.tipTitle ? `<b>${tipEl.dataset.tipTitle}</b>` : ''}<div>${tipEl.dataset.tip}</div>`;
+      tip.classList.remove('hidden');
+      place(ev);
+      return;
+    }
     if (!el) { tip.classList.add('hidden'); return; }
     const term = BY_ID.get(el.dataset.term ?? '');
     if (!term) return;

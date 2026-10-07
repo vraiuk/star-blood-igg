@@ -42,11 +42,11 @@ export const TREE_STAGES: TreeStage[] = [
     unlocks: ['Круг 160', 'Слеза Ростка: лечение днём ×2', 'новые руны и корневые узлы'],
   },
   {
-    name: 'Окрепший Росток', short: 'Окрепший', radius: 225, maxHp: 1350, lightRegen: 8, growCost: 1300, power: 1.5, wormBurn: 12, reach: 1.25,
+    name: 'Малое Игг-Древо', short: 'Малое Древо', radius: 225, maxHp: 1350, lightRegen: 8, growCost: 1300, power: 1.5, wormBurn: 12, reach: 1.25,
     unlocks: ['Круг 225', 'Звездопад [3]', 'Полярии слетаются к Древу'],
   },
   {
-    name: 'Малое Игг-Древо', short: 'Малое Древо', radius: 315, maxHp: 1850, lightRegen: 9, growCost: 3000, power: 1.75, wormBurn: 17, reach: 1.4,
+    name: 'Игг-Древо', short: 'Игг-Древо', radius: 315, maxHp: 1850, lightRegen: 9, growCost: 3000, power: 1.75, wormBurn: 17, reach: 1.4,
     unlocks: ['Круг 315', 'корни жгут Червей у ствола', '«световая ограда Круга»'],
   },
   {

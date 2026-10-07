@@ -307,7 +307,7 @@ export class Renderer {
     // ── above darkness: eyes, light, drops, projectiles
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
     for (const e of s.enemies) drawFogEdge(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
-    if (s.phase === 'night') this.drawIncoming(c, game, time);
+    if (s.phase === 'night' || (s.phase === 'day' && s.dayLeft < 10)) this.drawIncoming(c, game, time);
     // Остановка Времени: a pale-blue hush over the world, frost glints on the frozen
     const ts = s.keeper.timeStopT;
     if (ts > 0) {
@@ -449,7 +449,11 @@ export class Renderer {
   private drawIncoming(c: Ctx, game: Game, time: number) {
     const s = game.state;
     const cam = this.camera;
-    const soon = (side: 'L' | 'R') => s.pending.filter((p) => p.side === side && p.at - s.phaseTime < 6).length;
+    // at night: who comes out in the next seconds; at the end of the day: the night's opening groups
+    const opening = s.phase === 'day' ? game.night(s.night).groups.filter((g) => g.at < 12) : [];
+    const soon = (side: 'L' | 'R') => s.phase === 'day'
+      ? opening.filter((g) => g.side === side || g.side === 'B').reduce((a, g) => a + g.count, 0)
+      : s.pending.filter((p) => p.side === side && p.at - s.phaseTime < 6).length;
     const offscreen = (dir: 1 | -1) => s.enemies.filter((e) => !e.dead && e.layer !== 'under' && (dir < 0 ? e.x < cam.x : e.x > cam.x + cam.w)).length;
     for (const [side, dir] of [['L', -1], ['R', 1]] as const) {
       const n = soon(side) + offscreen(dir);
@@ -508,27 +512,34 @@ export class Renderer {
   /** The channelled Piercing Beam, attached to the keeper's staff. */
   private drawChannel(c: Ctx, game: Game, time: number) {
     const k = game.state.keeper;
-    const x0 = k.x + k.channelDir * 6, y = WORLD.groundY - 12;
-    const x1 = k.channelDir > 0 ? WORLD.width : 0;
+    const y = WORLD.groundY - 12;
     const k01 = Math.min(1, k.channel / 0.25);
     const wob = Math.sin(time * 40) > 0 ? 1 : 0;
     const col = runeColor(game.state.keeper.runeRank.spear);
-    // the beam thins out with distance (its damage falls off too)
-    const len = Math.abs(x1 - x0);
-    for (let d = 0; d < len; d += 12) {
-      const f = beamFalloff(d);
-      const x = x0 + k.channelDir * d - (k.channelDir < 0 ? 12 : 0);
-      c.globalAlpha = 0.25 + 0.75 * f;
-      c.fillStyle = 'rgba(255,200,90,0.35)';
-      const h = Math.max(2, Math.round((6 + wob * 2) * f));
-      c.fillRect(x, y - h / 2, 12, h);
-      c.fillStyle = col;
-      c.fillRect(x, y - 1, 12, f > 0.5 ? 2 : 1);
-      if (f > 0.4) { c.fillStyle = PAL.white; c.fillRect(x, y, 12, 1); }
+    // «Обоюдное древко»: the beam shines backwards too (weaker)
+    const twin = game.facetLv('sp-twin') > 0 ? Math.min(1, 0.6 + 0.2 * (game.facetLv('sp-twin') - 1)) : 0;
+    const dirs: Array<[1 | -1, number]> = [[k.channelDir, 1]];
+    if (twin > 0) dirs.push([(k.channelDir * -1) as 1 | -1, twin]);
+    for (const [dir, power] of dirs) {
+      const x0 = k.x + dir * 6;
+      const x1 = dir > 0 ? WORLD.width : 0;
+      // the beam thins out with distance (its damage falls off too)
+      const len = Math.abs(x1 - x0);
+      for (let d = 0; d < len; d += 12) {
+        const f = beamFalloff(d) * power;
+        const x = x0 + dir * d - (dir < 0 ? 12 : 0);
+        c.globalAlpha = 0.25 + 0.75 * f;
+        c.fillStyle = 'rgba(255,200,90,0.35)';
+        const h = Math.max(2, Math.round((6 + wob * 2) * f));
+        c.fillRect(x, y - h / 2, 12, h);
+        c.fillStyle = col;
+        c.fillRect(x, y - 1, 12, f > 0.5 ? 2 : 1);
+        if (f > 0.4) { c.fillStyle = PAL.white; c.fillRect(x, y, 12, 1); }
+      }
+      c.globalAlpha = 1;
+      disc(c, x0, y, (3 + wob * k01) * (dir === k.channelDir ? 1 : 0.7), PAL.white);
+      if (Math.random() < 0.6 * power) this.particles.emit(1, x0 + dir * Math.random() * 300, y, { speed: 20, max: 0.3, colors: [PAL.white, col], glow: true });
     }
-    c.globalAlpha = 1;
-    disc(c, x0, y, 3 + wob * k01, PAL.white);
-    if (Math.random() < 0.6) this.particles.emit(1, x0 + k.channelDir * Math.random() * 300, y, { speed: 20, max: 0.3, colors: [PAL.white, col], glow: true });
   }
 
   /** «Купол Сияния»: a shimmering dome. */
