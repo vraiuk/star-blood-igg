@@ -94,6 +94,14 @@ export class Renderer {
           p.emit(24, e.x, WORLD.groundY - 12, { speed: 70, max: 0.8, colors: ['#c23a5a', '#5a1020', PAL.gold3], gravity: 120 });
           this.shake = Math.max(this.shake, 6);
           break;
+        case 'sacrifice':
+          p.goldBurst(e.x, WORLD.groundY - 14, 220);
+          p.addFx('ring', e.x, WORLD.groundY - 10, 0.5, 90);
+          p.addFx('ring', e.x, WORLD.groundY - 10, 0.9, 170);
+          p.addFx('growWave', e.x, WORLD.groundY, 0.9, 170);
+          this.flash = Math.max(this.flash, 0.8);
+          this.shake = Math.max(this.shake, 18);
+          break;
         case 'plateBreak':
           p.emit(18, e.x, e.y, { speed: 90, max: 0.7, colors: ['#b8c4d8', '#7a7a96', '#e8e8ff'], gravity: 160 });
           p.addFx('ring', e.x, e.y, 0.35, 26);
@@ -311,7 +319,8 @@ export class Renderer {
     // ── above darkness: eyes, light, drops, projectiles
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
     for (const e of s.enemies) drawFogEdge(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
-    if (s.phase === 'night') this.drawIncoming(c, game, time);
+    if (s.phase === 'night' || (s.phase === 'day' && s.dayLeft < 10)) this.drawIncoming(c, game, time);
+    this.drawSkyMood(c, game, time);
     // Остановка Времени: a pale-blue hush over the world, frost glints on the frozen
     // the Ascended holding time the longest shows the clock
     const tk = s.keepers.reduce((a, b) => (b.timeStopT > a.timeStopT ? b : a));
@@ -385,7 +394,7 @@ export class Renderer {
       const own = s.keepers[p.owner ?? 0] ?? s.keeper;
       drawProjectile(c, p, p.kind === 'spear' ? tint(own.runeRank.spear) : p.kind === 'meteor' ? tint(own.runeRank.starfall) : undefined);
     }
-    for (const k of s.keepers) if (k.channel > 0 && k.alive) this.drawChannel(c, k, time);
+    s.keepers.forEach((k, i) => { if (k.channel > 0 && k.alive) this.drawChannel(c, game, i, time); });
     for (const t of s.tempLights) if (t.dps) this.drawDome(c, t.x, t.radius, t.life / t.maxLife, time);
     this.particles.draw(c, true);
     for (const e of s.enemies) drawEnemyHp(c, e);
@@ -455,13 +464,53 @@ export class Renderer {
   }
 
   /**
+   * The mood of the sky: a warm band of dawn rises over the horizon as the night runs out
+   * (and fades in the first seconds of the day); a red pulse frames the view while the
+   * Tree is in danger.
+   */
+  private dawnGlow = 0;
+  private drawSkyMood(c: Ctx, game: Game, time: number) {
+    const s = game.state;
+    const cam = this.camera;
+    let target = 0;
+    if (s.phase === 'night' && s.pending.length === 0) target = 1 - Math.min(1, s.enemies.length / 8);
+    else if (s.phase === 'day') target = Math.max(0, 1 - s.phaseTime / 6);
+    this.dawnGlow += (target - this.dawnGlow) * 0.03;
+    if (this.dawnGlow > 0.02) {
+      const top = WORLD.groundY - 180, bot = WORLD.groundY;
+      for (let y = top; y < bot; y += 4) {
+        const k = (y - top) / (bot - top);
+        c.fillStyle = `rgba(255, 140, 90, ${(0.16 * this.dawnGlow * k * k).toFixed(3)})`;
+        c.fillRect(cam.x, y, cam.w, 4);
+      }
+    }
+    // the Tree in danger: a red heartbeat around the view
+    if (s.phase === 'night' && s.tree.hp < game.treeMaxHp() * 0.3) {
+      const pulse = 0.25 + 0.2 * Math.max(0, Math.sin(time * 6));
+      const w = 26;
+      for (let i = 0; i < w; i += 2) {
+        const a = (pulse * (1 - i / w)).toFixed(3);
+        c.fillStyle = `rgba(200, 20, 40, ${a})`;
+        c.fillRect(cam.x + i, cam.y, 2, cam.h);
+        c.fillRect(cam.x + cam.w - i - 2, cam.y, 2, cam.h);
+        c.fillRect(cam.x, cam.y + i, cam.w, 2);
+        c.fillRect(cam.x, cam.y + cam.h - i - 2, cam.w, 2);
+      }
+    }
+  }
+
+  /**
    * Where the wave comes from, told by the setting: at the edge of the view the Darkness
    * thickens and red eyes blink — denser the more creatures are on their way from that side.
    */
   private drawIncoming(c: Ctx, game: Game, time: number) {
     const s = game.state;
     const cam = this.camera;
-    const soon = (side: 'L' | 'R') => s.pending.filter((p) => p.side === side && p.at - s.phaseTime < 6).length;
+    // at night: who comes out in the next seconds; at the end of the day: the night's opening groups
+    const opening = s.phase === 'day' ? game.night(s.night).groups.filter((g) => g.at < 12) : [];
+    const soon = (side: 'L' | 'R') => s.phase === 'day'
+      ? opening.filter((g) => g.side === side || g.side === 'B').reduce((a, g) => a + g.count, 0)
+      : s.pending.filter((p) => p.side === side && p.at - s.phaseTime < 6).length;
     const offscreen = (dir: 1 | -1) => s.enemies.filter((e) => !e.dead && e.layer !== 'under' && (dir < 0 ? e.x < cam.x : e.x > cam.x + cam.w)).length;
     for (const [side, dir] of [['L', -1], ['R', 1]] as const) {
       const n = soon(side) + offscreen(dir);
@@ -518,28 +567,37 @@ export class Renderer {
   }
 
   /** The channelled Piercing Beam, attached to the keeper's staff. */
-  private drawChannel(c: Ctx, k: Keeper, time: number) {
-    const x0 = k.x + k.channelDir * 6, y = WORLD.groundY - 12;
-    const x1 = k.channelDir > 0 ? WORLD.width : 0;
+  private drawChannel(c: Ctx, game: Game, i: number, time: number) {
+    const k = game.state.keepers[i];
+    const y = WORLD.groundY - 12;
     const k01 = Math.min(1, k.channel / 0.25);
     const wob = Math.sin(time * 40) > 0 ? 1 : 0;
     const col = runeColor(k.runeRank.spear);
-    // the beam thins out with distance (its damage falls off too)
-    const len = Math.abs(x1 - x0);
-    for (let d = 0; d < len; d += 12) {
-      const f = beamFalloff(d);
-      const x = x0 + k.channelDir * d - (k.channelDir < 0 ? 12 : 0);
-      c.globalAlpha = 0.25 + 0.75 * f;
-      c.fillStyle = 'rgba(255,200,90,0.35)';
-      const h = Math.max(2, Math.round((6 + wob * 2) * f));
-      c.fillRect(x, y - h / 2, 12, h);
-      c.fillStyle = col;
-      c.fillRect(x, y - 1, 12, f > 0.5 ? 2 : 1);
-      if (f > 0.4) { c.fillStyle = PAL.white; c.fillRect(x, y, 12, 1); }
+    // «Обоюдное древко»: the beam shines backwards too (weaker)
+    const tw = game.asKeeper(i, () => game.facetLv('sp-twin'));
+    const twin = tw > 0 ? Math.min(1, 0.6 + 0.2 * (tw - 1)) : 0;
+    const dirs: Array<[1 | -1, number]> = [[k.channelDir, 1]];
+    if (twin > 0) dirs.push([(k.channelDir * -1) as 1 | -1, twin]);
+    for (const [dir, power] of dirs) {
+      const x0 = k.x + dir * 6;
+      const x1 = dir > 0 ? WORLD.width : 0;
+      // the beam thins out with distance (its damage falls off too)
+      const len = Math.abs(x1 - x0);
+      for (let d = 0; d < len; d += 12) {
+        const f = beamFalloff(d) * power;
+        const x = x0 + dir * d - (dir < 0 ? 12 : 0);
+        c.globalAlpha = 0.25 + 0.75 * f;
+        c.fillStyle = 'rgba(255,200,90,0.35)';
+        const h = Math.max(2, Math.round((6 + wob * 2) * f));
+        c.fillRect(x, y - h / 2, 12, h);
+        c.fillStyle = col;
+        c.fillRect(x, y - 1, 12, f > 0.5 ? 2 : 1);
+        if (f > 0.4) { c.fillStyle = PAL.white; c.fillRect(x, y, 12, 1); }
+      }
+      c.globalAlpha = 1;
+      disc(c, x0, y, (3 + wob * k01) * (dir === k.channelDir ? 1 : 0.7), PAL.white);
+      if (Math.random() < 0.6 * power) this.particles.emit(1, x0 + dir * Math.random() * 300, y, { speed: 20, max: 0.3, colors: [PAL.white, col], glow: true });
     }
-    c.globalAlpha = 1;
-    disc(c, x0, y, 3 + wob * k01, PAL.white);
-    if (Math.random() < 0.6) this.particles.emit(1, x0 + k.channelDir * Math.random() * 300, y, { speed: 20, max: 0.3, colors: [PAL.white, col], glow: true });
   }
 
   /** «Купол Сияния»: a shimmering dome. */

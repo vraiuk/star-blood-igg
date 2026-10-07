@@ -147,6 +147,25 @@ describe('co-op: several Ascended around one Tree', () => {
     expect(four).toBe(Math.round(solo * (1 + 3 * COOP.enemyHp)));
   });
 
+  it('a restored run keeps the acting Ascended one of the Circle and the boons shared', () => {
+    const a = run(2, 1, 60 * 30);
+    const b = new Game({ seed: 7, players: 2 });
+    b.setLocal(1);
+    expect(b.restore(a.snapshot())).toBe(true);
+    expect(b.state.keeper).toBe(b.state.keepers[1]);
+    expect(b.state.keepers[0].boons).toBe(b.state.keepers[1].boons);
+    expect(b.digest()).toBe(a.digest());
+  });
+
+  it('a tapped beam lets go of its own Ascended only', () => {
+    const g = new Game({ players: 2 });
+    const [a, b] = g.state.keepers;
+    a.channel = b.channel = 0.001;
+    g.asKeeper(1, () => g.releaseBeam());
+    expect(b.beamRelease).toBe(true);
+    expect(a.beamRelease).toBeFalsy();
+  });
+
   it('ignores commands that are not on the list', () => {
     const g = new Game({ players: 2 });
     const amber = g.state.amber;

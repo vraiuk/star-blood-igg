@@ -227,9 +227,13 @@ export function generateNight(n: number): NightDef {
   let budget = ENDLESS.budget(n) * theme.budget * (pos === 4 ? 1.3 : 1);
   if (bossNight) {
     const extra = Math.floor((n + 1) / 20);
-    // every 15th night the Shadow of the Devourer rises: «громаднейший из Червей»
-    const kinds: EnemyKind[] = (n + 1) % 15 === 0 ? ['devourer', 'mother'] : (n + 1) % 10 === 0 ? ['executioner', 'mother'] : ['mother'];
+    // the Shadow of the Devourer — «громаднейший из Червей»: one on night 15, three on 20,
+    // nine on 25 and on every tenth night after it (35, 45…)
+    const night = n + 1;
+    const devourers = night === 15 ? 1 : night === 20 ? 3 : night >= 25 && night % 10 === 5 ? 9 : 0;
+    const kinds: EnemyKind[] = devourers ? ['mother'] : night % 10 === 0 ? ['executioner', 'mother'] : ['mother'];
     for (const k of kinds) groups.push(g(8, k, r() > 0.5 ? 'L' : 'R', 1 + extra, 12));
+    if (devourers) groups.push(g(6, 'devourer', devourers > 1 ? 'B' : r() > 0.5 ? 'L' : 'R', devourers > 1 ? Math.ceil(devourers / 2) : 1, 9));
     budget *= 0.7;
   }
   const flank: Side = r() > 0.5 ? 'L' : 'R';
@@ -252,13 +256,14 @@ export function generateNight(n: number): NightDef {
     budget -= (THREAT[p.kind] ?? 2) * size * flanks;
     t += (themeId === 'calm' ? 4 : 2.5) + r() * 3;
   }
-  const bossName = (n + 1) % 15 === 0 ? 'Тень Пожирателя' : (n + 1) % 10 === 0 ? 'Палач и Матерь' : 'Охота Матерей';
+  const devNight = n + 1 === 15 || n + 1 === 20 || (n + 1 >= 25 && (n + 1) % 10 === 5);
+  const bossName = devNight ? 'Тень Пожирателя' : (n + 1) % 10 === 0 ? 'Палач и Матерь' : 'Охота Матерей';
   const label = bossNight ? bossName : theme.name;
   return {
     title: label ? `Ночь ${n + 1}: ${label}` : `Ночь ${n + 1}`,
     hpMul: ENDLESS.hp(n),
     hint: bossNight
-      ? ((n + 1) % 15 === 0 ? 'Идёт Тень Пожирателя — того, кто проглотил цитадель Наблюдателя. Сбей панцирь Молотом и Звездопадом, не давай ему жрать гнёзда.'
+      ? (devNight ? 'Идёт Тень Пожирателя — того, кто проглотил цитадель Наблюдателя. Сбей панцирь Молотом и Звездопадом, не давай ему жрать гнёзда.'
         : (n + 1) % 10 === 0 ? 'Имаго-Палач и Матерь идут вместе.' : 'Имаго-Матерь ведёт рой.')
       : theme.hint ? `${theme.hint}${oneSide ? (flank === 'L' ? ' (слева)' : ' (справа)') : ''}` : LORE_HINTS[n % LORE_HINTS.length],
     groups,

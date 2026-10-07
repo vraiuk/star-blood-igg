@@ -517,3 +517,65 @@ body { display: grid; place-items: center; }
 .slot .up { margin-left: calc(4 * var(--u)); font-size: calc(9 * var(--u) / 2); background: #2a3a14; color: #d8ffb0; border: 1px solid #8fd06a88; border-radius: 3px; cursor: pointer; padding: 0 calc(3 * var(--u)); }
 .slot .up.no { opacity: .4; cursor: default; }
 .slot .up .icon { width: calc(5 * var(--u)); height: calc(5 * var(--u)); vertical-align: middle; }
+/* stronger cards for stronger runes */
+.rcard.rk1 { box-shadow: 0 0 calc(5 * var(--u)) color-mix(in srgb, var(--c) 35%, transparent); }
+.rcard.rk2 { box-shadow: 0 0 calc(8 * var(--u)) color-mix(in srgb, var(--c) 50%, transparent); background: linear-gradient(180deg, color-mix(in srgb, var(--c) 14%, #0c0a1a), #0c0a1a); }
+.rcard.rk3 { box-shadow: 0 0 calc(11 * var(--u)) color-mix(in srgb, var(--c) 65%, transparent); background: linear-gradient(180deg, color-mix(in srgb, var(--c) 22%, #0c0a1a), #0c0a1a); }
+.rcard.rk4 { box-shadow: 0 0 calc(14 * var(--u)) color-mix(in srgb, var(--c) 80%, transparent); background: linear-gradient(180deg, color-mix(in srgb, var(--c) 30%, #0c0a1a), #0c0a1a); animation: rkglow 2s ease-in-out infinite; }
+@keyframes rkglow { 50% { box-shadow: 0 0 calc(20 * var(--u)) var(--c); } }
+.rcard .rank { font-size: 1.15em; }
+.rblock.flashrune { animation: flashrune 1.4s ease-out; }
+@keyframes flashrune { 0% { box-shadow: 0 0 0 calc(2 * var(--u)) #ffe58a; } 100% { box-shadow: 0 0 0 0 transparent; } }
+.ab .lock .lk .icon { width: 1em; height: 1em; vertical-align: middle; }
+/* the Tablet button calls for attention when something can be bought */
+#controls .btn.keeper { position: relative; }
+#controls .btn.keeper.hot { animation: hotPulse 1.2s ease-in-out infinite; border-color: #ffd24a; }
+@keyframes hotPulse { 50% { box-shadow: 0 0 calc(10 * var(--u)) rgba(255, 210, 74, 0.85); } }
+#controls .btn.keeper[data-badge]:not([data-badge=""])::after { content: attr(data-badge); position: absolute; top: calc(-5 * var(--u)); right: calc(-5 * var(--u));
+  min-width: calc(9 * var(--u)); height: calc(9 * var(--u)); border-radius: 50%; background: #ff4a5a; color: #fff; font-size: calc(6 * var(--u)); display: grid; place-items: center; box-shadow: 0 0 calc(4 * var(--u)) #ff4a5a; }
+#controls .btn.spd { padding: 0 calc(4 * var(--u)); }
+#pause .giveup { opacity: 0.85 !important; }
+.btn.slotbtn { margin-left: calc(2 * var(--u)); }
+/* unspent Amber right before the night */
+#res .item.spendme { animation: spendme 0.9s ease-in-out infinite; border-radius: calc(2 * var(--u)); }
+@keyframes spendme { 50% { background: rgba(255, 180, 60, 0.35); box-shadow: 0 0 calc(8 * var(--u)) rgba(255, 180, 60, 0.8); } }
+
+/* v0.5.x readability pass (playtest: «сложно читается»): bigger, brighter body text */
+:root { --ink-dim: #b9b2c8; }
+#card .sub, .rcard .ds { font-size: calc(7 * var(--u)) !important; line-height: 1.35; }
+#card .stats { font-size: calc(6.2 * var(--u)); }
+#sidepanel .sub, .tablet.big .sub, .branch-box .sub { font-size: calc(6.8 * var(--u)) !important; }
+.shop .item .ds, .rune small, .ladder .un, .ladder .br { font-size: calc(6.3 * var(--u)); }
+.slot { font-size: calc(6 * var(--u)); color: #8a84a0; }
+.rcard .cat { font-size: calc(5.8 * var(--u)); }
+.pathc .pb, .pathc .pc { font-size: calc(6.2 * var(--u)); }
+.gloss-tip { font-size: calc(6.6 * var(--u)) !important; }
+/* point upgrades row under a nest's ring */
+.aspects { position: absolute; left: 0; transform: translateX(-50%); display: flex; gap: calc(3 * var(--u)); pointer-events: auto; }
+.aspect { position: relative; display: flex; flex-direction: column; align-items: center; min-width: calc(20 * var(--u)); padding: calc(1.5 * var(--u)) calc(2 * var(--u));
+  background: linear-gradient(180deg, #2a2440, #141024); border: var(--u) solid #8a7ac0; border-radius: calc(2 * var(--u)); color: #fff; font-size: calc(8 * var(--u)); cursor: pointer; line-height: 1; }
+.aspect:hover { border-color: #ffd24a; box-shadow: 0 0 calc(4 * var(--u)) rgba(255, 210, 74, 0.6); }
+.aspect.no { opacity: 0.5; }
+.aspect i { position: absolute; top: calc(-3 * var(--u)); right: calc(-3 * var(--u)); font-style: normal; font-size: calc(5 * var(--u)); background: #ffd24a; color: #1a1008; border-radius: calc(2 * var(--u)); padding: 0 calc(1.5 * var(--u)); }
+.aspect span { font-family: var(--pix); font-size: calc(5 * var(--u)); color: #ffe58a; margin-top: calc(1 * var(--u)); }
+.aspect span .icon { width: calc(5 * var(--u)); height: calc(5 * var(--u)); vertical-align: middle; }
+#card .stats .down { color: #ff9a8a; }
+/* lighter choice window (playtest: «модалка угнетает») */
+.screen.modal { background: radial-gradient(ellipse at 50% 55%, rgba(20, 16, 40, 0.35), rgba(3, 4, 12, 0.6)) !important; backdrop-filter: blur(1.5px); }
+.screen.modal .tablet.big { box-shadow: 0 0 calc(30 * var(--u)) rgba(120, 160, 255, 0.25), 0 calc(6 * var(--u)) calc(24 * var(--u)) #000a; }
+.screen.modal .rcard { border-radius: calc(3 * var(--u)); transition: transform 0.12s, box-shadow 0.12s; }
+.screen.modal .rcard:hover { box-shadow: 0 0 calc(12 * var(--u)) var(--c); }
+.exch .btn.tiny { margin-left: 0; }
+/* the Observer points at a part of the interface: it blinks with a golden ring */
+.callout, .hl { position: relative; animation: callout 0.75s ease-in-out infinite !important; z-index: 6; }
+@keyframes callout {
+  0%, 100% { box-shadow: 0 0 0 calc(1 * var(--u)) rgba(255, 210, 74, 0.9), 0 0 calc(6 * var(--u)) rgba(255, 210, 74, 0.5); }
+  50% { box-shadow: 0 0 0 calc(2.5 * var(--u)) rgba(255, 240, 160, 1), 0 0 calc(16 * var(--u)) rgba(255, 210, 74, 0.9); }
+}
+/* learning a rune: a clear golden button on a normal-brightness block */
+.rblock.learn { border-color: #c9a24a; box-shadow: inset 0 0 calc(6 * var(--u)) rgba(255, 210, 74, 0.12); }
+.learnrow { display: flex; align-items: center; gap: calc(4 * var(--u)); margin: calc(2 * var(--u)) 0; }
+.btn.learnbtn { white-space: nowrap; flex: 0 0 auto; font-size: calc(7 * var(--u)) !important; padding: calc(2 * var(--u)) calc(5 * var(--u)); }
+.btn.learnbtn .icon { vertical-align: middle; }
+.learnrow .hint { font-size: calc(6.3 * var(--u)); color: var(--ink-dim); line-height: 1.3; }
+.rblock .btn.tiny { white-space: nowrap; }

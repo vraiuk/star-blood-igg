@@ -83,7 +83,7 @@ export const PROPERTIES: PropertyDef[] = [
   // ── Остановка Времени
   P({ id: 'ts-long', rune: 'timestop', type: 'Усиление', name: 'Долгий миг', desc: 'Время стоит на 25% дольше', rank: 1, price: 9, stack: 4, mods: {} }),
   P({ id: 'ts-cheap', rune: 'timestop', type: 'Уменьшение', name: 'Уменьшение: Миг', desc: 'Остановка на 35% дешевле по Свету', rank: 1, price: 7, stack: 2, mods: {} }),
-  P({ id: 'ts-quick', rune: 'timestop', type: 'Изменение', name: 'Короткая ночь', desc: 'Руна восстанавливается на 1 ночь быстрее', rank: 3, price: 18, stack: 1, mods: {} }),
+  P({ id: 'ts-quick', rune: 'timestop', type: 'Изменение', name: 'Растянутый миг', desc: 'Время стоит на 2 с дольше, Остановка на 25% дешевле', rank: 3, price: 18, stack: 1, mods: {} }),
   P({ id: 'ts-shatter', rune: 'timestop', type: 'Изменение', name: 'Хрупкий лёд', desc: 'Замершие твари получают +35% урона', rank: 2, price: 12, stack: 1, mods: {} }),
   // ── Руна Света
   P({ id: 'lt-spring', rune: 'light', type: 'Усиление', name: 'Родник Света', desc: '+30% регенерации Света', rank: 1, price: 6, stack: 4, mods: { lightRegen: 0.3 } }),
@@ -120,11 +120,11 @@ export const BOONS: BoonDef[] = [
   { id: 'g-amber', kind: 'gift', category: 'Дар Наблюдателя', name: 'Сто Монет', icon: 'amber', rank: 0, desc: 'Наблюдатель меняет Монеты на 90 Янтаря', mods: {}, amber: 90 },
   { id: 'g-star', kind: 'gift', category: 'Дар Наблюдателя', name: 'Капли Звёздной Крови', icon: 'star', rank: 1, desc: '+10 Звёздной Крови', mods: {}, star: 10 },
   { id: 'g-dev', kind: 'gift', category: 'Руна (серебро)', name: 'Малая Руна Развития', icon: 'rune', rank: 2, desc: 'Открывает 4-й слот у любой руны Хранителя', mods: {}, devRune: 1 },
-  { id: 'l-hammer', kind: 'gift', category: 'Руна-Предмет в дар', name: 'Игг-Молот', icon: 'hammer', rank: 0, desc: 'Наблюдатель дарит руну: удар вокруг Хранителя, рушит Лазы', mods: {}, learn: 'hammer' },
-  { id: 'l-swarm', kind: 'gift', category: 'Руна-Умение в дар', name: 'Зов Роя', icon: 'swarm', rank: 0, desc: 'Наблюдатель дарит руну: гнёзда рядом бьют быстрее и чинятся', mods: {}, learn: 'swarm' },
-  { id: 'l-radiance', kind: 'gift', category: 'Руна-Умение в дар', name: 'Сияние Игг', icon: 'radiance', rank: 1, desc: 'Наблюдатель дарит руну: Древо вспыхивает, Круг шире', mods: {}, learn: 'radiance' },
-  { id: 'l-starfall', kind: 'gift', category: 'Руна-Заклинание в дар', name: 'Звездопад', icon: 'starfall', rank: 1, desc: 'Наблюдатель дарит руну: звёзды падают у курсора', mods: {}, learn: 'starfall' },
-  { id: 'l-timestop', kind: 'gift', category: 'Руна-Заклинание в дар', name: 'Остановка Времени', icon: 'timestop', rank: 2, desc: 'Наблюдатель дарит руну: время в Круге застывает', mods: {}, learn: 'timestop' },
+  { id: 'l-hammer', kind: 'gift', category: 'Новая способность [2]', name: 'Игг-Молот', icon: 'hammer', rank: 0, desc: 'Прыжок к курсору и удар: оглушает, ломает броню, рушит Лазы', mods: {}, learn: 'hammer' },
+  { id: 'l-swarm', kind: 'gift', category: 'Новая способность [5]', name: 'Зов Роя', icon: 'swarm', rank: 0, desc: 'Гнёзда рядом с Хранителем бьют быстрее и сразу чинятся', mods: {}, learn: 'swarm' },
+  { id: 'l-radiance', kind: 'gift', category: 'Новая способность [4]', name: 'Сияние Игг', icon: 'radiance', rank: 1, desc: 'Древо вспыхивает: Круг шире, Червей жжёт втрое, твари уязвимее', mods: {}, learn: 'radiance' },
+  { id: 'l-starfall', kind: 'gift', category: 'Новая способность [3]', name: 'Звездопад', icon: 'starfall', rank: 1, desc: 'Звёзды падают у курсора: огромный урон, оглушение, огонь', mods: {}, learn: 'starfall' },
+  { id: 'l-timestop', kind: 'gift', category: 'Новая способность [6]', name: 'Остановка Времени', icon: 'timestop', rank: 2, desc: 'Время в Круге застывает: твари и новые волны замирают', mods: {}, learn: 'timestop' },
   { id: 'g-resin', kind: 'gift', category: 'Руна-Свойство', name: 'Янтарная жила', icon: 'amber', rank: 1, desc: '+20% Янтаря с тварей до конца ночей', mods: { amberGain: 0.2 } },
 ];
 
@@ -186,7 +186,7 @@ export interface FormDef { name: string; desc: string; apo: string; }
 export const RUNE_FORMS: Record<'spear' | 'hammer' | 'starfall', Record<FormId, FormDef>> = {
   spear: {
     A: { name: 'Веер Игг', desc: 'Пять коротких копий веером: разрывает толпу у ног Восходящего', apo: 'Апофеоз: семь копий, каждое отбрасывает' },
-    B: { name: 'Пронзающий луч', desc: 'Восходящий замирает и держит луч до края мира, пока хватает Света (нажми ещё раз — отпустить): урон всем на линии, вблизи сильнее — вдали луч рассеивается', apo: 'Апофеоз: луч прожигает сильнее и метит тварей для гнёзд' },
+    B: { name: 'Пронзающий луч', desc: 'УДЕРЖИВАЙ клавишу Копья: Восходящий замирает и держит луч, пока хватает Света (короткое нажатие — 2.5 с). Урон всем на линии, вблизи сильнее — вдали рассеивается', apo: 'Апофеоз: луч прожигает сильнее и метит тварей для гнёзд' },
   },
   hammer: {
     A: { name: 'Сотрясение Тверди', desc: 'Волна бежит по земле в обе стороны, бьёт и Червей под землёй', apo: 'Апофеоз: волна вдвое дальше и оглушает' },
@@ -230,7 +230,7 @@ export const FACETS: FacetDef[] = [
   F({ id: 'sp-crescendo', rune: 'spear', rank: 3, name: 'Крещендо', desc: 'Каждое 3-е попадание подряд — ×3 урона', requires: 'sp-rhythm' }),
   // Молот
   F({ id: 'hm-after', rune: 'hammer', rank: 1, name: 'Отголосок', desc: 'Через 0.8 с руна бьёт ещё раз с силой 50%' }),
-  F({ id: 'hm-pull', rune: 'hammer', rank: 1, name: 'Притяжение', desc: 'Молот не отбрасывает, а стягивает тварей к Хранителю' }),
+  F({ id: 'hm-pull', rune: 'hammer', rank: 1, name: 'Притяжение', desc: 'Молот стягивает тварей к Хранителю — и через миг в стяжку падает звезда' }),
   F({ id: 'hm-deep', rune: 'hammer', rank: 1, name: 'Глубинный удар', desc: 'По подземным ×2, Лазы рушатся в двойном радиусе', requires: 'hm-quake' }),
   F({ id: 'hm-sun', rune: 'hammer', rank: 1, name: 'Солнечное сердце', desc: '+10 Света и +4 HP Хранителю за каждую задетую тварь', requires: 'hm-refund' }),
   F({ id: 'hm-tremor', rune: 'hammer', rank: 3, name: 'Тектоника', desc: 'Оглушение Молота на 60% дольше' }),

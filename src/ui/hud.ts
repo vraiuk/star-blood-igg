@@ -1,5 +1,5 @@
-import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
-import { NEST_ROLE, MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
+import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, EXCHANGE, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
+import { ASPECT, type Aspect, NEST_ROLE, MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   APOTHEOSIS_RANK, DEV_SLOTS, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
   runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, PROP_MAX_LV, propLvFactor, propUpgradable, propUpgradeCost, FACETS, FACET_MAX, FACET_RANKS, type FormId, type KeeperRuneId,
@@ -30,10 +30,14 @@ export interface HudCallbacks {
   onRestart(): void;
   onOpenMeta(): void;
   onOpenStats(): void;
+  onContinue(): void;
+  onFeedback(): void;
   onGiveUp(): void;
   onCast(id: AbilityId): void;
   onCallNight(): void;
   onToggleSpeed(): void;
+  onSpeed(step: 1 | -1): void;
+  onQuitToMenu(): void;
   onToggleSound(): void;
   onResume(): void;
   onMenuClosed(): void;
@@ -144,10 +148,10 @@ export class Hud {
     const res = el('div', 'panel');
     res.id = 'res';
     res.innerHTML = `
-      <div class="item" title="Янтарь — смола Игг. Гнёзда, уровни 1–3, рост Древа"><img class="icon" src="${icon('amber')}"><span class="num" id="amber">0</span></div>
-      <div class="item" title="Звёздная Кровь — с Червей. Специализации, Свойства рун у Наблюдателя, ранги"><img class="icon" src="${icon('star')}"><span class="num star" id="star">0</span></div>
-      <div class="item dev" title="Малые Руны Развития: открывают 4-й слот руны"><img class="icon" src="${icon('rune')}"><span class="num" id="dev">0</span></div>
-      <div class="item bars" title="HP и Свет Восходящего. Свет у ствола Древа течёт быстрее, у края Круга — медленно">
+      <div class="item" data-tip-title="Янтарь" data-tip="Смола Игг: падает с тварей, гусеницы и соты приносят её сами.<br><b>Тратится на:</b> новые гнёзда и их уровни, рост Древа (клик по Древу), годичные кольца, Возвышение гнёзд, воскрешение Хранителя."><img class="icon" src="${icon('amber')}"><span class="num" id="amber">0</span></div>
+      <div class="item" data-tip-title="Звёздная Кровь" data-tip="Роняют Черви (крупные — больше).<br><b>Тратится на:</b> изучение и Повышение рун, Свойства у Наблюдателя (Скрижаль, R), специализации гнёзд, ранги и атрибуты Хранителя."><img class="icon" src="${icon('star')}"><span class="num star" id="star">0</span></div>
+      <div class="item dev" data-tip-title="Малая Руна Развития" data-tip="Редкий дар с Червей. Открывает 4-й слот Свойства у любой руны или поднимает атрибут Хранителя (Скрижаль, R)."><img class="icon" src="${icon('rune')}"><span class="num" id="dev">0</span></div>
+      <div class="item bars" data-tip-title="Здоровье и Свет" data-tip="Верхняя полоса — здоровье Хранителя, нижняя — <b>Свет</b>: его тратят руны. Свет восполняется сам и <b>быстрее всего у ствола Древа</b> — вернись к Древу, если Света мало.">
         <div class="kbar hp"><i></i><span></span></div>
         <div class="lightbar"><i></i></div></div>`;
     r.appendChild(res);
@@ -195,7 +199,12 @@ export class Hud {
       box.innerHTML = `<img src="${icon(id)}"><div class="charge"></div><div class="cd"></div><span class="cdt"></span>
         <div class="lock"><img src="${icon('lock')}"><span class="lk">ст. ${def.unlockStage}</span></div>
         ${def.cost ? `<span class="cost">${def.cost}</span>` : ''}<span class="key">${def.key}</span>`;
-      box.addEventListener('mousedown', (ev) => { ev.stopPropagation(); this.cb.onCast(id); });
+      box.addEventListener('mousedown', (ev) => {
+        ev.stopPropagation();
+        // a rune not learned yet: open the Tablet right on it (that's where it's learned)
+        if (!this.game().abilityUnlocked(id)) { this.openTabletAt(id); return; }
+        this.cb.onCast(id);
+      });
       abs.appendChild(box);
       this.abEls[id] = { box, cd: box.querySelector('.cd')!, lock: box.querySelector('.lock')!, charge: box.querySelector('.charge')!, cdt: box.querySelector('.cdt')!, wasReady: false };
     });
@@ -209,13 +218,20 @@ export class Hud {
     ctr.id = 'controls';
     this.keeperBtn = el('button', 'btn keeper', `<img src="${icon('rune')}"> Восходящий <span class="k">[R]</span>`);
     this.keeperBtn.addEventListener('mousedown', (e) => { e.stopPropagation(); this.togglePanel('keeper'); });
-    this.speedBtn = el('button', 'btn', '×1') as HTMLButtonElement;
-    this.speedBtn.title = 'Скорость [F]';
-    this.speedBtn.onclick = () => this.cb.onToggleSpeed();
+    // speed: − ×N + (no wrap-around from ×2 to ×5 by accident)
+    const slower = el('button', 'btn spd', '−') as HTMLButtonElement;
+    slower.dataset.tip = 'Медленнее [−]';
+    slower.onclick = () => this.cb.onSpeed(-1);
+    this.speedBtn = el('button', 'btn spdval', '×1') as HTMLButtonElement;
+    this.speedBtn.dataset.tipTitle = 'Скорость игры';
+    this.speedBtn.dataset.tip = 'Кнопки − и + (или клавиши − и +) меняют скорость: 1 · 1.25 · 1.5 · 2 · 5.';
+    const faster = el('button', 'btn spd', '+') as HTMLButtonElement;
+    faster.dataset.tip = 'Быстрее [+]';
+    faster.onclick = () => this.cb.onSpeed(1);
     this.soundBtn = el('button', 'btn', '♪') as HTMLButtonElement;
     this.soundBtn.title = 'Звук [M]';
     this.soundBtn.onclick = () => this.cb.onToggleSound();
-    ctr.append(this.keeperBtn, this.speedBtn, this.soundBtn);
+    ctr.append(this.keeperBtn, slower, this.speedBtn, faster, this.soundBtn);
     r.appendChild(ctr);
 
     this.callBtn = el('button', 'btn gold', '') as HTMLButtonElement;
@@ -267,9 +283,11 @@ export class Hud {
 
     this.pause = el('div', 'screen hidden');
     this.pause.id = 'pause';
-    this.pause.innerHTML = `<div class="box"><h1>Пауза</h1><p>Тьма ждёт.</p><button class="btn gold" data-a="resume">Продолжить</button></div>
+    this.pause.innerHTML = `<div class="box"><h1>Пауза</h1><p>Тьма ждёт.</p><button class="btn gold" data-a="resume">Продолжить</button>
+      <div class="row"><button class="btn" data-a="menu">Выйти в меню</button></div></div>
       <button class="btn giveup" data-a="giveup" title="Завершить забег: Древо падёт, Монеты Наблюдателя начислятся как обычно">Уйти в Вечность</button>`;
     this.pause.querySelector('[data-a=resume]')!.addEventListener('click', () => this.cb.onResume());
+    this.pause.querySelector('[data-a=menu]')!.addEventListener('click', () => this.cb.onQuitToMenu());
     // tucked into a corner and needs a second click — never pressed by accident
     const give = this.pause.querySelector<HTMLButtonElement>('[data-a=giveup]')!;
     let armed = 0;
@@ -290,7 +308,7 @@ export class Hud {
 
   // ───────────────────────────── screens ─────────────────────────────
 
-  renderTitle(pathName = 'Тропа Ростка', coins = 0) {
+  renderTitle(pathName = 'Тропа Ростка', coins = 0, cont = '') {
     this.title.innerHTML = `
       <div class="box">
         <div class="kicker">Земли Теней</div>
@@ -301,17 +319,22 @@ export class Hud {
           <span><b>A / D</b> — ходить, собирать Янтарь и Кровь</span><span><b>Клик</b> по руне у земли — призвать гнездо</span>
           <span><b>1–6</b> — руны Хранителя</span><span><b>Клик</b> по Древу — стадии и рост</span>
           <span><b>Q / E</b> — переключать гнёзда и руны призыва · <b>1–4</b> — действие в меню</span>
+          <span><b>X ×2</b> — Жертва Света: последний шанс спасти Древо</span>
           <span><b>R</b> — Скрижаль: руны и лавка Наблюдателя</span><span><b>Пробел</b> — призвать ночь · <b>F</b> ×2 · <b>Esc</b></span>
         </div>
         <div class="row">
-          <button class="btn gold" data-a="start">Хранить Древо</button>
+          ${cont ? `<button class="btn gold" data-a="continue">Продолжить · ${cont}</button>` : ''}
+          <button class="btn ${cont ? '' : 'gold'}" data-a="start">${cont ? 'Новый забег' : 'Хранить Древо'}</button>
           <button class="btn" data-a="meta"><img class="icon" src="${icon('tree')}"> Древо Игг · ${coins} Монет</button>
           <button class="btn" data-a="stats">Статистика</button>
+          <button class="btn" data-a="feedback" data-tip="Написать автору: что понравилось, что сломано, чего хочется дальше">Отзыв · что дальше?</button>
         </div>
         <div class="stat">${pathName}</div>
         <div class="ver">${VERSION_LABEL}</div>
       </div>`;
     this.title.querySelector('[data-a=start]')!.addEventListener('click', () => this.cb.onStart());
+    this.title.querySelector('[data-a=continue]')?.addEventListener('click', () => this.cb.onContinue());
+    this.title.querySelector('[data-a=feedback]')?.addEventListener('click', () => this.cb.onFeedback());
     this.title.querySelector('[data-a=meta]')!.addEventListener('click', () => this.cb.onOpenMeta());
     this.title.querySelector('[data-a=stats]')!.addEventListener('click', () => this.cb.onOpenStats());
   }
@@ -341,11 +364,13 @@ export class Hud {
         ${won ? `<div class="stars">${st}</div><p class="stat">Звёзды за 10-ю ночь (Тот-Кто-Посадил-новое-Древо)</p>` : '<p>Тьма сомкнулась над Кругом до 10-й ночи.</p>'}
         <div class="tablet inline">Восходящий! Тот-Кто-Наблюдает награждает тебя: <b>+${coins} Монет</b>.</div>
         <div class="stat">Древо: <b>${TREE_STAGES[s.tree.stage].name}</b> · Тварей: <b>${s.stats.kills}</b> · Янтарь: <b>${s.stats.amberCollected}</b> · Звёздная Кровь: <b>${s.stats.starCollected}</b></div>
-        <p class="stat">★ дожить до 10-й ночи · ★★ с Малым Игг-Древом · ★★★ с Великим Игг-Древом и здоровьем > 50%. Дальше — бесконечная ночь за рекордом.</p>
-        <div class="row"><button class="btn gold" data-a="again">Ещё раз</button><button class="btn" data-a="meta"><img class="icon" src="${icon('tree')}"> Древо Игг</button></div>
+        <p class="stat">★ дожить до 10-й ночи · ★★ с Игг-Древом · ★★★ с Великим Игг-Древом и здоровьем > 50%. Дальше — бесконечная ночь за рекордом.</p>
+        <div class="row"><button class="btn gold" data-a="again">Ещё раз</button><button class="btn" data-a="meta"><img class="icon" src="${icon('tree')}"> Древо Игг</button>
+          <button class="btn" data-a="feedback" data-tip="Отзыв автору с данными этого забега: что было интересно, где застрял, чего не хватило">Оставить отзыв</button></div>
       </div>`;
     this.end.querySelector('[data-a=again]')!.addEventListener('click', () => this.cb.onRestart());
     this.end.querySelector('[data-a=meta]')!.addEventListener('click', () => this.cb.onOpenMeta());
+    this.end.querySelector('[data-a=feedback]')!.addEventListener('click', () => this.cb.onFeedback());
     this.end.classList.remove('hidden');
   }
 
@@ -417,6 +442,12 @@ export class Hud {
         case 'tunnelOpen':
           if (!this.once('tunnel', 'Червь прорыл Лаз! Твари ныряют в него и выходят за строем. Встань Хранителем на выход (красная метка) — он засыплет Лаз; Игг-Молот обрушит его сразу.')) this.say('Червь прорыл Лаз за строем!', true);
           break;
+        case 'treeDanger':
+          this.showBanner('Древо в опасности!', 'Хранитель, защити Древо любой ценой. Крайняя мера — Жертва Света [X ×2]: взрыв света отбросит тварей.', true, 3.5);
+          break;
+        case 'sacrifice':
+          this.say('Жертва Света! Хранитель пал, отбросив тьму. Воскрешение этой ночью втрое дороже.', true);
+          break;
         case 'plateBreak':
           if (!this.once('plates', 'Панцирь Тирана сбит! Тварь обнажена: броня пропала, урон по ней +25%.')) this.say('Панцирь Тирана сбит!');
           break;
@@ -441,7 +472,44 @@ export class Hud {
     this.notice.className = `tablet show ${warn ? 'warn' : ''}`;
     this.notice.innerHTML = warn ? text : `<span class="who">Тот-Кто-Наблюдает:</span> ${text}`;
     this.noticeTimer = warn ? 1.6 : 4;
+    this.callout(text);
   }
+
+  /**
+   * When the Observer talks about a part of the interface, that part blinks for a few
+   * seconds, so the player sees where to click (the Tablet, the Tree, a rune, Light…).
+   */
+  private callout(text: string) {
+    const plain = text.replace(/<[^>]+>/g, ' ');
+    const rules: Array<[RegExp, string]> = [
+      [/Скрижал|\[R\]|Повышени|Восхождени|Свойств|Грань|Грани|Огранк|изучи|Изучи/, '.btn.keeper'],
+      [/Древ[оа] (?:раст|выр)|Вырасти Древо|вложи Янтарь|рост Древа|кольц|Уклон|ветв|Обмен/, '#treebar'],
+      [/[Пп]ризов[иу] ночь|[Пп]ризвать ночь|Натиск|Пробел/, '#callnight'],
+      [/Копь/, '#abilities .ab:nth-child(1)'],
+      [/Молот/, '#abilities .ab:nth-child(2)'],
+      [/Звездопад|Сверхзвезд/, '#abilities .ab:nth-child(3)'],
+      [/Сияни/, '#abilities .ab:nth-child(4)'],
+      [/Зов Роя/, '#abilities .ab:nth-child(5)'],
+      [/Остановк/, '#abilities .ab:nth-child(6)'],
+      [/Янтар/, '#res .item:nth-child(1)'],
+      [/Звёздн(?:ая|ой|ую) Кров/, '#res .item:nth-child(2)'],
+      [/Руна Развития|Руны Развития|Руной Развития/, '#res .item.dev'],
+      [/Свет[ау]?(?![а-яё])|здоровь/, '#res .item.bars'],
+      [/[Сс]корост/, '#controls .spdval'],
+    ];
+    for (const [re, sel] of rules) {
+      if (!re.test(plain)) continue;
+      const el = document.querySelector(sel) as HTMLElement | null;
+      if (!el) continue;
+      el.classList.remove('callout');
+      void el.offsetWidth;
+      el.classList.add('callout');
+      const prev = this.calloutTimers.get(el);
+      if (prev) clearTimeout(prev);
+      this.calloutTimers.set(el, setTimeout(() => el.classList.remove('callout'), 4500));
+    }
+  }
+  private calloutTimers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
 
   /** Rich hover card of an ability: what it does now, with live numbers. */
   private showAbTip(id: AbilityId, box: HTMLElement) {
@@ -455,7 +523,7 @@ export class Hud {
     const rows: Array<[string, string]> = [];
     const n0 = (v: number) => String(Math.round(v));
     if (id === 'spear') {
-      if (form === 'B') rows.push(['Урон луча', `${n0((ABILITIES.spear.damage * 2.2 * mult) / 1.6)} в секунду`], ['Тянет Света', `${n0(g.abilityCost('spear') * 1.6)} в секунду`]);
+      if (form === 'B') rows.push(['Управление', `<b style="color:#ffe58a">удерживай ${ABILITIES.spear.key}</b>`], ['Урон луча', `${n0((ABILITIES.spear.damage * 2.2 * mult) / 1.6)} в секунду`], ['Тянет Света', `${n0(g.abilityCost('spear') * 1.6)} в секунду`]);
       else if (form === 'A') rows.push(['Урон', `${n0(ABILITIES.spear.damage * 0.8 * mult)} × 5 копий`]);
       else rows.push(['Урон', n0(ABILITIES.spear.damage * mult)], ['Пробивает', `${ABILITIES.spear.pierce + g.mods.spearPierce + (rr >= 1 ? 1 : 0) + (rr >= 3 ? 1 : 0)} тварей`]);
     } else if (id === 'hammer') {
@@ -488,6 +556,21 @@ export class Hud {
     this.abTip.style.bottom = `${pr.bottom - r.top + 10}px`;
   }
 
+  /** Open the Keeper's Tablet scrolled to one rune's block (learn / promote it there). */
+  openTabletAt(rid: KeeperRuneId) {
+    this.togglePanel('keeper', true);
+    requestAnimationFrame(() => {
+      const el = this.panel.querySelector(`[data-rune="${rid}"]`) as HTMLElement | null;
+      if (!el) return;
+      el.scrollIntoView({ block: 'center' });
+      el.classList.add('flashrune');
+      setTimeout(() => el.classList.remove('flashrune'), 1400);
+    });
+  }
+
+  /** A one-off Observer line from outside (e.g. key confirmations). */
+  observerSay(text: string) { this.say(text, true); }
+
   /** Show a tip only the first time; returns whether it was shown. */
   private once(key: string, text: string): boolean {
     if (this.seen.has(key)) return false;
@@ -507,6 +590,8 @@ export class Hud {
 
   /** The Keeper's Tablet freezes time so runes can be bought calmly in a crowded night. */
   get tabletOpen() { return this.panelKind === 'keeper'; }
+  /** Any side panel (Tablet or the Tree) stops time so it can be read calmly. */
+  get panelOpen() { return this.panelKind !== null; }
   /** A nest's / slot's ring menu is open: time stands while you decide on an upgrade. */
   get ringOpen() { return this.menuTarget !== null && this.menuTarget.kind !== 'tree'; }
   get target() { return this.menuTarget; }
@@ -536,6 +621,7 @@ export class Hud {
 
   /** Keyboard shortcut for the ring: key matches an option's hotkey. */
   private sellArmed = -1e9;
+  private dawnSeenAt = -1;
   /** the node the ring last opened on (its pop-in animation plays once per node) */
   private ringAnimKey = '';
   /** merge stars a new nest of each family is built with (the − ★N + steppers) */
@@ -636,7 +722,7 @@ export class Hud {
     const rng = (n: NestStats) => (st.family === 'dragonfly' ? n.light! : n.range);
     if (st.tier < 1 || st.tier === 2) {
       const price = g.upgradePrice(st)!;
-      const next = g.nestStats({ family: st.family, tier: st.tier + 1, spec: st.spec, merge: st.merge, ascend: st.ascend });
+      const next = g.nestStats({ family: st.family, tier: st.tier + 1, spec: st.spec, merge: st.merge, ascend: st.ascend, asp: st.asp });
       opts.push({
         icon: icon('upgrade'), title: st.tier === 2 ? `Мастерство: ${def.specs[st.spec!].name}` : `Уровень ${st.tier + 2}`,
         sub: st.tier === 2 ? 'Высшая форма специализации' : 'Сильнее и крепче', key: '1',
@@ -650,7 +736,7 @@ export class Hud {
       (['A', 'B'] as SpecId[]).forEach((sp) => {
         const spec = def.specs[sp];
         const price = g.specPrice(st, sp);
-        const next = g.nestStats({ family: st.family, tier: 2, spec: sp, merge: st.merge, ascend: st.ascend });
+        const next = g.nestStats({ family: st.family, tier: 2, spec: sp, merge: st.merge, ascend: st.ascend, asp: st.asp });
         opts.push({
           icon: icon(st.family), title: spec.name, sub: `${spec.desc} · <i>${spec.perk}</i>`, key: sp === 'A' ? '1' : '2',
           body: this.statsBlock(st.family, cur, next), price, ok: g.canPay(price),
@@ -667,9 +753,15 @@ export class Hud {
         body: (() => {
           const res = g.mergeResult(st, partners);
           const nm = (x: { tier: number; spec: SpecId | null; ascend: number }) => `ур.${x.tier + 1}${x.spec ? ` ${def.specs[x.spec].name}` : ''}${x.ascend ? ` +${x.ascend}` : ''}`;
-          const next = g.nestStats({ family: st.family, tier: res.tier, spec: res.spec, merge: res.merge, ascend: res.ascend });
+          const next = g.nestStats({ family: st.family, tier: res.tier, spec: res.spec, merge: res.merge, ascend: res.ascend, asp: st.asp });
+          // honest comparison: three nests together vs the one that remains
+          const dps = (n: NestStats) => (n.damage * (n.volley ?? 1)) / Math.max(0.1, n.rate || 1) + (n.burn ?? 0);
+          const now3 = [st, ...partners].reduce((acc, x) => acc + dps(g.nestStats(x)), 0);
+          const after = dps(next);
+          const cmp = now3 > 0 ? `<div>Урон в секунду: сейчас 3 гнезда <b>${Math.round(now3)}</b> → после <b class="${after >= now3 ? 'up' : 'down'}">${Math.round(after)}</b></div>
+            <div style="opacity:.8">${after < now3 ? 'Одно гнездо слабее трёх, но освобождает 2 слота, а каждое улучшение в нём теперь стоит ×2.1.' : 'Одно сильнее трёх и освобождает 2 слота.'}</div>` : '';
           return `<div class="stats"><div>Поглотит: <b>${partners.map(nm).join(' и ')}</b></div>
-            <div>Останется: <b class="up">${nm(res)} ${'★'.repeat(res.merge)}</b> — лучшее из трёх</div></div>${this.statsBlock(st.family, cur, next)}`;
+            <div>Останется: <b class="up">${nm(res)} ${'★'.repeat(res.merge)}</b> — лучшее из трёх</div>${cmp}</div>${this.statsBlock(st.family, cur, next)}`;
         })(),
         price: { amber: 0, star: 0 }, ok: true, pos: 2, act: () => { g.mergeNests(st.id); },
         // hovering shows which two nests will be absorbed
@@ -678,7 +770,7 @@ export class Hud {
     }
     if (st.tier >= MAX_TIER - 1) {
       const c = g.ascendCost(st);
-      const next = g.nestStats({ family: st.family, tier: st.tier, spec: st.spec, merge: st.merge, ascend: st.ascend + 1 });
+      const next = g.nestStats({ family: st.family, tier: st.tier, spec: st.spec, merge: st.merge, ascend: st.ascend + 1, asp: st.asp });
       opts.push({
         icon: icon('upgrade'), title: `Возвышение ${st.ascend + 1}`, sub: 'Бесконечный рост: +12% силы', key: '1', pos: 0,
         body: this.statsBlock(st.family, cur, next), price: { amber: c, star: 0 }, ok: g.state.amber >= c, act: () => { g.ascendNest(st.id); },
@@ -716,7 +808,9 @@ export class Hud {
     if (!data) { this.closeMenu(); return; }
     this.ringOpts = data.opts;
     const sc = this.scale;
-    const sig = data.title + JSON.stringify(this.buildStars) + data.opts.map((o) => o.title + o.ok + JSON.stringify(o.price)).join('|');
+    const tgt = this.menuTarget?.kind === 'structure' ? g.state.structures.find((x) => x.id === (this.menuTarget as { id: number }).id) : undefined;
+    const sig = data.title + JSON.stringify(this.buildStars) + JSON.stringify(tgt?.asp ?? null) + (tgt ? Math.floor(g.state.amber) : '')
+      + data.opts.map((o) => o.title + o.ok + JSON.stringify(o.price)).join('|');
     if (sig !== this.ringSig) {
       this.ringSig = sig;
       const fixed = data.opts.every((o) => o.pos !== undefined);
@@ -736,6 +830,18 @@ export class Hud {
           <img src="${o.icon}"><span class="rk">${o.key}</span>
           <span class="rp">${o.price ? priceHtml(o.price, g).replace(/<img[^>]*>/g, (m) => m) : ''}</span></div>`;
       });
+      // point upgrades under a built nest's ring: ⚔ damage · ◎ reach · ⚡ speed
+      if (this.menuTarget?.kind === 'structure') {
+        const st = g.state.structures.find((x) => x.id === (this.menuTarget as { id: number }).id);
+        if (st) {
+          html += `<div class="aspects" style="top:calc(18 * var(--u))">${(['dmg', 'rng', 'spd'] as Aspect[]).map((key) => {
+            const a = ASPECT[key];
+            const lv = st.asp?.[key] ?? 0;
+            const cost = g.aspectCost(st, key);
+            return `<button class="aspect ${g.state.amber >= cost ? '' : 'no'}" data-asp="${key}" data-tip-title="${a.icon} ${a.name} · ур. ${lv} → ${lv + 1}" data-tip="${a.desc}. Точечное улучшение: дешевле Возвышения, но качает только это.">${a.icon}${lv ? `<i>${lv}</i>` : ''}<span><img class="icon" src="${icon('amber')}">${cost}</span></button>`;
+          }).join('')}</div>`;
+        }
+      }
       // − ★N + under every build option
       data.opts.forEach((o, i) => {
         if (!o.fam) return;
@@ -743,10 +849,10 @@ export class Hud {
         const n0 = this.buildStars[o.fam] ?? 0;
         const ox = Math.cos(ang) * R, oy = Math.sin(ang) * R;
         // ★N above the icon, + / − stacked on its left
-        html += `<div class="starlbl ${n0 ? 'on' : ''}" style="left:calc(${ox} * var(--u));top:calc(${oy - 16} * var(--u))">★${n0}</div>
+        html += `<div class="starlbl ${n0 ? 'on' : ''}" data-tip-title="Звёзды Слияния" data-tip="С каким числом ★ строится это гнездо. Меняется кнопками ▲ ▼ слева." style="left:calc(${ox} * var(--u));top:calc(${oy - 16} * var(--u))">★${n0}</div>
           <div class="starstep" style="left:calc(${ox - 15} * var(--u));top:calc(${oy} * var(--u))">
-          <button data-fam="${o.fam}" data-d="1" title="Больше звёзд: каждая ★ — как 3 гнезда, слитых в одно">+</button>
-          <button data-fam="${o.fam}" data-d="-1" ${n0 > 0 ? '' : 'disabled'} title="Меньше звёзд">−</button></div>`;
+          <button data-fam="${o.fam}" data-d="1" data-tip-title="Звёзды Слияния ▲" data-tip="Построить сразу со звездой: каждая ★ — как 3 гнезда, слитых в одно (урон и прочность ×2.1). Цена ×3 за звезду.">▲</button>
+          <button data-fam="${o.fam}" data-d="-1" ${n0 > 0 ? '' : 'disabled'} data-tip="Меньше звёзд">▼</button></div>`;
       });
       // the pop-in animation plays only when the menu opens on a new node — re-renders
       // (prices, ★ steppers, affordability) must not make every button blink
@@ -754,6 +860,16 @@ export class Hud {
       this.ring.classList.toggle('still', key === this.ringAnimKey);
       this.ringAnimKey = key;
       this.ring.innerHTML = html;
+      this.ring.querySelectorAll<HTMLButtonElement>('.aspect').forEach((b) => {
+        b.addEventListener('mousedown', (ev) => ev.stopPropagation());
+        b.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const t = this.menuTarget;
+          if (t?.kind === 'structure') g.upgradeAspect(t.id, b.dataset.asp as Aspect);
+          this.ringSig = '';
+          this.renderRing();
+        });
+      });
       this.ring.querySelectorAll<HTMLButtonElement>('.starstep button').forEach((b) => {
         b.addEventListener('mousedown', (ev) => ev.stopPropagation());
         b.addEventListener('click', (ev) => {
@@ -850,6 +966,12 @@ export class Hud {
           <div class="gc-un">Теперь оно наращивает <b>годичные кольца</b>: каждое +7% силы гнёзд и +10% здоровья Древа, Древо растёт, а каждые 2 кольца открывают новый слот кроны.${s.tree.rings ? `<br>Колец: <b>${s.tree.rings}</b> · сила гнёзд ×${g.treePower().toFixed(2)}` : ''}</div>
           <div class="row">${btn(`Годичное кольцо №${s.tree.rings + 1} (<img class="icon" src="${icon('amber')}"> ${rc})`, s.amber >= rc, () => { g.addRing(); })}</div></div>`;
       }
+      // ── the Observer's exchange: Amber ↔ Star Blood
+      html += `<div class="sub">Обмен у Наблюдателя:</div><div class="row left exch">
+        ${btn(`${EXCHANGE.amberPerStar} <img class="icon" src="${icon('amber')}"> → 1 <img class="icon" src="${icon('star')}">`, s.amber >= EXCHANGE.amberPerStar, () => { g.exchange('buyStar', 1); }, 'tiny')}
+        ${btn('×10', s.amber >= EXCHANGE.amberPerStar * 10, () => { g.exchange('buyStar', 10); }, 'tiny')}
+        ${btn(`1 <img class="icon" src="${icon('star')}"> → ${EXCHANGE.starToAmber} <img class="icon" src="${icon('amber')}">`, s.star >= 1, () => { g.exchange('sellStar', 1); }, 'tiny')}
+        ${btn('×10', s.star >= 10, () => { g.exchange('sellStar', 10); }, 'tiny')}</div>`;
       // ── Уклоны Древа
       const counts = pathCounts(s.tree.branches);
       html += `<div class="sub">Уклон Древа — ${PATH_CAPSTONE} ветви одного пути превращают его в особое Древо:</div><div class="paths">${(Object.keys(TREE_PATHS) as TreePath[]).map((p) => {
@@ -858,7 +980,7 @@ export class Hud {
         const done = n >= PATH_CAPSTONE;
         const mine = s.tree.branches.map((id) => branchById(id)).filter((b) => b && b.path === p).map((b) => b!.name);
         return `<div class="pathc ${done ? 'done' : ''}" style="--c:${d.color}">
-          <div class="ph"><b>${d.name}</b><span>${'●'.repeat(Math.min(n, PATH_CAPSTONE))}${'○'.repeat(Math.max(0, PATH_CAPSTONE - n))}</span></div>
+          <div class="ph"><b>${d.name}</b><span>${'●'.repeat(n)}${'○'.repeat(Math.max(0, PATH_CAPSTONE - n))}</span></div>
           <div class="pb">${mine.length ? mine.join(' · ') : 'ветвей пока нет'}</div>
           <div class="pc"><i>${done ? `✦ ${d.tree}` : `→ ${d.tree}`}</i>${d.capstone.split(', ').map((x) => `<span>${x}</span>`).join('')}</div>
         </div>`;
@@ -906,9 +1028,10 @@ export class Hud {
         const cap = k.slots[rid];
         const rr = k.runeRank[rid];
         const hasForms = rid === 'spear' || rid === 'hammer' || rid === 'starfall';
-        html += `<div class="rblock ${unlocked ? '' : 'dim'}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b>
+        // only runes that can't even be learned yet are dimmed
+        const learnable = !unlocked && g.abilityAvailable(rid as AbilityId);
+        html += `<div class="rblock ${unlocked || learnable ? '' : 'dim'} ${learnable ? 'learn' : ''}" data-rune="${rid}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b>
           <span class="rrank" style="--c:${runeColor(rr)}">${runeRankName(rr)} · ×${runeRankPower(rr).toFixed(2)}</span><span class="cap">${props.length}/${cap}</span>`;
-        if (s.devRunes > 0 && cap < DEV_SLOTS) html += btn(`+слот <img class="icon" src="${icon('rune')}"> 1`, true, () => { g.developRune(rid); }, 'tiny');
         html += `</div>`;
         if (unlocked) {
           const cost = runeRankCost(rr + 1);
@@ -950,7 +1073,11 @@ export class Hud {
             html += `<span class="slot full" style="--c:${RUNE_RANK_COLORS[p.rank]}" title="${p.desc}${lv > 1 ? ` · уровень ${ROMAN[lv]}: ×${propLvFactor(lv).toFixed(1)}` : ''}">${p.name}${lv > 1 ? ` <b>${ROMAN[lv]}</b>` : ''}${up}<button class="rm ${s.star >= rc ? '' : 'no'}" data-i="${actions.length - 1}" title="Вынуть Свойство за ${rc} Звёздной Крови">✕ ${rc} <img class="icon" src="${icon('star')}"></button></span>`;
           } else html += `<span class="slot">пусто</span>`;
         }
-        if (cap < DEV_SLOTS) html += `<span class="slot locked" title="Нужна Малая Руна Развития">+</span>`;
+        if (cap < DEV_SLOTS) {
+          // the 4th slot sits right among the slots: open it with a Lesser Rune of Development
+          if (s.devRunes > 0) html += btn(`+ слот <img class="icon" src="${icon('rune')}"> 1`, true, () => { g.developRune(rid); }, 'tiny slotbtn');
+          else html += `<span class="slot locked" data-tip-title="4-й слот" data-tip="Открывается Малой Руной Развития — редкий дар с Червей.">+</span>`;
+        }
         else if (cap < MAX_SLOTS && unlocked) {
           const sp = g.slotPrice(rid)!;
           html += btn(`Выковать ${cap + 1}-й слот (${priceHtml(sp, g)})`, g.canPay(sp), () => { g.buyRuneSlot(rid); }, 'tiny');
@@ -970,7 +1097,7 @@ export class Hud {
           html += `</div>`;
         } else if (g.abilityAvailable(rid as AbilityId)) {
           const price = ABILITIES[rid as AbilityId].learn;
-          html += `<div class="row left">${btn(`Изучить руну (<img class="icon" src="${icon('star')}"> ${price})`, s.star >= price, () => { g.learnAbility(rid as AbilityId); }, 'tiny')}
+          html += `<div class="learnrow">${btn(`Изучить за <img class="icon" src="${icon('star')}"> ${price}`, s.star >= price, () => { g.learnAbility(rid as AbilityId); }, 'gold learnbtn')}
             <span class="hint">${ABILITIES[rid as AbilityId].desc}</span></div>
             <div class="sub">Или дождись дара Наблюдателя на рассвете.</div>`;
         } else {
@@ -1008,8 +1135,15 @@ export class Hud {
       if (!this.modal.classList.contains('hidden')) { this.modal.classList.add('hidden'); this.modalSig = ''; }
       return;
     }
+    // let the night end on screen for a moment before the dawn window pops up
+    if (c.kind === 'dawn' && !c.start) {
+      const now = performance.now();
+      if (this.dawnSeenAt < 0) this.dawnSeenAt = now;
+      if (now - this.dawnSeenAt < 1300) return;
+    } else this.dawnSeenAt = -1;
     const sig = JSON.stringify(c);
     if (sig === this.modalSig) return;
+    this.dawnSeenAt = -1;
     this.modalSig = sig;
     // a choice pops over the Keeper's Tablet without closing it (e.g. a Facet after Повышение)
     if (this.panelKind === 'keeper' || this.panelKind === 'tree') { this.menuTarget = null; this.ring.classList.remove('show'); this.card.classList.remove('show'); }
@@ -1025,7 +1159,7 @@ export class Hud {
           const rank = p ? p.rank : b!.rank;
           const ic = p ? KEEPER_RUNES[p.rune].icon : b!.icon;
           const cat = p ? `${p.type} → ${KEEPER_RUNES[p.rune].name}` : b!.category;
-          return `<div class="rcard" data-i="${i}" style="--c:${RUNE_RANK_COLORS[rank]}">
+          return `<div class="rcard rk${rank}" data-i="${i}" style="--c:${RUNE_RANK_COLORS[rank]}">
             <div class="rank">${RUNE_RANKS[rank]}</div><img src="${icon(ic)}"><div class="cat">${cat}</div>
             <div class="nm">${p ? p.name : b!.name}</div><div class="ds">${p ? p.desc : b!.desc}</div></div>`;
         }).join('')}</div>
@@ -1075,7 +1209,7 @@ export class Hud {
           const n = counts[b.path];
           const full = n + 1 >= PATH_CAPSTONE && n < PATH_CAPSTONE;
           return `<div class="rcard gold" data-i="${i}" style="--c:${p.color}">
-          <div class="rank">${p.name} ${'●'.repeat(Math.min(n + 1, PATH_CAPSTONE))}${'○'.repeat(Math.max(0, PATH_CAPSTONE - n - 1))}</div>
+          <div class="rank">${p.name} ${'●'.repeat(n + 1)}${'○'.repeat(Math.max(0, PATH_CAPSTONE - n - 1))}</div>
           <img src="${icon('tree')}"><div class="nm">${b.name}</div><div class="ds">${b.desc}</div>
           ${full ? `<div class="ds" style="color:${p.color}"><b>→ ${p.tree}:</b> ${p.capstone}</div>` : ''}</div>`;
         }).join('')}</div></div>`;
@@ -1179,8 +1313,8 @@ export class Hud {
       lock.style.display = unlocked ? 'none' : 'grid';
       if (!unlocked) {
         const lk = lock.querySelector('.lk')!;
-        const t = g.abilityAvailable(id) ? `★${ABILITIES[id].learn}` : `ст. ${ABILITIES[id].unlockStage}`;
-        if (lk.textContent !== t) lk.textContent = t;
+        const t = g.abilityAvailable(id) ? `<img class="icon" src="${icon('star')}">${ABILITIES[id].learn}` : `ст.${ABILITIES[id].unlockStage}`;
+        if (lk.innerHTML !== t) lk.innerHTML = t;
         box.classList.toggle('learnable', g.abilityAvailable(id) && s.star >= ABILITIES[id].learn);
       }
       const c = s.keeper.cooldowns[id];
@@ -1209,7 +1343,20 @@ export class Hud {
     }
     const slotsFree = RUNE_IDS.some((r) => (r === 'light' || g.abilityUnlocked(r)) && PROPERTIES.some((p) => p.rune === r && s.star >= p.price && g.canInstall(p)));
     const canAscend = !!KEEPER_RANKS[s.keeper.rank + 1] && s.star >= KEEPER_RANKS[s.keeper.rank + 1].cost;
-    this.keeperBtn.classList.toggle('hot', canAscend || slotsFree || s.devRunes > 0);
+    // Amber left over before the night: the counter blinks — spend it
+    const cheapest = Math.min(...SLOTS.filter((sl) => g.slotUnlocked(sl) && !g.structureAt(sl.id))
+      .map((sl) => (sl.underground ? ['spider'] : sl.crown ? ['caterpillar', 'honeycomb', 'mender', 'hive'] : ['hive', 'beetle', 'dragonfly', 'termite']).map((f) => g.buildPrice(f as Family).amber))
+      .flat(), Infinity);
+    const spend = s.phase === 'day' && s.dayLeft < 12 && s.amber >= Math.min(cheapest, g.growNeed() > 0 ? g.growNeed() : Infinity);
+    const amberItem = this.amberNum.parentElement as HTMLElement;
+    if (amberItem.classList.contains('spendme') !== spend) amberItem.classList.toggle('spendme', spend);
+    // how many things the Tablet can buy right now (shown as a badge on its button)
+    const buyable = (canAscend ? 1 : 0) + (s.devRunes > 0 ? 1 : 0)
+      + RUNE_IDS.filter((r) => (r === 'light' || g.abilityUnlocked(r)) && s.star >= runeRankCost(s.keeper.runeRank[r] + 1)).length
+      + (Object.keys(ABILITIES) as AbilityId[]).filter((id) => !g.abilityUnlocked(id) && g.abilityAvailable(id) && s.star >= ABILITIES[id].learn).length;
+    this.keeperBtn.classList.toggle('hot', canAscend || slotsFree || s.devRunes > 0 || buyable > 0);
+    const badge = buyable > 0 ? String(buyable) : '';
+    if (this.keeperBtn.dataset.badge !== badge) this.keeperBtn.dataset.badge = badge;
     this.keeperBtn.title = `Ранг ${KEEPER_RANKS[s.keeper.rank].name}${slotsFree ? ' · можно купить Свойство' : ''}`;
 
     this.renderRevive(g);
@@ -1240,6 +1387,7 @@ export class Hud {
     const sig = `${this.questIdx}`;
     if (sig !== this.questSig) {
       this.questSig = sig;
+      this.callout(`${q.text} ${q.hint ?? ''}`);
       this.questBox.innerHTML = `<div class="who">Задание Наблюдателя · ${this.questIdx + 1}/${QUESTS.length}</div>
         <div class="qt">${q.text}</div>${q.hint ? `<div class="qh">${q.hint}</div>` : ''}
         <div class="qr"><img class="icon" src="${icon('amber')}"> ${q.reward}</div>`;

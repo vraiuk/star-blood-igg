@@ -254,3 +254,55 @@
   (▲ button, Star Blood: price × (1+lv) × 1.5); each level adds +50% of the Property's effect
   (scalePatch for mod Properties, propPower for rune-specific ones). «Изменения» are on/off —
   Facets strengthen them.
+
+## v0.6 — плейтест-наблюдение (пакет 1: понятность)
+- Instant rich tips (data-tip) on currencies (what they buy), HP/Light («Свет — у ствола
+  Древа»), ★ steppers (▲▼ instead of +/− — «+» means «add to the map»), slots; hover hints on
+  the field for runes of summoning, crown slots, root nodes, nests and the Tree.
+- Locked rune buttons show the real Star Blood price and open the Tablet right at that rune.
+- Tree panel pauses like the Tablet; pause menu: «Выйти в меню»; «Уйти в Вечность» more visible.
+- Speed − ×N + (and −/+ keys), no wrap from ×2 to ×5.
+- Tablet button pulses with a badge of how many things can be bought now.
+- Amber counter blinks when unspent Amber could buy something right before the night.
+- Dawn window appears 1.3 s after the night ends; gifted runes read «Новая способность [N]»,
+  never offered twice across stacked rush dawns (an already known one pays its price back).
+- Choice cards glow stronger by rune rank.
+- Tree stages: … Юный Игг → Малое Игг-Древо → Игг-Древо → Великое Игг-Древо.
+- Tree path pips show the real number of branches (a path can take 4).
+- Piercing beam: a tap holds it 2.5 s, holding keeps it; «Обоюдное древко» now visibly shines
+  backwards; ability card says «удерживай 1».
+- Eyes of the Darkness show at the end of the day where the night's first groups will come from.
+- «+ слот» sits among the property slots.
+- Readability: larger, brighter body text.
+
+## v0.6 — пакет 2 (геймплей)
+- Shadow of the Devourer: 1 on night 15, 3 on night 20, 9 on night 25 and every 10th after.
+- Rune ranks felt stronger: Radiance burn/vulnerability and Swarm haste/heal scale with
+  rank power^0.6–0.75 (was ^0.5); fixed a precedence bug that dropped «Хрупкий лёд».
+- Hammer «Притяжение»: pulls the pack in and a star falls on it 0.6 s later.
+- Supernova ×6 damage, wider; Dome 55 dps, stronger slow/haste, heals nests; Time Stop recovers
+  in one night; «Растянутый миг» (+2 s, −25% Light) replaces the useless night-cut.
+- Merge card compares DPS of the three nests vs the merged one, with the trade-off spelled out.
+- Point upgrades of nests (⚔ damage +15%, ◎ reach +8%, ⚡ speed +10% per level), cheap,
+  endless, under each nest's ring — Ascension stays the general growth.
+- Tree in danger (<30% HP at night): banner, speed back to ×1, red pulse around the view.
+- «Жертва Света» (X twice): the Keeper bursts (damage, knock-back, stun) and falls; reviving
+  that night costs ×3.
+- Observer's exchange in the tree panel: 60 Amber → 1 Star Blood, 1 → 25 Amber.
+- Dawn sky: a warm band over the horizon as the night runs out, fading in the first day seconds.
+- Lighter choice window (softer backdrop + blur, glow on hover).
+
+## v0.6 — пакет 3
+- Run save: snapshot at every dawn (state + internal counters) in localStorage; the title
+  shows «Продолжить · ночь N»; a new run or a defeat clears it.
+- Feedback: «Оставить отзыв» on the end screen and «Отзыв · что дальше?» on the title open a
+  prefilled GitHub issue with the version and the run's numbers.
+- End-screen star text follows the renamed stages (★★ with the Igg-Tree).
+- Later (needs a server): leaderboard by version, analytics.
+- Observer callouts: when a hint, warning or quest mentions a part of the interface (the
+  Tablet, the Tree, «призвать ночь»/Натиск, a rune, Amber, Star Blood, Light, speed…), that
+  button blinks with a golden ring for 4.5 s; quest focus uses the same ring.
+- Tablet: runes that can be learned now are no longer dimmed; a clear golden one-line
+  «Изучить за ★N» button; tablet buttons don't wrap.
+- Nest halo redrawn as a calm pedestal ring at the nest's foot with two rising motes (the old
+  scattered pulsing dots read as a strange flicker around attacking hives).

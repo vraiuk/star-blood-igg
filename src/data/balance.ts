@@ -391,7 +391,7 @@ export const ABILITIES = {
   timestop: {
     name: 'Остановка Времени', desc: 'Руна-Заклинание: время в Круге застывает — твари замирают (боссы вдвое короче), новые не выходят из тьмы. Восстанавливается за ночи, а не секунды.',
     cost: 60, cooldown: 0, unlockStage: 3, learn: 25, key: '6',
-    duration: 4, nights: 2,
+    duration: 4, nights: 1,
   },
 } satisfies Record<AbilityId, AbilityDef & Record<string, number | string>>;
 
@@ -404,6 +404,11 @@ export const ABILITY_STAGE_SCALING = 0.08;
  */
 export const CHORD = { window: 6, max: 3, power: 0.15, discount: 0.1, heatWindow: 2.5, heat: 0.1, heatMax: 1, heatFree: 2 } as const;
 export const RESTUN_FACTOR = 0.5;
+
+/** «Жертва Света»: the Ascended bursts to save the Tree — a last resort. */
+export const SACRIFICE = { radius: 170, damage: 420, knock: 260, stun: 2.2, reviveMul: 3 } as const;
+/** The Observer's exchange: Amber ↔ Star Blood. */
+export const EXCHANGE = { amberPerStar: 60, starToAmber: 25 } as const;
 
 export const ECONOMY = {
   startAmber: 90,

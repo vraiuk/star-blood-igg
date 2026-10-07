@@ -31,6 +31,16 @@ export class Audio {
     this.startAmbience();
   }
 
+  /**
+   * The tab lost focus / was hidden: the whole sound stops (the context is suspended, so the
+   * ambient music doesn't keep playing in the background) and comes back with the tab.
+   */
+  setBackground(hidden: boolean) {
+    if (!this.ctx) return;
+    if (hidden) void this.ctx.suspend();
+    else void this.ctx.resume();
+  }
+
   toggle(): boolean {
     this.enabled = !this.enabled;
     if (this.ctx) this.master.gain.setTargetAtTime(this.enabled ? 0.55 : 0, this.ctx.currentTime, 0.05);

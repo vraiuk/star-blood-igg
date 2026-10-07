@@ -11,6 +11,8 @@ import { buildRunLog, saveRunLog } from './state/runlog';
 import { openStats } from './ui/stats';
 import { Coop, commandProxy, type StartInfo } from './net/coop';
 import { CoopPanel } from './ui/coop';
+import { hideWorldTip, showWorldTip } from './ui/glossary';
+import { VERSION_LABEL } from './version';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -38,12 +40,29 @@ const renderer = new Renderer(ctx);
 const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null };
 let endShown = false;
 const SPEEDS = [1, 1.25, 1.5, 2, 5];
+let sacrificeArmed = 0;
 const nextSpeed = () => SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+/** − / + step through the speeds without wrapping around */
+const stepSpeed = (d: 1 | -1) => SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, SPEEDS.indexOf(speed) + d))];
 let lastRecord = false;
+
+/** A run in progress is saved at every dawn and can be continued from the title. */
+const RUN_KEY = 'igg-tree-run-v1';
+const savedRun = (): { night: number; json: string } | null => {
+  try {
+    const json = localStorage.getItem(RUN_KEY);
+    if (!json) return null;
+    const night = (JSON.parse(json) as { state?: { night?: number } }).state?.night ?? 0;
+    return { night, json };
+  } catch { return null; }
+};
+const storeRun = () => { try { localStorage.setItem(RUN_KEY, game.snapshot()); } catch { /* storage full */ } };
+const dropRun = () => { try { localStorage.removeItem(RUN_KEY); } catch { /* ignore */ } };
 
 const titleInfo = () => {
   const p = Math.min(save.path, save.pathUnlocked);
-  hud.renderTitle(`${PATHS[p].name} · рекорд: ${save.bestNight[p] ?? 0} ноч. · Монеты Наблюдателя: ${save.coins}`, save.coins);
+  const run = savedRun();
+  hud.renderTitle(`${PATHS[p].name} · рекорд: ${save.bestNight[p] ?? 0} ноч. · Монеты Наблюдателя: ${save.coins}`, save.coins, run ? `ночь ${run.night + 1}` : '');
   // the title was rebuilt: put the lobby back into it
   if (lobby) coopPanel.renderLobby(lobby);
 };
@@ -83,6 +102,8 @@ function beginRun(info: StartInfo, you: number) {
   game = newGame(info);
   game.setLocal(you);
   cmd = commandProxy(game, coop);
+  // alone the run plays like the solo game (tips, the death hold, panels stop time)
+  hud.coop = info.players > 1;
   coop.attach(game);
   logged = false;
   hud.resetQuests();
@@ -102,9 +123,39 @@ function beginRun(info: StartInfo, you: number) {
 /** A guest leaves the run (the others play on): back to a fresh lobby search. */
 function leaveRun() { logQuit(); location.reload(); }
 
+/** The run ends on this peer without a summary: back to the title and the lobby. */
+function leaveSolo() {
+  setPaused(false);
+  hud.closeMenu();
+  started = false;
+  coop.ended();
+  game = newGame();
+  cmd = commandProxy(game, coop);
+  hud.resetQuests();
+  renderer.resetCamera(game.state.tree.radius);
+  hud.showTitle();
+  titleInfo();
+}
+
 const hud: Hud = new Hud(uiRoot, () => cmd, {
+  onContinue() {
+    // a saved run is a solo one: it goes on only while nobody else is in the lobby
+    const run = savedRun();
+    if (!run || !coop.canStart || (lobby?.ids.length ?? 1) > 1) return;
+    coop.start(runInfo());
+    if (!game.restore(run.json)) { dropRun(); leaveSolo(); return; }
+    renderer.resetCamera(game.state.tree.radius);
+  },
+  onFeedback() {
+    // a prefilled GitHub issue: the author sees the version and this run's numbers
+    const s = game.state;
+    const body = `Версия: ${VERSION_LABEL}\nТропа: ${PATHS[game.path].name}\nНочей: ${s.night}\nИгроков: ${s.keepers.length}\nДрево: ${s.tree.stage + 1}/6, колец ${s.tree.rings}\n\n**Что понравилось:**\n\n**Что сломано / непонятно:**\n\n**Чего хочется дальше:**\n`;
+    window.open(`https://github.com/vraiuk/star-blood-igg/issues/new?title=${encodeURIComponent('Отзыв: ')}&body=${encodeURIComponent(body)}`, '_blank');
+  },
   onStart() {
-    if (coop.canStart) coop.start(runInfo());
+    if (!coop.canStart) return;
+    dropRun();
+    coop.start(runInfo());
   },
   onRestart() {
     if (coop.canStart) { coop.start(runInfo()); return; }
@@ -136,12 +187,18 @@ const hud: Hud = new Hud(uiRoot, () => cmd, {
   onCast(id) { beginAim(id); },
   onCallNight() { cmd.callNight(); },
   onToggleSpeed() { if (!coop.isGuest) { speed = nextSpeed(); hud.setSpeed(speed); } },
+  onSpeed(step) { if (!coop.isGuest) { speed = stepSpeed(step); hud.setSpeed(speed); } },
+  onQuitToMenu() {
+    logQuit();
+    // together the run can't be set aside: a guest leaves it, the host's leaving ends it for everyone
+    if (coop.isGuest || game.state.keepers.length > 1) { location.reload(); return; }
+    leaveSolo();
+  },
   onToggleSound() { hud.setSound(audio.toggle()); },
   onResume() { setPaused(false); },
   onMenuClosed() { view.selectedSlot = null; view.preview = null; },
   onPreview(p) { view.preview = p; },
 });
-hud.coop = true;
 hud.resetQuests();
 titleInfo();
 coop.connect();
@@ -239,12 +296,22 @@ window.addEventListener('keydown', (e) => {
     if (hud.deathPause) hud.releaseDeath();
     else cmd.callNight();
   }
-  if (k === 'f' && !coop.isGuest) { speed = nextSpeed(); hud.setSpeed(speed); }
+  if (!coop.isGuest) {
+    if (k === 'f') { speed = nextSpeed(); hud.setSpeed(speed); }
+    if (k === '-' || k === '_') { speed = stepSpeed(-1); hud.setSpeed(speed); }
+    if (k === '=' || k === '+') { speed = stepSpeed(1); hud.setSpeed(speed); }
+  }
   if (k === 'm') hud.setSound(audio.toggle());
   if (k === 'r' || k === 'b') hud.togglePanel('keeper');
   if (k === 'v') cmd.revive('amber');
   if (k === 'g') cmd.revive('sacrifice');
   if (k === 't') hud.togglePanel('tree');
+  if (k === 'x') {
+    // «Жертва Света» needs two presses within 2 s
+    const now = performance.now();
+    if (now - sacrificeArmed < 2000) { sacrificeArmed = 0; cmd.sacrificeKeeper(); }
+    else { sacrificeArmed = now; hud.observerSay('Нажми X ещё раз — Жертва Света: Хранитель взорвётся светом и падёт'); }
+  }
   if (k === 'q') cycleNode(-1);
   if (k === 'e') cycleNode(1);
 });
@@ -255,7 +322,13 @@ window.addEventListener('keyup', (e) => {
   if (ABILITY_KEYS[k] === 'spear') cmd.releaseBeam();
   updateMove();
 });
-window.addEventListener('blur', () => { held.clear(); updateMove(); });
+window.addEventListener('blur', () => { held.clear(); updateMove(); audio.setBackground(true); });
+window.addEventListener('focus', () => { if (!document.hidden) audio.setBackground(false); });
+// a hidden tab goes silent and, mid-run, pauses
+document.addEventListener('visibilitychange', () => {
+  audio.setBackground(document.hidden);
+  if (document.hidden && started && !game.over && !paused) setPaused(true);
+});
 
 function toWorld(ev: MouseEvent): [number, number] {
   const r = canvas.getBoundingClientRect();
@@ -294,6 +367,8 @@ function pick(mx: number, my: number): MenuTarget | null {
   return null;
 }
 
+canvas.addEventListener('mouseleave', () => hideWorldTip());
+canvas.addEventListener('mousedown', () => hideWorldTip());
 canvas.addEventListener('mousemove', (ev) => {
   const [mx, my] = toWorld(ev);
   view.mouseX = mx;
@@ -302,6 +377,14 @@ canvas.addEventListener('mousemove', (ev) => {
   view.hoverSlot = t?.kind === 'slot' ? t.slotId : null;
   view.hoverTree = t?.kind === 'tree';
   canvas.style.cursor = view.aiming ? 'crosshair' : t ? 'pointer' : 'default';
+  // what a click here will do
+  if (!t || hud.target || hud.panelOpen) hideWorldTip();
+  else if (t.kind === 'tree') showWorldTip('Древо Игг', 'Клик — рост Древа: вложи Янтарь, Древо вырастет, Круг света станет шире, откроются руны и слоты.', ev);
+  else if (t.kind === 'slot') {
+    const sl = SLOTS.find((x) => x.id === t.slotId)!;
+    showWorldTip(sl.underground ? 'Корневой узел' : sl.crown ? 'Слот кроны' : 'Руна призыва',
+      `Клик — призвать сюда ${sl.underground ? 'Паука-ткача (бьёт Червей под землёй)' : sl.crown ? 'гнездо кроны (сборщики, соты, лекари, улей)' : 'гнездо: улей, Светожук, стрекозы или термиты'}.`, ev);
+  } else if (t.kind === 'structure') showWorldTip('Гнездо', 'Клик — улучшить: уровень, специализация, Слияние, Возвышение.', ev);
 });
 
 canvas.addEventListener('mousedown', (ev) => {
@@ -393,11 +476,13 @@ function frame(now: number) {
     }
   }
   // co-op lockstep: the host runs the world (its pause holds everyone), guests replay its frames;
-  // a pending choice (dawn rune, tree branch) holds the world still on every peer
+  // a pending choice (dawn rune, tree branch) holds the world still on every peer;
+  // alone, an open panel or the death hold stops time like in the solo game
   const running = started && !game.over;
+  const alone = game.state.keepers.length < 2 && (metaOpen || hud.panelOpen || hud.ringOpen || hud.deathPause);
   if (running && coop.isGuest) {
     coop.guestTicks(dt);
-  } else if (running && !paused && !coop.hidden) {
+  } else if (running && !paused && !coop.hidden && !alone) {
     acc += dt * speed;
     let n = 0;
     while (acc >= STEP && n < 60) { acc -= STEP; n++; }
@@ -414,8 +499,11 @@ function frame(now: number) {
   const events = game.drainEvents();
   // my own Ascended's fall and hits are mine to hear and see in the HUD
   const mine = events.filter((e) => !('k' in e) || e.k === game.local);
-  // the Ascended falls: back to normal speed so the moment isn't missed
-  if (speed !== 1 && mine.some((e) => e.type === 'keeperDown')) { speed = 1; hud.setSpeed(1); }
+  // my Ascended falls or the Tree is in danger: back to normal speed so the moment isn't missed
+  if (speed !== 1 && mine.some((e) => e.type === 'keeperDown' || e.type === 'treeDanger')) { speed = 1; hud.setSpeed(1); }
+  // a solo run is saved at every dawn; a lost run has nothing to continue
+  if (game.state.keepers.length < 2 && !coop.isGuest && events.some((e) => e.type === 'dawn')) storeRun();
+  if (events.some((e) => e.type === 'lost')) dropRun();
   if (events.length) {
     renderer.onEvents(events, game);
     hud.onEvents(mine);
