@@ -1,7 +1,8 @@
 name: Deploy to GitHub Pages
 
-# main → the site root; the `coop` branch (online co-op) → /coop/.
-# Pages deploys only from main, so a push to `coop` re-runs this workflow on main (coop-pages.yml).
+# main → the site root; the `coop` branch (online co-op) → /coop/; the `mobile` branch (phone build) → /mobile/.
+# Pages deploys only from main, so a push to `coop` / `mobile` re-runs this workflow on main
+# (coop-pages.yml / mobile-pages.yml on those branches).
 on:
   push:
     branches: [main]
@@ -46,6 +47,24 @@ jobs:
       - name: Put co-op under /coop/
         if: steps.coopbuild.outcome == 'success'
         run: cp -r coop-src/dist dist/coop
+      - name: Is there a mobile branch?
+        id: mobile
+        run: echo "exists=$(git ls-remote --heads origin mobile | grep -q . && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.mobile.outputs.exists == 'true'
+        with:
+          ref: mobile
+          path: mobile-src
+      - name: Build the mobile branch
+        id: mobilebuild
+        if: steps.mobile.outputs.exists == 'true'
+        # a broken phone build must not take the main site down
+        continue-on-error: true
+        working-directory: mobile-src
+        run: npm ci && npm test && npm run build
+      - name: Put mobile under /mobile/
+        if: steps.mobilebuild.outcome == 'success'
+        run: cp -r mobile-src/dist dist/mobile
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
