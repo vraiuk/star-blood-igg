@@ -566,3 +566,9 @@ body { display: grid; place-items: center; }
 .screen.modal .rcard { border-radius: calc(3 * var(--u)); transition: transform 0.12s, box-shadow 0.12s; }
 .screen.modal .rcard:hover { box-shadow: 0 0 calc(12 * var(--u)) var(--c); }
 .exch .btn.tiny { margin-left: 0; }
+/* the Observer points at a part of the interface: it blinks with a golden ring */
+.callout, .hl { position: relative; animation: callout 0.75s ease-in-out infinite !important; z-index: 6; }
+@keyframes callout {
+  0%, 100% { box-shadow: 0 0 0 calc(1 * var(--u)) rgba(255, 210, 74, 0.9), 0 0 calc(6 * var(--u)) rgba(255, 210, 74, 0.5); }
+  50% { box-shadow: 0 0 0 calc(2.5 * var(--u)) rgba(255, 240, 160, 1), 0 0 calc(16 * var(--u)) rgba(255, 210, 74, 0.9); }
+}

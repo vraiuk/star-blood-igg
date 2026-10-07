@@ -470,7 +470,44 @@ export class Hud {
     this.notice.className = `tablet show ${warn ? 'warn' : ''}`;
     this.notice.innerHTML = warn ? text : `<span class="who">Тот-Кто-Наблюдает:</span> ${text}`;
     this.noticeTimer = warn ? 1.6 : 4;
+    this.callout(text);
   }
+
+  /**
+   * When the Observer talks about a part of the interface, that part blinks for a few
+   * seconds, so the player sees where to click (the Tablet, the Tree, a rune, Light…).
+   */
+  private callout(text: string) {
+    const plain = text.replace(/<[^>]+>/g, ' ');
+    const rules: Array<[RegExp, string]> = [
+      [/Скрижал|\[R\]|Повышени|Восхождени|Свойств|Грань|Грани|Огранк|изучи|Изучи/, '.btn.keeper'],
+      [/Древ[оа] (?:раст|выр)|Вырасти Древо|вложи Янтарь|рост Древа|кольц|Уклон|ветв|Обмен/, '#treebar'],
+      [/[Пп]ризов[иу] ночь|[Пп]ризвать ночь|Натиск|Пробел/, '#callnight'],
+      [/Копь/, '#abilities .ab:nth-child(1)'],
+      [/Молот/, '#abilities .ab:nth-child(2)'],
+      [/Звездопад|Сверхзвезд/, '#abilities .ab:nth-child(3)'],
+      [/Сияни/, '#abilities .ab:nth-child(4)'],
+      [/Зов Роя/, '#abilities .ab:nth-child(5)'],
+      [/Остановк/, '#abilities .ab:nth-child(6)'],
+      [/Янтар/, '#res .item:nth-child(1)'],
+      [/Звёздн(?:ая|ой|ую) Кров/, '#res .item:nth-child(2)'],
+      [/Руна Развития|Руны Развития|Руной Развития/, '#res .item.dev'],
+      [/Свет[ау]?(?![а-яё])|здоровь/, '#res .item.bars'],
+      [/[Сс]корост/, '#controls .spdval'],
+    ];
+    for (const [re, sel] of rules) {
+      if (!re.test(plain)) continue;
+      const el = document.querySelector(sel) as HTMLElement | null;
+      if (!el) continue;
+      el.classList.remove('callout');
+      void el.offsetWidth;
+      el.classList.add('callout');
+      const prev = this.calloutTimers.get(el);
+      if (prev) clearTimeout(prev);
+      this.calloutTimers.set(el, setTimeout(() => el.classList.remove('callout'), 4500));
+    }
+  }
+  private calloutTimers = new Map<HTMLElement, ReturnType<typeof setTimeout>>();
 
   /** Rich hover card of an ability: what it does now, with live numbers. */
   private showAbTip(id: AbilityId, box: HTMLElement) {
@@ -1345,6 +1382,7 @@ export class Hud {
     const sig = `${this.questIdx}`;
     if (sig !== this.questSig) {
       this.questSig = sig;
+      this.callout(`${q.text} ${q.hint ?? ''}`);
       this.questBox.innerHTML = `<div class="who">Задание Наблюдателя · ${this.questIdx + 1}/${QUESTS.length}</div>
         <div class="qt">${q.text}</div>${q.hint ? `<div class="qh">${q.hint}</div>` : ''}
         <div class="qr"><img class="icon" src="${icon('amber')}"> ${q.reward}</div>`;

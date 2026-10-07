@@ -299,3 +299,6 @@
   prefilled GitHub issue with the version and the run's numbers.
 - End-screen star text follows the renamed stages (★★ with the Igg-Tree).
 - Later (needs a server): leaderboard by version, analytics.
+- Observer callouts: when a hint, warning or quest mentions a part of the interface (the
+  Tablet, the Tree, «призвать ночь»/Натиск, a rune, Amber, Star Blood, Light, speed…), that
+  button blinks with a golden ring for 4.5 s; quest focus uses the same ring.
