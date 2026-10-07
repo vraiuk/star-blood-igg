@@ -10,6 +10,7 @@ import { openMetaTree } from './ui/metaTree';
 import { buildRunLog, saveRunLog } from './state/runlog';
 import { openStats } from './ui/stats';
 import { hideWorldTip, showWorldTip } from './ui/glossary';
+import { VERSION_LABEL } from './version';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -41,13 +42,46 @@ const nextSpeed = () => SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
 const stepSpeed = (d: 1 | -1) => SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, SPEEDS.indexOf(speed) + d))];
 let lastRecord = false;
 
+/** A run in progress is saved at every dawn and can be continued from the title. */
+const RUN_KEY = 'igg-tree-run-v1';
+const savedRun = (): { night: number; json: string } | null => {
+  try {
+    const json = localStorage.getItem(RUN_KEY);
+    if (!json) return null;
+    const night = (JSON.parse(json) as { state?: { night?: number } }).state?.night ?? 0;
+    return { night, json };
+  } catch { return null; }
+};
+const storeRun = () => { try { localStorage.setItem(RUN_KEY, game.snapshot()); } catch { /* storage full */ } };
+const dropRun = () => { try { localStorage.removeItem(RUN_KEY); } catch { /* ignore */ } };
+
 const titleInfo = () => {
   const p = Math.min(save.path, save.pathUnlocked);
-  hud.renderTitle(`${PATHS[p].name} · рекорд: ${save.bestNight[p] ?? 0} ноч. · Монеты Наблюдателя: ${save.coins}`, save.coins);
+  const run = savedRun();
+  hud.renderTitle(`${PATHS[p].name} · рекорд: ${save.bestNight[p] ?? 0} ноч. · Монеты Наблюдателя: ${save.coins}`, save.coins, run ? `ночь ${run.night + 1}` : '');
 };
 
 const hud: Hud = new Hud(uiRoot, () => game, {
+  onContinue() {
+    const run = savedRun();
+    game = newGame();
+    if (!run || !game.restore(run.json)) { dropRun(); titleInfo(); return; }
+    logged = false;
+    hud.resetQuests();
+    renderer.resetCamera(game.state.tree.radius);
+    started = true;
+    endShown = false;
+    audio.start();
+    hud.hideTitle();
+  },
+  onFeedback() {
+    // a prefilled GitHub issue: the author sees the version and this run's numbers
+    const s = game.state;
+    const body = `Версия: ${VERSION_LABEL}\nТропа: ${PATHS[game.path].name}\nНочей: ${s.night}\nДрево: ${s.tree.stage + 1}/6, колец ${s.tree.rings}\n\n**Что понравилось:**\n\n**Что сломано / непонятно:**\n\n**Чего хочется дальше:**\n`;
+    window.open(`https://github.com/vraiuk/star-blood-igg/issues/new?title=${encodeURIComponent('Отзыв: ')}&body=${encodeURIComponent(body)}`, '_blank');
+  },
   onStart() {
+    dropRun();
     game = newGame();
     logged = false;
     hud.resetQuests();
@@ -371,6 +405,9 @@ function frame(now: number) {
   const events = game.drainEvents();
   // the Ascended falls or the Tree is in danger: back to normal speed so the moment isn't missed
   if (speed !== 1 && events.some((e) => e.type === 'keeperDown' || e.type === 'treeDanger')) { speed = 1; hud.setSpeed(1); }
+  // save the run at every dawn; a lost run has nothing to continue
+  if (events.some((e) => e.type === 'dawn')) storeRun();
+  if (events.some((e) => e.type === 'lost')) dropRun();
   if (events.length) {
     renderer.onEvents(events, game);
     hud.onEvents(events);

@@ -30,6 +30,8 @@ export interface HudCallbacks {
   onRestart(): void;
   onOpenMeta(): void;
   onOpenStats(): void;
+  onContinue(): void;
+  onFeedback(): void;
   onGiveUp(): void;
   onCast(id: AbilityId): void;
   onCallNight(): void;
@@ -306,7 +308,7 @@ export class Hud {
 
   // ───────────────────────────── screens ─────────────────────────────
 
-  renderTitle(pathName = 'Тропа Ростка', coins = 0) {
+  renderTitle(pathName = 'Тропа Ростка', coins = 0, cont = '') {
     this.title.innerHTML = `
       <div class="box">
         <div class="kicker">Земли Теней</div>
@@ -321,14 +323,18 @@ export class Hud {
           <span><b>R</b> — Скрижаль: руны и лавка Наблюдателя</span><span><b>Пробел</b> — призвать ночь · <b>F</b> ×2 · <b>Esc</b></span>
         </div>
         <div class="row">
-          <button class="btn gold" data-a="start">Хранить Древо</button>
+          ${cont ? `<button class="btn gold" data-a="continue">Продолжить · ${cont}</button>` : ''}
+          <button class="btn ${cont ? '' : 'gold'}" data-a="start">${cont ? 'Новый забег' : 'Хранить Древо'}</button>
           <button class="btn" data-a="meta"><img class="icon" src="${icon('tree')}"> Древо Игг · ${coins} Монет</button>
           <button class="btn" data-a="stats">Статистика</button>
+          <button class="btn" data-a="feedback" data-tip="Написать автору: что понравилось, что сломано, чего хочется дальше">Отзыв · что дальше?</button>
         </div>
         <div class="stat">${pathName}</div>
         <div class="ver">${VERSION_LABEL}</div>
       </div>`;
     this.title.querySelector('[data-a=start]')!.addEventListener('click', () => this.cb.onStart());
+    this.title.querySelector('[data-a=continue]')?.addEventListener('click', () => this.cb.onContinue());
+    this.title.querySelector('[data-a=feedback]')?.addEventListener('click', () => this.cb.onFeedback());
     this.title.querySelector('[data-a=meta]')!.addEventListener('click', () => this.cb.onOpenMeta());
     this.title.querySelector('[data-a=stats]')!.addEventListener('click', () => this.cb.onOpenStats());
   }
@@ -356,11 +362,13 @@ export class Hud {
         ${won ? `<div class="stars">${st}</div><p class="stat">Звёзды за 10-ю ночь (Тот-Кто-Посадил-новое-Древо)</p>` : '<p>Тьма сомкнулась над Кругом до 10-й ночи.</p>'}
         <div class="tablet inline">Восходящий! Тот-Кто-Наблюдает награждает тебя: <b>+${coins} Монет</b>.</div>
         <div class="stat">Древо: <b>${TREE_STAGES[s.tree.stage].name}</b> · Тварей: <b>${s.stats.kills}</b> · Янтарь: <b>${s.stats.amberCollected}</b> · Звёздная Кровь: <b>${s.stats.starCollected}</b></div>
-        <p class="stat">★ дожить до 10-й ночи · ★★ с Малым Игг-Древом · ★★★ с Великим Игг-Древом и здоровьем > 50%. Дальше — бесконечная ночь за рекордом.</p>
-        <div class="row"><button class="btn gold" data-a="again">Ещё раз</button><button class="btn" data-a="meta"><img class="icon" src="${icon('tree')}"> Древо Игг</button></div>
+        <p class="stat">★ дожить до 10-й ночи · ★★ с Игг-Древом · ★★★ с Великим Игг-Древом и здоровьем > 50%. Дальше — бесконечная ночь за рекордом.</p>
+        <div class="row"><button class="btn gold" data-a="again">Ещё раз</button><button class="btn" data-a="meta"><img class="icon" src="${icon('tree')}"> Древо Игг</button>
+          <button class="btn" data-a="feedback" data-tip="Отзыв автору с данными этого забега: что было интересно, где застрял, чего не хватило">Оставить отзыв</button></div>
       </div>`;
     this.end.querySelector('[data-a=again]')!.addEventListener('click', () => this.cb.onRestart());
     this.end.querySelector('[data-a=meta]')!.addEventListener('click', () => this.cb.onOpenMeta());
+    this.end.querySelector('[data-a=feedback]')!.addEventListener('click', () => this.cb.onFeedback());
     this.end.classList.remove('hidden');
   }
 

@@ -425,6 +425,38 @@ export class Game {
   /** Stars earned at the campaign milestone (night 10). */
   stars(): number { return this.milestoneStars; }
 
+  /**
+   * Save the run (taken at dawn, when no creature, projectile or timer is in flight): the
+   * whole state plus the few internal counters. Restored into a fresh Game by `restore`.
+   */
+  snapshot(): string {
+    return JSON.stringify({
+      v: 1, state: this.state, graveyard: this.graveyard, rerolls: this.rerolls,
+      milestoneStars: this.milestoneStars, killsAtNight: this.killsAtNight,
+      honey: [...this.honeyAcc.entries()],
+    });
+  }
+
+  /** Load a run saved by `snapshot` (returns false if it doesn't fit this build). */
+  restore(json: string): boolean {
+    try {
+      const d = JSON.parse(json) as { v: number; state: GameState; graveyard: Game['graveyard']; rerolls: number; milestoneStars: number; killsAtNight: number; honey: Array<[number, { a: number; s: number }]> };
+      if (d.v !== 1 || !d.state?.keeper) return false;
+      // the state object keeps its identity (the renderer and HUD hold on to it)
+      Object.assign(this.state, d.state, { events: [] });
+      this.graveyard = d.graveyard ?? [];
+      this.rerolls = d.rerolls ?? 0;
+      this.milestoneStars = d.milestoneStars ?? 0;
+      this.killsAtNight = d.killsAtNight ?? 0;
+      this.honeyAcc = new Map(d.honey ?? []);
+      this.recalc();
+      this.refreshNestHp();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private computeStars(): number {
     const s = this.state;
     let n = 1;

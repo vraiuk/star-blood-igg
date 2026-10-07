@@ -291,3 +291,11 @@
 - Observer's exchange in the tree panel: 60 Amber → 1 Star Blood, 1 → 25 Amber.
 - Dawn sky: a warm band over the horizon as the night runs out, fading in the first day seconds.
 - Lighter choice window (softer backdrop + blur, glow on hover).
+
+## v0.6 — пакет 3
+- Run save: snapshot at every dawn (state + internal counters) in localStorage; the title
+  shows «Продолжить · ночь N»; a new run or a defeat clears it.
+- Feedback: «Оставить отзыв» on the end screen and «Отзыв · что дальше?» on the title open a
+  prefilled GitHub issue with the version and the run's numbers.
+- End-screen star text follows the renamed stages (★★ with the Igg-Tree).
+- Later (needs a server): leaderboard by version, analytics.

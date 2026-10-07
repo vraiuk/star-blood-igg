@@ -225,6 +225,23 @@ describe('playtest additions', () => {
   });
 });
 
+describe('save and continue', () => {
+  it('a run saved at dawn continues in a fresh game with the same state', () => {
+    const g = new Game();
+    while (g.choice) g.choose(0);
+    g.build('R0', 'hive');
+    g.state.amber = 777;
+    g.state.night = 5;
+    const json = g.snapshot();
+    const h = new Game();
+    expect(h.restore(json)).toBe(true);
+    expect(h.state.amber).toBe(777);
+    expect(h.state.night).toBe(5);
+    expect(h.structureAt('R0')?.family).toBe('hive');
+    expect(new Game().restore('{"v":99}')).toBe(false);
+  });
+});
+
 describe('time stop', () => {
   it('freezes creatures and the night, then recovers over nights, not seconds', () => {
     const g = new Game();
