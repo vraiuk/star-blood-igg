@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ENEMIES, SLOTS, WORLD } from '../src/data/balance';
+import { ABILITIES, ENEMIES, SLOTS, WORLD } from '../src/data/balance';
 import { NESTS } from '../src/data/nests';
 import { TREE_STAGES } from '../src/data/tree';
 import { Game } from '../src/sim/game';
@@ -193,6 +193,38 @@ describe('property levels', () => {
   });
 });
 
+describe('playtest additions', () => {
+  it('point upgrades raise only their aspect and cost Amber', () => {
+    const g = new Game();
+    g.state.amber = 5000;
+    g.build('R0', 'hive');
+    const st = g.structureAt('R0')!;
+    const d0 = g.nestStats(st).damage, r0 = g.nestStats(st).range;
+    expect(g.upgradeAspect(st.id, 'dmg')).toBe(true);
+    expect(g.nestStats(st).damage).toBeCloseTo(d0 * 1.15, 5);
+    expect(g.nestStats(st).range).toBe(r0);
+  });
+  it('the Light sacrifice blasts the creatures, kills the Keeper and makes revival dearer', () => {
+    const g = new Game();
+    while (g.choice) g.choose(0);
+    g.callNight();
+    const e = g.spawnEnemy('hound', g.state.keeper.x + 30, -1);
+    const cost = g.reviveCost();
+    expect(g.sacrificeKeeper()).toBe(true);
+    expect(e.dead || e.hp < e.maxHp).toBe(true);
+    expect(g.state.keeper.alive).toBe(false);
+    expect(g.reviveCost()).toBe(cost * 3);
+  });
+  it('the exchange trades Amber for Star Blood and back', () => {
+    const g = new Game();
+    g.state.amber = 600; g.state.star = 0;
+    expect(g.exchange('buyStar', 10)).toBe(true);
+    expect(g.state.star).toBe(10);
+    expect(g.exchange('sellStar', 2)).toBe(true);
+    expect(g.state.amber).toBe(50);
+  });
+});
+
 describe('time stop', () => {
   it('freezes creatures and the night, then recovers over nights, not seconds', () => {
     const g = new Game();
@@ -208,7 +240,7 @@ describe('time stop', () => {
     run(g, 2);
     expect(h.x).toBe(x);
     if (g.state.pending.length) expect(g.state.pending[0].at).toBeGreaterThan(at);
-    expect(g.state.keeper.timeStopNights).toBe(2);
+    expect(g.state.keeper.timeStopNights).toBe(ABILITIES.timestop.nights);
     g.state.keeper.cooldowns.timestop = 0;
     g.state.keeper.timeStopT = 0;
     expect(g.cast('timestop', 0)).toBe(false); // still recovering

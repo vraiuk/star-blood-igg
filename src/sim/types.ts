@@ -110,6 +110,8 @@ export interface Structure {
   beamT?: number;
   beamTo?: number;
   beamTick?: number;
+  /** point upgrades (Огранка гнезда): damage, reach, speed levels */
+  asp?: { dmg: number; rng: number; spd: number };
   /** merge stars (Слияние) and endless ascension levels (Возвышение) */
   merge: number;
   ascend: number;
@@ -238,6 +240,8 @@ export interface Keeper {
   leapFrom: number;
   leapTo: number;
   leapMult: number;
+  /** «Жертва Света» was made tonight: reviving costs much more until dawn */
+  sacrificed?: boolean;
   /** Эхо Света: casts counted toward the free one; Стужа: seconds of post-freeze chill */
   echo: number;
   coldT: number;
@@ -358,6 +362,8 @@ export type GameEvent =
   | { type: 'tunnelOpen'; x: number }
   | { type: 'slam'; x: number }
   | { type: 'plateBreak'; x: number; y: number }
+  | { type: 'treeDanger' }
+  | { type: 'sacrifice'; x: number }
   | { type: 'devour'; x: number }
   | { type: 'cleave'; x: number; r: number }
   | { type: 'tunnelSealed'; x: number; by: 'keeper' | 'hammer' | 'worn' }

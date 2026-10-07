@@ -1,5 +1,5 @@
-import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
-import { NEST_ROLE, MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
+import { ABILITIES, ATTR_MAX, ATTRIBUTES, CHORD, EXCHANGE, KEEPER_RANKS, SLOTS, WORLD, attrCost, crownPos, type AbilityId, type AttrId } from '../data/balance';
+import { ASPECT, type Aspect, NEST_ROLE, MAX_TIER, NESTS, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 import {
   APOTHEOSIS_RANK, DEV_SLOTS, FORM_RANK, KEEPER_RUNES, MAX_SLOTS, PROPERTIES, RUNE_FORMS, RUNE_RANKS, RUNE_RANK_COLORS, runeRankCost, runeRankName,
   runeRankPower, runeColor, boonById, facetById, propertyById, removeCost, runeRankCd, runeRankLight, PROP_MAX_LV, propLvFactor, propUpgradable, propUpgradeCost, FACETS, FACET_MAX, FACET_RANKS, type FormId, type KeeperRuneId,
@@ -317,6 +317,7 @@ export class Hud {
           <span><b>A / D</b> — ходить, собирать Янтарь и Кровь</span><span><b>Клик</b> по руне у земли — призвать гнездо</span>
           <span><b>1–6</b> — руны Хранителя</span><span><b>Клик</b> по Древу — стадии и рост</span>
           <span><b>Q / E</b> — переключать гнёзда и руны призыва · <b>1–4</b> — действие в меню</span>
+          <span><b>X ×2</b> — Жертва Света: последний шанс спасти Древо</span>
           <span><b>R</b> — Скрижаль: руны и лавка Наблюдателя</span><span><b>Пробел</b> — призвать ночь · <b>F</b> ×2 · <b>Esc</b></span>
         </div>
         <div class="row">
@@ -431,6 +432,12 @@ export class Hud {
         case 'tunnelOpen':
           if (!this.once('tunnel', 'Червь прорыл Лаз! Твари ныряют в него и выходят за строем. Встань Хранителем на выход (красная метка) — он засыплет Лаз; Игг-Молот обрушит его сразу.')) this.say('Червь прорыл Лаз за строем!', true);
           break;
+        case 'treeDanger':
+          this.showBanner('Древо в опасности!', 'Хранитель, защити Древо любой ценой. Крайняя мера — Жертва Света [X ×2]: взрыв света отбросит тварей.', true, 3.5);
+          break;
+        case 'sacrifice':
+          this.say('Жертва Света! Хранитель пал, отбросив тьму. Воскрешение этой ночью втрое дороже.', true);
+          break;
         case 'plateBreak':
           if (!this.once('plates', 'Панцирь Тирана сбит! Тварь обнажена: броня пропала, урон по ней +25%.')) this.say('Панцирь Тирана сбит!');
           break;
@@ -513,6 +520,9 @@ export class Hud {
       setTimeout(() => el.classList.remove('flashrune'), 1400);
     });
   }
+
+  /** A one-off Observer line from outside (e.g. key confirmations). */
+  observerSay(text: string) { this.say(text, true); }
 
   /** Show a tip only the first time; returns whether it was shown. */
   private once(key: string, text: string): boolean {
@@ -665,7 +675,7 @@ export class Hud {
     const rng = (n: NestStats) => (st.family === 'dragonfly' ? n.light! : n.range);
     if (st.tier < 1 || st.tier === 2) {
       const price = g.upgradePrice(st)!;
-      const next = g.nestStats({ family: st.family, tier: st.tier + 1, spec: st.spec, merge: st.merge, ascend: st.ascend });
+      const next = g.nestStats({ family: st.family, tier: st.tier + 1, spec: st.spec, merge: st.merge, ascend: st.ascend, asp: st.asp });
       opts.push({
         icon: icon('upgrade'), title: st.tier === 2 ? `Мастерство: ${def.specs[st.spec!].name}` : `Уровень ${st.tier + 2}`,
         sub: st.tier === 2 ? 'Высшая форма специализации' : 'Сильнее и крепче', key: '1',
@@ -679,7 +689,7 @@ export class Hud {
       (['A', 'B'] as SpecId[]).forEach((sp) => {
         const spec = def.specs[sp];
         const price = g.specPrice(st, sp);
-        const next = g.nestStats({ family: st.family, tier: 2, spec: sp, merge: st.merge, ascend: st.ascend });
+        const next = g.nestStats({ family: st.family, tier: 2, spec: sp, merge: st.merge, ascend: st.ascend, asp: st.asp });
         opts.push({
           icon: icon(st.family), title: spec.name, sub: `${spec.desc} · <i>${spec.perk}</i>`, key: sp === 'A' ? '1' : '2',
           body: this.statsBlock(st.family, cur, next), price, ok: g.canPay(price),
@@ -696,9 +706,15 @@ export class Hud {
         body: (() => {
           const res = g.mergeResult(st, partners);
           const nm = (x: { tier: number; spec: SpecId | null; ascend: number }) => `ур.${x.tier + 1}${x.spec ? ` ${def.specs[x.spec].name}` : ''}${x.ascend ? ` +${x.ascend}` : ''}`;
-          const next = g.nestStats({ family: st.family, tier: res.tier, spec: res.spec, merge: res.merge, ascend: res.ascend });
+          const next = g.nestStats({ family: st.family, tier: res.tier, spec: res.spec, merge: res.merge, ascend: res.ascend, asp: st.asp });
+          // honest comparison: three nests together vs the one that remains
+          const dps = (n: NestStats) => (n.damage * (n.volley ?? 1)) / Math.max(0.1, n.rate || 1) + (n.burn ?? 0);
+          const now3 = [st, ...partners].reduce((acc, x) => acc + dps(g.nestStats(x)), 0);
+          const after = dps(next);
+          const cmp = now3 > 0 ? `<div>Урон в секунду: сейчас 3 гнезда <b>${Math.round(now3)}</b> → после <b class="${after >= now3 ? 'up' : 'down'}">${Math.round(after)}</b></div>
+            <div style="opacity:.8">${after < now3 ? 'Одно гнездо слабее трёх, но освобождает 2 слота, а каждое улучшение в нём теперь стоит ×2.1.' : 'Одно сильнее трёх и освобождает 2 слота.'}</div>` : '';
           return `<div class="stats"><div>Поглотит: <b>${partners.map(nm).join(' и ')}</b></div>
-            <div>Останется: <b class="up">${nm(res)} ${'★'.repeat(res.merge)}</b> — лучшее из трёх</div></div>${this.statsBlock(st.family, cur, next)}`;
+            <div>Останется: <b class="up">${nm(res)} ${'★'.repeat(res.merge)}</b> — лучшее из трёх</div>${cmp}</div>${this.statsBlock(st.family, cur, next)}`;
         })(),
         price: { amber: 0, star: 0 }, ok: true, pos: 2, act: () => { g.mergeNests(st.id); },
         // hovering shows which two nests will be absorbed
@@ -707,7 +723,7 @@ export class Hud {
     }
     if (st.tier >= MAX_TIER - 1) {
       const c = g.ascendCost(st);
-      const next = g.nestStats({ family: st.family, tier: st.tier, spec: st.spec, merge: st.merge, ascend: st.ascend + 1 });
+      const next = g.nestStats({ family: st.family, tier: st.tier, spec: st.spec, merge: st.merge, ascend: st.ascend + 1, asp: st.asp });
       opts.push({
         icon: icon('upgrade'), title: `Возвышение ${st.ascend + 1}`, sub: 'Бесконечный рост: +12% силы', key: '1', pos: 0,
         body: this.statsBlock(st.family, cur, next), price: { amber: c, star: 0 }, ok: g.state.amber >= c, act: () => { g.ascendNest(st.id); },
@@ -745,7 +761,9 @@ export class Hud {
     if (!data) { this.closeMenu(); return; }
     this.ringOpts = data.opts;
     const sc = this.scale;
-    const sig = data.title + JSON.stringify(this.buildStars) + data.opts.map((o) => o.title + o.ok + JSON.stringify(o.price)).join('|');
+    const tgt = this.menuTarget?.kind === 'structure' ? g.state.structures.find((x) => x.id === (this.menuTarget as { id: number }).id) : undefined;
+    const sig = data.title + JSON.stringify(this.buildStars) + JSON.stringify(tgt?.asp ?? null) + (tgt ? Math.floor(g.state.amber) : '')
+      + data.opts.map((o) => o.title + o.ok + JSON.stringify(o.price)).join('|');
     if (sig !== this.ringSig) {
       this.ringSig = sig;
       const fixed = data.opts.every((o) => o.pos !== undefined);
@@ -765,6 +783,18 @@ export class Hud {
           <img src="${o.icon}"><span class="rk">${o.key}</span>
           <span class="rp">${o.price ? priceHtml(o.price, g).replace(/<img[^>]*>/g, (m) => m) : ''}</span></div>`;
       });
+      // point upgrades under a built nest's ring: ⚔ damage · ◎ reach · ⚡ speed
+      if (this.menuTarget?.kind === 'structure') {
+        const st = g.state.structures.find((x) => x.id === (this.menuTarget as { id: number }).id);
+        if (st) {
+          html += `<div class="aspects" style="top:calc(18 * var(--u))">${(['dmg', 'rng', 'spd'] as Aspect[]).map((key) => {
+            const a = ASPECT[key];
+            const lv = st.asp?.[key] ?? 0;
+            const cost = g.aspectCost(st, key);
+            return `<button class="aspect ${g.state.amber >= cost ? '' : 'no'}" data-asp="${key}" data-tip-title="${a.icon} ${a.name} · ур. ${lv} → ${lv + 1}" data-tip="${a.desc}. Точечное улучшение: дешевле Возвышения, но качает только это.">${a.icon}${lv ? `<i>${lv}</i>` : ''}<span><img class="icon" src="${icon('amber')}">${cost}</span></button>`;
+          }).join('')}</div>`;
+        }
+      }
       // − ★N + under every build option
       data.opts.forEach((o, i) => {
         if (!o.fam) return;
@@ -783,6 +813,16 @@ export class Hud {
       this.ring.classList.toggle('still', key === this.ringAnimKey);
       this.ringAnimKey = key;
       this.ring.innerHTML = html;
+      this.ring.querySelectorAll<HTMLButtonElement>('.aspect').forEach((b) => {
+        b.addEventListener('mousedown', (ev) => ev.stopPropagation());
+        b.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          const t = this.menuTarget;
+          if (t?.kind === 'structure') g.upgradeAspect(t.id, b.dataset.asp as Aspect);
+          this.ringSig = '';
+          this.renderRing();
+        });
+      });
       this.ring.querySelectorAll<HTMLButtonElement>('.starstep button').forEach((b) => {
         b.addEventListener('mousedown', (ev) => ev.stopPropagation());
         b.addEventListener('click', (ev) => {
@@ -879,6 +919,12 @@ export class Hud {
           <div class="gc-un">Теперь оно наращивает <b>годичные кольца</b>: каждое +7% силы гнёзд и +10% здоровья Древа, Древо растёт, а каждые 2 кольца открывают новый слот кроны.${s.tree.rings ? `<br>Колец: <b>${s.tree.rings}</b> · сила гнёзд ×${g.treePower().toFixed(2)}` : ''}</div>
           <div class="row">${btn(`Годичное кольцо №${s.tree.rings + 1} (<img class="icon" src="${icon('amber')}"> ${rc})`, s.amber >= rc, () => { g.addRing(); })}</div></div>`;
       }
+      // ── the Observer's exchange: Amber ↔ Star Blood
+      html += `<div class="sub">Обмен у Наблюдателя:</div><div class="row left exch">
+        ${btn(`${EXCHANGE.amberPerStar} <img class="icon" src="${icon('amber')}"> → 1 <img class="icon" src="${icon('star')}">`, s.amber >= EXCHANGE.amberPerStar, () => { g.exchange('buyStar', 1); }, 'tiny')}
+        ${btn('×10', s.amber >= EXCHANGE.amberPerStar * 10, () => { g.exchange('buyStar', 10); }, 'tiny')}
+        ${btn(`1 <img class="icon" src="${icon('star')}"> → ${EXCHANGE.starToAmber} <img class="icon" src="${icon('amber')}">`, s.star >= 1, () => { g.exchange('sellStar', 1); }, 'tiny')}
+        ${btn('×10', s.star >= 10, () => { g.exchange('sellStar', 10); }, 'tiny')}</div>`;
       // ── Уклоны Древа
       const counts = pathCounts(s.tree.branches);
       html += `<div class="sub">Уклон Древа — ${PATH_CAPSTONE} ветви одного пути превращают его в особое Древо:</div><div class="paths">${(Object.keys(TREE_PATHS) as TreePath[]).map((p) => {

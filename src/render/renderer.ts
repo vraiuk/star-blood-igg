@@ -94,6 +94,14 @@ export class Renderer {
           p.emit(24, e.x, WORLD.groundY - 12, { speed: 70, max: 0.8, colors: ['#c23a5a', '#5a1020', PAL.gold3], gravity: 120 });
           this.shake = Math.max(this.shake, 6);
           break;
+        case 'sacrifice':
+          p.goldBurst(e.x, WORLD.groundY - 14, 220);
+          p.addFx('ring', e.x, WORLD.groundY - 10, 0.5, 90);
+          p.addFx('ring', e.x, WORLD.groundY - 10, 0.9, 170);
+          p.addFx('growWave', e.x, WORLD.groundY, 0.9, 170);
+          this.flash = Math.max(this.flash, 0.8);
+          this.shake = Math.max(this.shake, 18);
+          break;
         case 'plateBreak':
           p.emit(18, e.x, e.y, { speed: 90, max: 0.7, colors: ['#b8c4d8', '#7a7a96', '#e8e8ff'], gravity: 160 });
           p.addFx('ring', e.x, e.y, 0.35, 26);
@@ -308,6 +316,7 @@ export class Renderer {
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
     for (const e of s.enemies) drawFogEdge(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
     if (s.phase === 'night' || (s.phase === 'day' && s.dayLeft < 10)) this.drawIncoming(c, game, time);
+    this.drawSkyMood(c, game, time);
     // Остановка Времени: a pale-blue hush over the world, frost glints on the frozen
     const ts = s.keeper.timeStopT;
     if (ts > 0) {
@@ -440,6 +449,42 @@ export class Renderer {
     r.fillRect(0, 0, WORLD.width, WORLD.height);
     for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) c.drawImage(this.rimCv, dx, dy);
     c.drawImage(this.nestCv, 0, 0);
+  }
+
+  /**
+   * The mood of the sky: a warm band of dawn rises over the horizon as the night runs out
+   * (and fades in the first seconds of the day); a red pulse frames the view while the
+   * Tree is in danger.
+   */
+  private dawnGlow = 0;
+  private drawSkyMood(c: Ctx, game: Game, time: number) {
+    const s = game.state;
+    const cam = this.camera;
+    let target = 0;
+    if (s.phase === 'night' && s.pending.length === 0) target = 1 - Math.min(1, s.enemies.length / 8);
+    else if (s.phase === 'day') target = Math.max(0, 1 - s.phaseTime / 6);
+    this.dawnGlow += (target - this.dawnGlow) * 0.03;
+    if (this.dawnGlow > 0.02) {
+      const top = WORLD.groundY - 180, bot = WORLD.groundY;
+      for (let y = top; y < bot; y += 4) {
+        const k = (y - top) / (bot - top);
+        c.fillStyle = `rgba(255, 140, 90, ${(0.16 * this.dawnGlow * k * k).toFixed(3)})`;
+        c.fillRect(cam.x, y, cam.w, 4);
+      }
+    }
+    // the Tree in danger: a red heartbeat around the view
+    if (s.phase === 'night' && s.tree.hp < game.treeMaxHp() * 0.3) {
+      const pulse = 0.25 + 0.2 * Math.max(0, Math.sin(time * 6));
+      const w = 26;
+      for (let i = 0; i < w; i += 2) {
+        const a = (pulse * (1 - i / w)).toFixed(3);
+        c.fillStyle = `rgba(200, 20, 40, ${a})`;
+        c.fillRect(cam.x + i, cam.y, 2, cam.h);
+        c.fillRect(cam.x + cam.w - i - 2, cam.y, 2, cam.h);
+        c.fillRect(cam.x, cam.y + i, cam.w, 2);
+        c.fillRect(cam.x, cam.y + cam.h - i - 2, cam.w, 2);
+      }
+    }
   }
 
   /**

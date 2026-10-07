@@ -83,7 +83,7 @@ export const PROPERTIES: PropertyDef[] = [
   // ── Остановка Времени
   P({ id: 'ts-long', rune: 'timestop', type: 'Усиление', name: 'Долгий миг', desc: 'Время стоит на 25% дольше', rank: 1, price: 9, stack: 4, mods: {} }),
   P({ id: 'ts-cheap', rune: 'timestop', type: 'Уменьшение', name: 'Уменьшение: Миг', desc: 'Остановка на 35% дешевле по Свету', rank: 1, price: 7, stack: 2, mods: {} }),
-  P({ id: 'ts-quick', rune: 'timestop', type: 'Изменение', name: 'Короткая ночь', desc: 'Руна восстанавливается на 1 ночь быстрее', rank: 3, price: 18, stack: 1, mods: {} }),
+  P({ id: 'ts-quick', rune: 'timestop', type: 'Изменение', name: 'Растянутый миг', desc: 'Время стоит на 2 с дольше, Остановка на 25% дешевле', rank: 3, price: 18, stack: 1, mods: {} }),
   P({ id: 'ts-shatter', rune: 'timestop', type: 'Изменение', name: 'Хрупкий лёд', desc: 'Замершие твари получают +35% урона', rank: 2, price: 12, stack: 1, mods: {} }),
   // ── Руна Света
   P({ id: 'lt-spring', rune: 'light', type: 'Усиление', name: 'Родник Света', desc: '+30% регенерации Света', rank: 1, price: 6, stack: 4, mods: { lightRegen: 0.3 } }),
@@ -230,7 +230,7 @@ export const FACETS: FacetDef[] = [
   F({ id: 'sp-crescendo', rune: 'spear', rank: 3, name: 'Крещендо', desc: 'Каждое 3-е попадание подряд — ×3 урона', requires: 'sp-rhythm' }),
   // Молот
   F({ id: 'hm-after', rune: 'hammer', rank: 1, name: 'Отголосок', desc: 'Через 0.8 с руна бьёт ещё раз с силой 50%' }),
-  F({ id: 'hm-pull', rune: 'hammer', rank: 1, name: 'Притяжение', desc: 'Молот не отбрасывает, а стягивает тварей к Хранителю' }),
+  F({ id: 'hm-pull', rune: 'hammer', rank: 1, name: 'Притяжение', desc: 'Молот стягивает тварей к Хранителю — и через миг в стяжку падает звезда' }),
   F({ id: 'hm-deep', rune: 'hammer', rank: 1, name: 'Глубинный удар', desc: 'По подземным ×2, Лазы рушатся в двойном радиусе', requires: 'hm-quake' }),
   F({ id: 'hm-sun', rune: 'hammer', rank: 1, name: 'Солнечное сердце', desc: '+10 Света и +4 HP Хранителю за каждую задетую тварь', requires: 'hm-refund' }),
   F({ id: 'hm-tremor', rune: 'hammer', rank: 3, name: 'Тектоника', desc: 'Оглушение Молота на 60% дольше' }),

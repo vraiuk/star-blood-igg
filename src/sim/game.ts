@@ -1,11 +1,11 @@
 import {
-  ABILITIES, ABILITY_STAGE_SCALING, CHORD, PACE, AFFIXES, ARMOR_FLOOR, ATTR_MAX, PLATES, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
+  ABILITIES, ABILITY_STAGE_SCALING, CHORD, EXCHANGE, PACE, SACRIFICE, AFFIXES, ARMOR_FLOOR, ATTR_MAX, PLATES, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
   SLOT_MARGIN, SLOTS, crownPos, ringsForCrownSlot, WORLD, WORM_LIGHT_MULT, FOG,
   type AbilityId, type AttrId, type EnemyKind, type SlotDef,
 } from '../data/balance';
 import { PATHS } from '../data/meta';
 import { type ModPatch, type Mods, combine, scalePatch } from '../data/mods';
-import { ASCEND, BASE_TIERS, MAX_TIER, MERGE, NESTS, SELL_REFUND, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
+import { ASCEND, ASPECT, BASE_TIERS, type Aspect, MAX_TIER, MERGE, NESTS, SELL_REFUND, type Family, type NestStats, type Price, type SpecId } from '../data/nests';
 
 /** Families that live in the Tree's crown (the crown also accepts a firefly hive). */
 const CROWN_FAMILIES = new Set<Family>(['caterpillar', 'honeycomb', 'mender']);
@@ -233,14 +233,15 @@ export class Game {
   }
 
   /** Effective stats of a nest including specialization, stage power and mods. */
-  nestStats(st: Pick<Structure, 'family' | 'tier' | 'spec'> & Partial<Pick<Structure, 'merge' | 'ascend'>>): NestStats {
+  nestStats(st: Pick<Structure, 'family' | 'tier' | 'spec'> & Partial<Pick<Structure, 'merge' | 'ascend' | 'asp'>>): NestStats {
     const fam = NESTS[st.family];
     const base = st.tier < BASE_TIERS ? fam.levels[st.tier] : fam.specs[st.spec!].levels[st.tier - BASE_TIERS];
     const m = this.mods;
     const merge = st.merge ?? 0, asc = st.ascend ?? 0;
-    const boost = (1 + MERGE.power * merge) * (1 + ASCEND.power * asc);
+    const a = st.asp ?? { dmg: 0, rng: 0, spd: 0 };
+    const boost = (1 + MERGE.power * merge) * (1 + ASCEND.power * asc) * (1 + ASPECT.dmg.per * a.dmg);
     const dmg = (1 + m.famDamage[st.family]) * this.treePower() * boost;
-    const rng = (1 + m.famRange[st.family]) * (1 + MERGE.range * merge) * (REACH_FAMILIES.has(st.family) ? this.stageDef.reach : 1);
+    const rng = (1 + m.famRange[st.family]) * (1 + MERGE.range * merge) * (1 + ASPECT.rng.per * a.rng) * (REACH_FAMILIES.has(st.family) ? this.stageDef.reach : 1);
     const hpBoost = (1 + MERGE.hp * merge) * (1 + ASCEND.power * asc);
     return {
       ...base,
@@ -254,7 +255,9 @@ export class Game {
       // caterpillars grow with every upgrade: merge stars and endless Возвышение add hands and loads
       workers: base.workers !== undefined ? base.workers + merge + Math.floor(asc / 2) : undefined,
       carry: base.carry !== undefined ? Math.round((base.carry + merge * 4) * (1 + 0.25 * asc)) : undefined,
-      speed: base.speed !== undefined ? base.speed * (1 + 0.05 * asc) : undefined,
+      speed: base.speed !== undefined ? base.speed * (1 + 0.05 * asc) * (1 + ASPECT.spd.per * a.spd) : undefined,
+      rate: base.rate / (1 + ASPECT.spd.per * a.spd),
+      respawn: base.respawn !== undefined ? base.respawn / (1 + ASPECT.spd.per * a.spd) : undefined,
       damage: base.damage * dmg,
       burn: base.burn !== undefined ? base.burn * dmg : undefined,
       poison: base.poison !== undefined ? base.poison * dmg : undefined,
@@ -279,6 +282,23 @@ export class Game {
   }
 
   specPrice(st: Structure, spec: SpecId): Price { return this.scalePrice(NESTS[st.family].specs[spec].costs[0]); }
+
+  /** Amber for the next level of a nest's point upgrade. */
+  aspectCost(st: Structure, key: Aspect) { return ASPECT.cost(st.tier, (st.asp ?? { dmg: 0, rng: 0, spd: 0 })[key]); }
+  /** Point-upgrade one aspect of a nest (damage, reach or speed). */
+  upgradeAspect(id: number, key: Aspect): boolean {
+    const st = this.state.structures.find((x) => x.id === id);
+    if (!st || this.over) return false;
+    const cost = this.aspectCost(st, key);
+    if (this.state.amber < cost) return this.deny('Не хватает Янтаря');
+    this.state.amber -= cost;
+    st.spentAmber += cost;
+    st.asp = { ...(st.asp ?? { dmg: 0, rng: 0, spd: 0 }), [key]: (st.asp?.[key] ?? 0) + 1 };
+    const hp = this.nestStats(st).hp;
+    st.hp += hp - st.maxHp; st.maxHp = hp;
+    this.emit({ type: 'built', family: st.family, x: st.x, y: st.y, underground: st.underground, tier: st.tier });
+    return true;
+  }
 
   /** Price of a new nest born already merged: ★n costs as much as the 3ⁿ nests it replaces. */
   priceStars(family: Family, stars: number): Price {
@@ -310,7 +330,7 @@ export class Game {
     const own = id === 'spear' ? this.mods.spearCost : id === 'hammer' ? this.mods.hammerCost
       : id === 'radiance' ? -0.35 * this.propPower('radiance', 'rd-cheap')
       : id === 'swarm' ? -0.35 * this.propPower('swarm', 'sw-cheap')
-      : id === 'timestop' ? -0.35 * this.propPower('timestop', 'ts-cheap') : 0;
+      : id === 'timestop' ? -0.35 * this.propPower('timestop', 'ts-cheap') - 0.25 * this.propCount('timestop', 'ts-quick') : 0;
     const facet = id === 'spear' && this.state?.keeper?.facets.includes('sp-swift') ? -0.25 : 0;
     const k = this.state?.keeper;
     const rank = k ? runeRankLight(k.runeRank[id]) : 1;
@@ -597,7 +617,44 @@ export class Game {
   }
 
   /** Amber price of an immediate resurrection by the Tree. */
-  reviveCost() { return 60 + 25 * this.state.night; }
+  reviveCost() { return Math.round((60 + 25 * this.state.night) * (this.state.keeper.sacrificed ? SACRIFICE.reviveMul : 1)); }
+
+  /**
+   * «Жертва Света»: the Ascended bursts in light around himself — huge damage, everything
+   * thrown back and stunned — and falls. Reviving tonight costs three times more.
+   */
+  sacrificeKeeper(): boolean {
+    const s = this.state, k = s.keeper;
+    if (this.over || !k.alive || s.phase !== 'night') return this.deny('Жертва Света — только ночью и живым');
+    this.src = 'keeper';
+    const mult = this.abilityMult('hammer');
+    for (const e of s.enemies) {
+      const d = e.x - k.x;
+      if (e.dead || Math.abs(d) > SACRIFICE.radius || e.layer === 'air' && Math.abs(d) > SACRIFICE.radius * 0.7) continue;
+      this.damageEnemy(e, SACRIFICE.damage * mult * (1 - Math.abs(d) / SACRIFICE.radius * 0.5), true, false, true);
+      this.stunEnemy(e, SACRIFICE.stun);
+      if (!ENEMIES[e.kind].boss && e.layer === 'ground') e.kick = Math.sign(d || 1) * SACRIFICE.knock * ENEMIES[e.kind].ccMult;
+    }
+    this.emit({ type: 'sacrifice', x: k.x });
+    k.sacrificed = true;
+    k.hp = 1;
+    this.damageKeeper(1e9);
+    return true;
+  }
+
+  /** The Observer's exchange: buy Star Blood for Amber, or sell it back. */
+  exchange(dir: 'buyStar' | 'sellStar', n = 1): boolean {
+    const s = this.state;
+    if (dir === 'buyStar') {
+      const cost = EXCHANGE.amberPerStar * n;
+      if (s.amber < cost) return this.deny('Не хватает Янтаря');
+      s.amber -= cost; s.star += n;
+    } else {
+      if (s.star < n) return this.deny('Не хватает Звёздной Крови');
+      s.star -= n; s.amber += EXCHANGE.starToAmber * n;
+    }
+    return true;
+  }
 
   /** Rune that would lose a rank on a sacrifice (highest rank first), or a property to lose. */
   sacrificeTarget(): { rune: KeeperRuneId; kind: 'rank' | 'prop' } | null {
@@ -940,6 +997,7 @@ export class Game {
     else this.beamRelease = true;
   }
   private beamRelease = false;
+  private dangerTold = false;
 
   /** Cooldown of an ability after rank, form, properties, facets and tree mods. */
   abilityCooldown(id: AbilityId): number {
@@ -979,7 +1037,8 @@ export class Game {
     const k = this.state.keeper;
     const def = ABILITIES.timestop;
     k.timeStopMax = k.timeStopT = def.duration * this.runeArea('timestop') * (1 + 0.25 * this.propPower('timestop', 'ts-long')) + this.fx('ts-eternal', 3, 2, 0);
-    k.timeStopNights = Math.max(1, def.nights - this.propCount('timestop', 'ts-quick'));
+    k.timeStopMax = k.timeStopT = k.timeStopT + 2 * this.propCount('timestop', 'ts-quick');
+    k.timeStopNights = def.nights;
   }
   /** A giant walks over termite soldiers, crushing them as it goes. */
   private trample(e: Enemy, dt: number) {
@@ -1010,7 +1069,7 @@ export class Game {
     const reach = this.swarmReach();
     for (const st of s.structures) {
       if (st.crown || Math.abs(st.x - k.x) > reach) continue;
-      const h = st.maxHp * def.heal * runeRankPower(k.runeRank.swarm) ** 0.5;
+      const h = st.maxHp * def.heal * runeRankPower(k.runeRank.swarm) ** 0.75;
       st.hp = Math.min(st.maxHp, st.hp + h);
       this.healFx(st.id, st.x, st.underground ? st.y : WORLD.groundY - 20, 99);
     }
@@ -1137,7 +1196,7 @@ export class Game {
       const life = apo ? 10 : 6;
       reach = 100 * area;
       s.tempLights.push({
-        x: k.x, radius: reach, life, maxLife: life, slow: 0.5, dps: 34 * mult, haste: 0.4, heal: apo ? 30 : 0,
+        x: k.x, radius: reach, life, maxLife: life, slow: 0.55, dps: 55 * mult, haste: 0.5, heal: apo ? 40 : 15,
       });
       for (const e of s.enemies) {
         const under = e.layer === 'under';
@@ -1160,6 +1219,12 @@ export class Game {
         this.stunEnemy(e, stun);
         if (e.kind !== 'mother') e.kick = pull ? -Math.sign(d) * Math.min(Math.abs(d) * 2.5, def.knockback * 3) : Math.sign(d || -e.dir) * def.knockback * 3;
       }
+    }
+    // Притяжение: the gathered pack gets a star dropped on it a moment later
+    if (pull) {
+      const x = k.x;
+      const lv = this.facetLv('hm-pull');
+      this.later(0.6, () => this.meteor(x, 0.35, def.damage * (1.5 + 0.4 * (lv - 1)) * mult, radius * 0.7, { stun: 0.8 }));
     }
     // common to every Form: caving tunnels, the sun refund, the eclipse field and the light
     const caveR = Math.max(radius, form === 'B' ? reach : 0) * this.fx('hm-deep', 2, 0.3, 1);
@@ -1213,7 +1278,7 @@ export class Game {
     const apo = this.apotheosis('starfall');
     if (form === 'A') {
       // Сверхзвезда: one giant star
-      this.meteor(tx, 1.1, def.damage * 4.5 * mult, def.impactRadius * 1.9 * area, {
+      this.meteor(tx, 1.1, def.damage * 6 * mult, def.impactRadius * 2.2 * area, {
         stun: 2.5, breakArmor: apo ? 20 : 8, burnTime: apo ? 8 : def.burnTime, giant: true,
       });
       // extra stars (Ливень, Звёздная буря) escort the giant one and land around its crater
@@ -1436,6 +1501,7 @@ export class Game {
     s.tree.shieldUsed = false;
     this.nightMinReach = Infinity;
     this.nightTreeDmg = 0;
+    this.dangerTold = false;
     this.queueNight(0);
   }
 
@@ -1501,6 +1567,7 @@ export class Game {
     this.graveyard = [];
     s.tunnels = [];
     s.keeper.timeStopNights = Math.max(0, s.keeper.timeStopNights - 1);
+    s.keeper.sacrificed = false;
     if (!s.keeper.alive) s.keeper.respawn = 0.5;
     this.adaptWrath(finished);
     this.emit({ type: 'dawn', night: finished, gift });
@@ -1879,7 +1946,7 @@ export class Game {
       const fog = this.fogLevel(e);
       if (def.worm && e.lit && fog < 1) {
         // Igg-light burns worms: «личинка сгорает за одну-две секунды» (the shroud dims it)
-        const flare = s.keeper.radianceT > 0 ? ABILITIES.radiance.burn : 1;
+        const flare = s.keeper.radianceT > 0 ? ABILITIES.radiance.burn * runeRankPower(s.keeper.runeRank.radiance) ** 0.6 : 1;
         e.hp -= this.stageDef.wormBurn * (1 + this.mods.wormBurn) * flare * (def.boss ? 0.5 : 1) * (1 - fog) * dt;
         if (e.hp <= 0) { this.killEnemy(e); continue; }
       }
@@ -2192,7 +2259,7 @@ export class Game {
   private vulnAt(e: Enemy): number {
     const shatter = this.frozen(e) && this.propCount('timestop', 'ts-shatter') ? this.fx('ts-crack', 0.7, 0.2, 0.35) : 0;
     if ((e.layer === 'under')) return shatter;
-    let v = shatter + this.state.keeper.radianceT > 0 && e.lit ? ABILITIES.radiance.vuln * runeRankPower(this.state.keeper.runeRank.radiance) ** 0.5 : 0;
+    let v = shatter + (this.state.keeper.radianceT > 0 && e.lit ? ABILITIES.radiance.vuln * runeRankPower(this.state.keeper.runeRank.radiance) ** 0.75 : 0);
     for (const st of this.state.structures) {
       if (st.family !== 'dragonfly') continue;
       const ns = this.nestStats(st);
@@ -2298,7 +2365,7 @@ export class Game {
     if (this.state.keeper.timeStopT > 0) m *= this.fx('ts-hush', 1.5, 0.25, 1);
     for (const t of this.state.tempLights) if (t.haste && Math.abs(st.x - t.x) <= t.radius) { m *= 1 + t.haste; break; }
     const k = this.state.keeper;
-    if (k.swarmT > 0 && Math.abs(st.x - k.swarmX) <= this.swarmReach()) m *= 1 + ABILITIES.swarm.haste * runeRankPower(k.runeRank.swarm) ** 0.5;
+    if (k.swarmT > 0 && Math.abs(st.x - k.swarmX) <= this.swarmReach()) m *= 1 + ABILITIES.swarm.haste * runeRankPower(k.runeRank.swarm) ** 0.75;
     if (this.mods.dragonflyHaste) {
       for (const d of this.state.structures) {
         if (d.family === 'dragonfly' && d !== st && Math.abs(d.x - st.x) <= this.nestStats(d).light!) { m *= 1.2; break; }
@@ -2561,6 +2628,11 @@ export class Game {
       dmg -= absorbed;
     }
     t.hp -= dmg;
+    // the Tree is in danger: tell the player once per night (the HUD slows time down)
+    if (!this.dangerTold && this.state.phase === 'night' && t.hp < this.treeMaxHp() * 0.3) {
+      this.dangerTold = true;
+      this.emit({ type: 'treeDanger' });
+    }
     t.hitFlash = 0.15;
     if (attacker && this.mods.treeReflect > 0 && ENEMIES[attacker.kind].range === 0) {
       this.damageEnemy(attacker, amount * this.mods.treeReflect);

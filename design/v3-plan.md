@@ -274,3 +274,20 @@
 - Eyes of the Darkness show at the end of the day where the night's first groups will come from.
 - «+ слот» sits among the property slots.
 - Readability: larger, brighter body text.
+
+## v0.6 — пакет 2 (геймплей)
+- Shadow of the Devourer: 1 on night 15, 3 on night 20, 9 on night 25 and every 10th after.
+- Rune ranks felt stronger: Radiance burn/vulnerability and Swarm haste/heal scale with
+  rank power^0.6–0.75 (was ^0.5); fixed a precedence bug that dropped «Хрупкий лёд».
+- Hammer «Притяжение»: pulls the pack in and a star falls on it 0.6 s later.
+- Supernova ×6 damage, wider; Dome 55 dps, stronger slow/haste, heals nests; Time Stop recovers
+  in one night; «Растянутый миг» (+2 s, −25% Light) replaces the useless night-cut.
+- Merge card compares DPS of the three nests vs the merged one, with the trade-off spelled out.
+- Point upgrades of nests (⚔ damage +15%, ◎ reach +8%, ⚡ speed +10% per level), cheap,
+  endless, under each nest's ring — Ascension stays the general growth.
+- Tree in danger (<30% HP at night): banner, speed back to ×1, red pulse around the view.
+- «Жертва Света» (X twice): the Keeper bursts (damage, knock-back, stun) and falls; reviving
+  that night costs ×3.
+- Observer's exchange in the tree panel: 60 Amber → 1 Star Blood, 1 → 25 Amber.
+- Dawn sky: a warm band over the horizon as the night runs out, fading in the first day seconds.
+- Lighter choice window (softer backdrop + blur, glow on hover).

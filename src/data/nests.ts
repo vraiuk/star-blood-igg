@@ -305,6 +305,15 @@ export const NEST_ROLE: Record<Family, string> = {
   mender: 'Лекарь: чинит гнёзда и Древо',
 };
 
+/** Point upgrades of a nest: each level of an aspect is cheap and changes only that aspect. */
+export type Aspect = 'dmg' | 'rng' | 'spd';
+export const ASPECT = {
+  dmg: { name: 'Урон', icon: '⚔', per: 0.15, desc: '+15% урона (и лечения, и дохода) за уровень' },
+  rng: { name: 'Дальность', icon: '◎', per: 0.08, desc: '+8% дальности и света за уровень' },
+  spd: { name: 'Скорость', icon: '⚡', per: 0.1, desc: '+10% скорости атаки (и вылупления, и шага сборщиц) за уровень' },
+  cost: (tier: number, lv: number) => Math.round(35 * (1 + tier) * Math.pow(1.45, lv)),
+} as const;
+
 export const MERGE = { power: 1.1, hp: 1.0, range: 0.06 } as const;
 export const ASCEND = {
   power: 0.12,

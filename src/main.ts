@@ -35,6 +35,7 @@ const renderer = new Renderer(ctx);
 const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null };
 let endShown = false;
 const SPEEDS = [1, 1.25, 1.5, 2, 5];
+let sacrificeArmed = 0;
 const nextSpeed = () => SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
 /** − / + step through the speeds without wrapping around */
 const stepSpeed = (d: 1 | -1) => SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, SPEEDS.indexOf(speed) + d))];
@@ -193,6 +194,12 @@ window.addEventListener('keydown', (e) => {
   if (k === 'v') game.revive('amber');
   if (k === 'g') game.revive('sacrifice');
   if (k === 't') hud.togglePanel('tree');
+  if (k === 'x') {
+    // «Жертва Света» needs two presses within 2 s
+    const now = performance.now();
+    if (now - sacrificeArmed < 2000) { sacrificeArmed = 0; game.sacrificeKeeper(); }
+    else { sacrificeArmed = now; hud.observerSay('Нажми X ещё раз — Жертва Света: Хранитель взорвётся светом и падёт'); }
+  }
   if (k === 'q') cycleNode(-1);
   if (k === 'e') cycleNode(1);
 });
@@ -362,8 +369,8 @@ function frame(now: number) {
   }
   hud.inRun = started;
   const events = game.drainEvents();
-  // the Ascended falls: back to normal speed so the moment isn't missed
-  if (speed !== 1 && events.some((e) => e.type === 'keeperDown')) { speed = 1; hud.setSpeed(1); }
+  // the Ascended falls or the Tree is in danger: back to normal speed so the moment isn't missed
+  if (speed !== 1 && events.some((e) => e.type === 'keeperDown' || e.type === 'treeDanger')) { speed = 1; hud.setSpeed(1); }
   if (events.length) {
     renderer.onEvents(events, game);
     hud.onEvents(events);
