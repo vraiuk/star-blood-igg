@@ -1026,7 +1026,9 @@ export class Hud {
         const cap = k.slots[rid];
         const rr = k.runeRank[rid];
         const hasForms = rid === 'spear' || rid === 'hammer' || rid === 'starfall';
-        html += `<div class="rblock ${unlocked ? '' : 'dim'}" data-rune="${rid}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b>
+        // only runes that can't even be learned yet are dimmed
+        const learnable = !unlocked && g.abilityAvailable(rid as AbilityId);
+        html += `<div class="rblock ${unlocked || learnable ? '' : 'dim'} ${learnable ? 'learn' : ''}" data-rune="${rid}"><div class="rhead"><img src="${icon(def.icon)}"><b>${def.name}</b>
           <span class="rrank" style="--c:${runeColor(rr)}">${runeRankName(rr)} · ×${runeRankPower(rr).toFixed(2)}</span><span class="cap">${props.length}/${cap}</span>`;
         html += `</div>`;
         if (unlocked) {
@@ -1093,7 +1095,7 @@ export class Hud {
           html += `</div>`;
         } else if (g.abilityAvailable(rid as AbilityId)) {
           const price = ABILITIES[rid as AbilityId].learn;
-          html += `<div class="row left">${btn(`Изучить руну (<img class="icon" src="${icon('star')}"> ${price})`, s.star >= price, () => { g.learnAbility(rid as AbilityId); }, 'tiny')}
+          html += `<div class="learnrow">${btn(`Изучить за <img class="icon" src="${icon('star')}"> ${price}`, s.star >= price, () => { g.learnAbility(rid as AbilityId); }, 'gold learnbtn')}
             <span class="hint">${ABILITIES[rid as AbilityId].desc}</span></div>
             <div class="sub">Или дождись дара Наблюдателя на рассвете.</div>`;
         } else {

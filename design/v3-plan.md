@@ -302,3 +302,7 @@
 - Observer callouts: when a hint, warning or quest mentions a part of the interface (the
   Tablet, the Tree, «призвать ночь»/Натиск, a rune, Amber, Star Blood, Light, speed…), that
   button blinks with a golden ring for 4.5 s; quest focus uses the same ring.
+- Tablet: runes that can be learned now are no longer dimmed; a clear golden one-line
+  «Изучить за ★N» button; tablet buttons don't wrap.
+- Nest halo redrawn as a calm pedestal ring at the nest's foot with two rising motes (the old
+  scattered pulsing dots read as a strange flicker around attacking hives).

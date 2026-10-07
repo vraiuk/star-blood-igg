@@ -727,11 +727,21 @@ export function nestLook(s: Pick<Structure, 'tier' | 'spec' | 'merge' | 'ascend'
 function nestHalo(c: Ctx, cx: number, cy: number, r: number, color: string, time: number, behind: boolean) {
   if (!color) return;
   if (behind) {
-    for (let i = 0; i < 28; i++) {
-      const a = (i / 28) * Math.PI * 2;
-      const k = 0.55 + 0.45 * Math.sin(time * 2 + i);
-      rect(c, cx + Math.cos(a) * r * k, cy + Math.sin(a) * r * 0.7 * k, 1, 1, color);
+    // a calm glowing pedestal ring at the nest's foot and two slowly rising motes
+    // (playtest: the old scattered dots read as a strange flicker around attacking nests)
+    const ry = Math.max(2, r * 0.22);
+    c.globalAlpha = 0.55 + 0.15 * Math.sin(time * 1.5);
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * Math.PI * 2;
+      rect(c, cx + Math.cos(a) * r, cy + Math.sin(a) * ry, 1, 1, color);
     }
+    c.globalAlpha = 1;
+    for (let m = 0; m < 2; m++) {
+      const t = (time * 0.35 + m * 0.5) % 1;
+      c.globalAlpha = 1 - t;
+      rect(c, cx + (m ? r * 0.5 : -r * 0.5), cy - t * r * 1.6, 1, 1, color);
+    }
+    c.globalAlpha = 1;
   } else {
     for (let i = 0; i < 5; i++) {
       const a = -Math.PI / 2 + (i - 2) * 0.42;
@@ -748,8 +758,8 @@ export function drawStructure(c: Ctx, s: Structure, time: number) {
   const look = nestLook(s);
   const ax = s.x, ay = s.underground ? s.y : GY;
   const baseTop = s.underground ? 16 : s.family === 'beetle' ? 30 : s.family === 'dragonfly' ? 50 : 58;
-  const midY = s.underground ? s.y : GY - baseTop * 0.45 * look.scale;
-  nestHalo(c, ax, midY, 10 + baseTop * 0.25 * look.scale, look.color, time, true);
+  // the halo sits at the nest's foot (ground line / root knot)
+  nestHalo(c, ax, s.underground ? s.y + 4 : GY, 8 + 4 * look.scale, look.color, time, true);
   c.save();
   if (build < 1) {
     c.beginPath();
