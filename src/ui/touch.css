@@ -24,43 +24,96 @@ html.touch .btn, html.touch .ab, html.touch .ropt, html.touch .aspect, html.touc
 /* keyboard hints mean nothing on a phone */
 html.touch .ab .key, html.touch .ropt .rk, html.touch .btn .k, html.touch .rcard .hk, html.touch #revive .btn .k { display: none !important; }
 
-/* ── corners, clear of the notch ── */
-html.touch #res { left: calc(6 * var(--u) + var(--sl)); top: calc(4 * var(--u)); padding: calc(2 * var(--u)) calc(5 * var(--u)); gap: calc(6 * var(--u)); }
-html.touch #res .item { font-size: calc(8 * var(--u)); }
-html.touch #res .num { min-width: calc(12 * var(--u)); }
-html.touch #res .kbar, html.touch #res .lightbar { width: calc(36 * var(--u)); }
-html.touch #treebar { top: calc(4 * var(--u)); width: calc(132 * var(--u)); }
-html.touch #treebar .caption { font-size: calc(6 * var(--u)); }
-html.touch #push { right: calc(6 * var(--u) + var(--sr)); top: calc(4 * var(--u)); padding: calc(2 * var(--u)) calc(5 * var(--u)); }
-html.touch #push .track img { width: calc(8 * var(--u)); height: calc(8 * var(--u)); }
-html.touch #push .track .seg { width: calc(4 * var(--u)); }
-html.touch #night { right: calc(6 * var(--u) + var(--sr)); top: calc(20 * var(--u)); font-size: calc(6 * var(--u)); max-width: calc(150 * var(--u)); }
-html.touch #quest { left: calc(6 * var(--u) + var(--sl)); top: calc(24 * var(--u)); width: calc(128 * var(--u)); padding: calc(3 * var(--u)) calc(5 * var(--u)); }
-html.touch #quest .qh { font-size: calc(5.8 * var(--u)); }
+/* ══ layout (after a best-practice pass: Vampire Survivors, Brawl Stars, Wild Rift, Kingdom Rush) ══
+   top-left: resources · top-centre: the Tree (tap → its panel) and «call the night» ·
+   top-right: rare controls as 44 px icons · lower-left: the movement slider ·
+   lower-right: the runes in an arc around the Spear · quests fold into a chip. */
+html.touch { --pl: max(12px, var(--sl)); --pr: max(12px, var(--sr)); --pb: max(10px, var(--sb)); }
 
-/* ── bottom: runes in the middle, the Tablet + time controls on the left, the night on the right ── */
-html.touch #abilities { bottom: calc(5 * var(--u) + var(--sb)); gap: calc(6 * var(--u)); }
-html.touch .ab { width: calc(28 * var(--u)); height: calc(28 * var(--u)); }
-html.touch .ab img { width: calc(19 * var(--u)); height: calc(19 * var(--u)); }
-html.touch .ab.pressed { transform: scale(0.93); border-color: var(--gold-hi); }
-html.touch .ab .cost { font-size: calc(6 * var(--u)); }
+html.touch #res { left: var(--pl); top: 6px; padding: 2px 8px; gap: 10px; }
+html.touch #res .item { font-size: 13px; gap: 3px; }
+html.touch #res .icon { width: 16px; height: 16px; }
+html.touch #res .num { min-width: 18px; }
+html.touch #res .kbar, html.touch #res .lightbar { width: 56px; }
+html.touch #res .kbar { height: 8px; }
+html.touch #res .kbar > span { font-size: 7px; line-height: 7px; }
+html.touch #treebar { top: 6px; width: min(36vw, 230px); height: 30px; padding-left: 30px; }
+html.touch #treebar .medal { width: 38px; height: 38px; left: -10px; }
+html.touch #treebar .medal img { width: 26px; height: 26px; }
+html.touch #treebar .caption { top: 33px; font-size: 10px; }
+html.touch #push { display: none; }
+html.touch #night { right: var(--pr); top: 56px; font-size: 10px; max-width: 220px; }
 
-html.touch #controls {
-  left: calc(6 * var(--u) + var(--sl)); bottom: calc(5 * var(--u) + var(--sb));
-  display: grid; grid-template-columns: repeat(5, auto); grid-auto-flow: row; gap: calc(3 * var(--u)); align-items: end; justify-items: start;
-  width: calc(112 * var(--u));
-}
-html.touch #controls .btn { min-height: calc(17 * var(--u)); min-width: calc(17 * var(--u)); font-size: calc(7.5 * var(--u)); padding: calc(2 * var(--u)) calc(4 * var(--u)); display: grid; place-items: center; }
-/* row 1: ❚❚ − ×1 + ♪ · row 2: the Tablet (wide) and, in danger, the Sacrifice */
-html.touch #controls .btn.keeper { grid-row: 2; grid-column: 1 / span 3; display: flex; width: 100%; font-size: calc(7.5 * var(--u)); }
-html.touch #controls .btn.keeper img { width: calc(12 * var(--u)); height: calc(12 * var(--u)); }
-html.touch #controls .sacbtn { grid-row: 2; grid-column: 4 / span 2; color: #ffd0d0; border-color: #a04050; background: linear-gradient(180deg, #5a1a24, #2a0c12); white-space: nowrap; animation: rushPulse 1.2s ease-in-out infinite; }
-html.touch #controls .sacbtn.hidden { display: none !important; }
-html.touch #callnight { right: calc(6 * var(--u) + var(--sr)); bottom: calc(5 * var(--u) + var(--sb)); min-height: calc(22 * var(--u)); font-size: calc(7.5 * var(--u)); padding: calc(3 * var(--u)) calc(7 * var(--u)); max-width: calc(120 * var(--u)); }
-html.touch #tip { bottom: calc(47 * var(--u) + var(--sb)); font-size: calc(6.5 * var(--u)); white-space: normal; width: max-content; max-width: calc(220 * var(--u)); }
-html.touch #toast { bottom: calc(42 * var(--u) + var(--sb)); }
-html.touch #notice { top: calc(30 * var(--u)); max-width: calc(210 * var(--u)); }
-html.touch #abilities .chord { font-size: calc(6 * var(--u)); }
+/* rare controls: icon buttons with a tiny caption */
+html.touch #topbtns { position: absolute; right: var(--pr); top: 6px; left: auto; bottom: auto; display: flex; gap: 6px; }
+html.touch #topbtns .btn { width: 44px; height: 44px; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 15px; line-height: 1; }
+html.touch #topbtns .btn small { font-family: var(--text); font-size: 8px; opacity: 0.75; }
+html.touch #topbtns .btn.keeper img { width: 20px; height: 20px; }
+html.touch #topbtns .btn.keeper { position: relative; }
+html.touch #topbtns .btn.keeper.hot { animation: hotPulse 1.2s ease-in-out infinite; border-color: #ffd24a; }
+html.touch #topbtns .btn.keeper[data-badge]:not([data-badge=""])::after { content: attr(data-badge); position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; border-radius: 50%; background: #ff4a5a; color: #fff; font-size: 10px; display: grid; place-items: center; box-shadow: 0 0 6px #ff4a5a; }
+html.touch #topbtns .sacbtn { color: #ffd0d0; border-color: #a04050; background: linear-gradient(180deg, #5a1a24, #2a0c12); animation: rushPulse 1.2s ease-in-out infinite; }
+html.touch #topbtns .sacbtn.armed { background: #a02030; color: #fff; }
+html.touch #topbtns .sacbtn.hidden { display: none !important; }
+
+/* «call the night» under the Tree bar; held for 0.6 s on a phone */
+html.touch #callnight { left: 50%; right: auto; top: 54px; bottom: auto; transform: translateX(-50%); min-height: 38px; font-size: 12px; padding: 4px 14px; white-space: nowrap; overflow: hidden; }
+html.touch #callnight.holding::before { content: ''; position: absolute; inset: 0; background: rgba(255, 255, 255, 0.45); transform-origin: left; animation: holdfill 0.6s linear forwards; pointer-events: none; }
+@keyframes holdfill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* the Observer's task: a chip that unfolds */
+html.touch #quest { left: var(--pl); top: 46px; width: auto; padding: 4px 8px; }
+html.touch #quest > :not(.chip) { display: none; }
+html.touch #quest .chip { font-family: var(--pix); font-size: 11px; color: var(--azure-hi); min-height: 20px; display: flex; align-items: center; }
+html.touch #quest.open { width: min(34vw, 230px); }
+html.touch #quest.open > :not(.chip) { display: block; }
+html.touch #quest.open .chip { display: none; }
+html.touch #quest .qt { font-size: 12px; }
+html.touch #quest .qh { font-size: 10px; }
+html.touch #quest .qr { font-size: 10px; }
+
+/* runes: an arc around the Spear in the lower-right corner (main 72 px, others 50 px on R 112, the Starfall 58 px further out) */
+html.touch #abilities { left: auto; right: calc(var(--pr) + 46px); bottom: calc(var(--pb) + 44px); width: 0; height: 0; transform: none; display: block; gap: 0; }
+html.touch .ab { position: absolute; left: 0; top: 0; width: 50px; height: 50px; border-radius: 50%; transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)); }
+html.touch .ab::after { border-radius: 50%; }
+html.touch .ab > .cd, html.touch .ab > .charge, html.touch .ab > .lock { border-radius: 50%; }
+html.touch .ab img { width: 30px; height: 30px; }
+html.touch .ab:nth-child(1) { width: 72px; height: 72px; }
+html.touch .ab:nth-child(1) img { width: 44px; height: 44px; }
+html.touch .ab:nth-child(2) { --dx: -112px; --dy: 0px; }
+html.touch .ab:nth-child(4) { --dx: -97px; --dy: -56px; }
+html.touch .ab:nth-child(5) { --dx: -56px; --dy: -97px; }
+html.touch .ab:nth-child(6) { --dx: 0px; --dy: -112px; }
+html.touch .ab:nth-child(3) { --dx: -163px; --dy: -76px; width: 58px; height: 58px; }
+html.touch .ab:nth-child(3) img { width: 36px; height: 36px; }
+html.touch .ab .cost { top: -3px; right: -3px; font-size: 9px; background: #0b0a18; border: 1px solid var(--line); border-radius: 6px; padding: 0 3px; line-height: 13px; }
+html.touch .ab .cdt { font-size: 15px; }
+html.touch .ab .lock img { width: 14px; height: 14px; }
+html.touch .ab .lock span { font-size: 8px; }
+html.touch .ab.pressed { scale: 0.92; border-color: var(--gold-hi); }
+html.touch .ab.dragging { border-color: var(--gold-hi); box-shadow: 0 0 14px rgba(255, 220, 120, 0.9); }
+html.touch .ab.dragging.cancel { border-color: #ff6a6a; box-shadow: 0 0 14px rgba(255, 90, 90, 0.9); }
+html.touch .ab.dragging::before { content: '✕'; position: absolute; inset: 0; display: grid; place-items: center; color: #ffb0b0; font-size: 22px; background: rgba(40, 6, 12, 0.6); border-radius: 50%; z-index: 4; opacity: 0; }
+html.touch .ab.dragging.cancel::before { opacity: 1; }
+html.touch #abilities .chord { left: auto; right: 64px; bottom: 132px; transform: none; font-size: 10px; text-align: right; }
+
+/* the movement slider: a ghost at rest, wakes where the finger slides */
+#joy { display: none; }
+html.touch #joy { display: flex; position: absolute; left: calc(var(--pl) + 70px); top: calc(100% - var(--pb) - 40px); width: 120px; height: 46px; transform: translate(-50%, -50%);
+  align-items: center; justify-content: space-between; padding: 0 8px; border: 2px solid rgba(255, 210, 120, 0.4); border-radius: 23px; background: rgba(10, 8, 24, 0.35);
+  opacity: 0.35; pointer-events: none; transition: opacity 0.15s; color: var(--gold-hi); font-size: 14px; }
+html.touch #joy b { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; border-radius: 50%; transform: translate(-50%, -50%);
+  background: radial-gradient(circle, #ffe58a, #c88a1a 70%); box-shadow: 0 0 10px rgba(255, 210, 90, 0.7); }
+html.touch #joy.on { opacity: 0.9; }
+html.touch #joy.left .l, html.touch #joy.right .r { color: #fff; text-shadow: 0 0 8px #ffd24a; }
+html.touch #joy i { font-style: normal; }
+
+html.touch #tip { bottom: calc(var(--pb) + 8px); font-size: 11px; white-space: normal; width: max-content; max-width: 38vw; }
+html.touch #toast { bottom: calc(var(--pb) + 30px); }
+html.touch #notice { top: 98px; max-width: min(52vw, 380px); font-size: 11px; }
+html.touch #banner .title { font-size: 34px; }
+html.touch #banner .hint { font-size: 12px; }
+html.touch .ioshint { margin-top: 4px; color: var(--azure-hi); font-size: 10px; }
 
 /* ── ring menu: finger-sized steppers, the card beside the ring ── */
 html.touch .ropt { width: calc(24 * var(--u)); height: calc(24 * var(--u)); }

@@ -38,6 +38,10 @@ export interface HudCallbacks {
   /** a rune button pressed / released with a finger (hold-to-cast, the Piercing Beam) */
   onCastHold(id: AbilityId, on: boolean): void;
   onPause(): void;
+  /** an aimed rune (Hammer, Starfall) dragged from its button: start, finger moves, release */
+  onAimStart(id: AbilityId): void;
+  onAimMove(clientX: number, clientY: number): void;
+  onAimEnd(cancel: boolean): void;
   onSacrifice(): void;
   onCallNight(): void;
   onToggleSpeed(): void;
@@ -215,25 +219,45 @@ export class Hud {
         this.cb.onCast(id);
       });
       if (isTouch) {
-        // a finger: press casts (and keeps casting while held); a long press shows the rune's card
+        // a finger: press casts (and keeps casting while held); a long press shows the rune's card.
+        // The Hammer and the Starfall are dragged from the button onto the field and cast on
+        // release; a short tap aims them by itself, sliding back onto the button cancels.
+        const aimed = id === 'hammer' || id === 'starfall';
         let tipT: ReturnType<typeof setTimeout> | undefined;
-        const up = () => {
+        let aiming = false, moved = false, x0 = 0, y0 = 0;
+        const overBox = (ev: PointerEvent) => {
+          const r = box.getBoundingClientRect();
+          return ev.clientX >= r.left - 6 && ev.clientX <= r.right + 6 && ev.clientY >= r.top - 6 && ev.clientY <= r.bottom + 6;
+        };
+        const up = (ev: PointerEvent, cancelled: boolean) => {
           clearTimeout(tipT);
           this.abTip.classList.add('hidden');
-          box.classList.remove('pressed');
+          box.classList.remove('pressed', 'dragging', 'cancel');
+          if (aiming) { aiming = false; this.cb.onAimEnd(cancelled || (moved && overBox(ev))); return; }
           this.cb.onCastHold(id, false);
         };
         box.addEventListener('pointerdown', (ev) => {
           ev.preventDefault();
           box.setPointerCapture(ev.pointerId);
           box.classList.add('pressed');
-          tipT = setTimeout(() => this.showAbTip(id, box), 550);
+          moved = false;
+          x0 = ev.clientX;
+          y0 = ev.clientY;
+          tipT = setTimeout(() => { if (!moved) this.showAbTip(id, box); }, 550);
           if (!this.game().abilityUnlocked(id)) { this.openTabletAt(id); return; }
+          if (aimed) { aiming = true; this.cb.onAimStart(id); return; }
           this.cb.onCast(id);
           this.cb.onCastHold(id, true);
         });
-        box.addEventListener('pointerup', up);
-        box.addEventListener('pointercancel', up);
+        box.addEventListener('pointermove', (ev) => {
+          if (!aiming) return;
+          if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 12) return;
+          if (!moved) { moved = true; clearTimeout(tipT); this.abTip.classList.add('hidden'); box.classList.add('dragging'); }
+          box.classList.toggle('cancel', overBox(ev));
+          this.cb.onAimMove(ev.clientX, ev.clientY);
+        });
+        box.addEventListener('pointerup', (ev) => up(ev, false));
+        box.addEventListener('pointercancel', (ev) => up(ev, true));
         box.addEventListener('contextmenu', (e) => e.preventDefault());
       }
       abs.appendChild(box);
@@ -264,26 +288,47 @@ export class Hud {
     this.soundBtn.onclick = () => this.cb.onToggleSound();
     ctr.append(this.keeperBtn, slower, this.speedBtn, faster, this.soundBtn);
     if (isTouch) {
-      // no Esc and no X on a phone: a pause button and the Sacrifice of Light (two taps)
-      const pauseBtn = el('button', 'btn pausebtn', '❚❚') as HTMLButtonElement;
+      // a phone: no Esc and no X. Rare controls go to the top-right corner as icons (Tablet,
+      // speed, pause); − / + and sound leave for a single speed button and the pause menu
+      ctr.id = 'topbtns';
+      this.keeperBtn.innerHTML = `<img src="${icon('rune')}"><small>Скрижаль</small>`;
+      this.speedBtn.onclick = () => this.cb.onToggleSpeed();
+      this.speedBtn.innerHTML = '×1<small>Скорость</small>';
+      const pauseBtn = el('button', 'btn pausebtn', '❚❚<small>Пауза</small>') as HTMLButtonElement;
       pauseBtn.onclick = () => this.cb.onPause();
-      ctr.prepend(pauseBtn);
-      this.sacBtn = el('button', 'btn sacbtn hidden', '✶ Жертва') as HTMLButtonElement;
+      this.sacBtn = el('button', 'btn sacbtn hidden', '✶<small>Жертва</small>') as HTMLButtonElement;
       let armed = 0;
       this.sacBtn.onclick = () => {
-        if (performance.now() - armed < 2000) { armed = 0; this.sacBtn!.textContent = '✶ Жертва'; this.cb.onSacrifice(); return; }
+        if (performance.now() - armed < 2000) { armed = 0; this.sacBtn!.classList.remove('armed'); this.cb.onSacrifice(); return; }
         armed = performance.now();
-        this.sacBtn!.textContent = '✶ Ещё раз!';
-        this.say('Жертва Света: коснись ещё раз — Хранитель взорвётся светом и падёт', true);
-        setTimeout(() => { if (this.sacBtn && performance.now() - armed >= 2000) this.sacBtn.textContent = '✶ Жертва'; }, 2100);
+        this.sacBtn!.classList.add('armed');
+        this.say('Жертва Света: коснись ✶ ещё раз — Хранитель взорвётся светом и падёт', true);
+        setTimeout(() => { if (this.sacBtn && performance.now() - armed >= 2000) this.sacBtn.classList.remove('armed'); }, 2100);
       };
-      ctr.append(this.sacBtn);
+      ctr.replaceChildren(this.sacBtn, this.keeperBtn, this.speedBtn, pauseBtn);
     }
     r.appendChild(ctr);
 
     this.callBtn = el('button', 'btn gold', '') as HTMLButtonElement;
     this.callBtn.id = 'callnight';
-    this.callBtn.onclick = () => this.cb.onCallNight();
+    this.callBtn.onclick = () => { if (!isTouch) this.cb.onCallNight(); };
+    if (isTouch) {
+      // calling the night early can't be undone: on a phone it is held for 0.6 s (a fill shows it)
+      let holdT: ReturnType<typeof setTimeout> | undefined;
+      const stop = () => { clearTimeout(holdT); this.callBtn.classList.remove('holding'); };
+      this.callBtn.addEventListener('pointerdown', (ev) => {
+        ev.preventDefault();
+        if (this.callBtn.classList.contains('wait')) return;
+        this.callBtn.classList.add('holding');
+        holdT = setTimeout(() => { stop(); this.cb.onCallNight(); }, 600);
+      });
+      this.callBtn.addEventListener('pointerup', () => {
+        if (this.callBtn.classList.contains('holding')) this.say('Удерживай кнопку, чтобы призвать ночь', true);
+        stop();
+      });
+      this.callBtn.addEventListener('pointercancel', stop);
+      this.callBtn.addEventListener('pointerleave', stop);
+    }
     r.appendChild(this.callBtn);
 
     this.ring = el('div');
@@ -310,6 +355,11 @@ export class Hud {
     r.appendChild(this.tip);
     this.questBox = el('div', 'panel plain');
     this.questBox.id = 'quest';
+    if (isTouch) {
+      // a phone: the task is a small chip; a tap unfolds it (it also unfolds itself on a new task)
+      this.questBox.classList.add('hit');
+      this.questBox.addEventListener('click', () => this.unfoldQuest(!this.questBox.classList.contains('open')));
+    }
     r.appendChild(this.questBox);
     this.reviveBox = el('div', 'panel plain hit');
     this.reviveBox.id = 'revive';
@@ -335,6 +385,13 @@ export class Hud {
       <button class="btn giveup" data-a="giveup" title="Завершить забег: Древо падёт, Монеты Наблюдателя начислятся как обычно">Уйти в Вечность</button>`;
     this.pause.querySelector('[data-a=resume]')!.addEventListener('click', () => this.cb.onResume());
     this.pause.querySelector('[data-a=menu]')!.addEventListener('click', () => this.cb.onQuitToMenu());
+    if (isTouch) {
+      const row = this.pause.querySelector('.row')!;
+      const snd = el('button', 'btn', '♪ Звук') as HTMLButtonElement;
+      snd.onclick = () => this.cb.onToggleSound();
+      row.prepend(snd);
+      this.soundBtn = snd;
+    }
     // tucked into a corner and needs a second click — never pressed by accident
     const give = this.pause.querySelector<HTMLButtonElement>('[data-a=giveup]')!;
     let armed = 0;
@@ -381,6 +438,7 @@ export class Hud {
           <button class="btn" data-a="feedback" data-tip="Написать автору: что понравилось, что сломано, чего хочется дальше">Отзыв · что дальше?</button>
         </div>
         <div class="stat">${pathName}</div>
+        ${isTouch && /iPhone|iPad|iPod/.test(navigator.userAgent) && !(navigator as Navigator & { standalone?: boolean }).standalone ? '<div class="stat ioshint">На весь экран: Поделиться → «На экран „Домой“» и запускай оттуда</div>' : ''}
         <div class="ver">${VERSION_LABEL}</div>
       </div>`;
     this.title.querySelector('[data-a=start]')!.addEventListener('click', () => this.cb.onStart());
@@ -397,8 +455,8 @@ export class Hud {
   /** a run is under way (the title is gone): only then may choices pop up */
   inRun = false;
   setPaused(p: boolean) { this.pause.classList.toggle('hidden', !p); }
-  setSpeed(x: number) { this.speedBtn.textContent = `×${x}`; }
-  setSound(on: boolean) { this.soundBtn.textContent = on ? '♪' : '♪̸'; this.soundBtn.style.opacity = on ? '1' : '0.5'; }
+  setSpeed(x: number) { if (isTouch) this.speedBtn.innerHTML = `×${x}<small>Скорость</small>`; else this.speedBtn.textContent = `×${x}`; }
+  setSound(on: boolean) { this.soundBtn.textContent = isTouch ? (on ? '♪ Звук: вкл' : '♪ Звук: выкл') : on ? '♪' : '♪̸'; this.soundBtn.style.opacity = on ? '1' : '0.5'; }
 
   showEnd(coins: number, best: number, record: boolean) {
     const g = this.game();
@@ -545,7 +603,7 @@ export class Hud {
       [/Звёздн(?:ая|ой|ую) Кров/, '#res .item:nth-child(2)'],
       [/Руна Развития|Руны Развития|Руной Развития/, '#res .item.dev'],
       [/Свет[ау]?(?![а-яё])|здоровь/, '#res .item.bars'],
-      [/[Сс]корост/, '#controls .spdval'],
+      [/[Сс]корост/, '.spdval'],
     ];
     for (const [re, sel] of rules) {
       if (!re.test(plain)) continue;
@@ -1455,6 +1513,13 @@ export class Hud {
     this.updateTips(g);
   }
 
+  private questFoldT: ReturnType<typeof setTimeout> | undefined;
+  private unfoldQuest(open: boolean) {
+    clearTimeout(this.questFoldT);
+    this.questBox.classList.toggle('open', open);
+    if (open) this.questFoldT = setTimeout(() => this.questBox.classList.remove('open'), 5000);
+  }
+
   /** Observer's tasks: one goal at a time with a highlight and a reward. */
   private updateQuest(g: Game) {
     while (this.questIdx < QUESTS.length && QUESTS[this.questIdx].done(g)) {
@@ -1471,7 +1536,8 @@ export class Hud {
     if (sig !== this.questSig) {
       this.questSig = sig;
       this.callout(`${q.text} ${q.hint ?? ''}`);
-      this.questBox.innerHTML = `<div class="who">Задание Наблюдателя · ${this.questIdx + 1}/${QUESTS.length}</div>
+      if (isTouch) this.unfoldQuest(true);
+      this.questBox.innerHTML = `${isTouch ? `<div class="chip">📜 ${this.questIdx + 1}/${QUESTS.length}</div>` : ''}<div class="who">Задание Наблюдателя · ${this.questIdx + 1}/${QUESTS.length}</div>
         <div class="qt">${touchText(q.text)}</div>${q.hint ? `<div class="qh">${touchText(q.hint)}</div>` : ''}
         <div class="qr"><img class="icon" src="${icon('amber')}"> ${q.reward}</div>`;
     }

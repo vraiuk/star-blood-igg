@@ -39,7 +39,8 @@ const audio = new Audio();
 const renderer = new Renderer(ctx);
 const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null, walkTo: null };
 let endShown = false;
-const SPEEDS = [1, 1.25, 1.5, 2, 5];
+/** a phone gets three clear steps (one button cycles them); the desktop keeps the fine ones */
+const SPEEDS = isTouch ? [1, 2, 3] : [1, 1.25, 1.5, 2, 5];
 let sacrificeArmed = 0;
 const nextSpeed = () => SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
 /** − / + step through the speeds without wrapping around */
@@ -132,6 +133,24 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     }
   },
   onPause() { if (!game.over) setPaused(true); },
+  onAimStart(id) {
+    hud.closeMenu();
+    hud.aiming = id;
+    view.aiming = id;
+    view.mouseX = autoAim(id);
+    view.mouseY = WORLD.groundY;
+  },
+  onAimMove(cx, cy) {
+    const r = canvas.getBoundingClientRect();
+    const [mx, my] = renderer.camera.toWorld(cx - r.left, cy - r.top, r.width, r.height);
+    view.mouseX = mx;
+    view.mouseY = my;
+  },
+  onAimEnd(cancel) {
+    const id = view.aiming;
+    cancelAim();
+    if (id && !cancel && started && !paused && !game.over) game.cast(id, view.mouseX, view.mouseY);
+  },
   onSacrifice() { game.sacrificeKeeper(); },
   onCallNight() { game.callNight(); },
   onToggleSpeed() { speed = nextSpeed(); hud.setSpeed(speed); },
@@ -205,6 +224,7 @@ function updateMove() {
 
 /** Tap-to-walk: steer the Ascended towards the tapped point, stop when there. */
 function steerWalk() {
+  if (joy.active) { game.setMove(joy.dir); return; }
   if (view.walkTo == null) return;
   const k = game.state.keeper;
   if (!k.alive) { view.walkTo = null; game.setMove(0); return; }
@@ -231,7 +251,6 @@ function beginAim(id: AbilityId) {
   if (id !== 'starfall' && id !== 'hammer') { game.cast(id, game.state.keeper.x); return; }
   hud.aiming = id;
   view.aiming = id;
-  if (isTouch) hud.observerSay(id === 'hammer' ? 'Коснись поля — куда прыгнуть с Молотом (веди пальцем, отпусти — удар)' : 'Коснись поля — куда обрушить Звездопад (веди пальцем, отпусти — удар)');
 }
 
 function cancelAim() {
@@ -377,23 +396,38 @@ canvas.addEventListener('mousedown', (ev) => {
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ───────────────────────────── touch ───────────────────────────────
-// A finger: tap a slot / nest / the Tree to open its menu, tap the ground to walk there
-// (hold and slide to steer), an aimed rune is dragged and cast when the finger lifts.
+// A finger: tap a slot / nest / the Tree to open its menu. Movement is a one-axis floating
+// slider in the lower-left zone (it wakes after a 10 px slide, so a short tap there still
+// opens menus); a tap on the ground elsewhere walks there. Aimed runes are dragged from
+// their button onto the field (see onAim* in the HUD callbacks).
 
-let aimPointer: number | null = null;
-canvas.addEventListener('pointerdown', (ev) => {
-  if (ev.pointerType === 'mouse') return;
-  ev.preventDefault();
-  hideWorldTip();
-  if (!started || paused || game.over || hud.choiceOpen) return;
+/** The movement slider: where the finger came down and the current direction. */
+const joy = { id: -1, x0: 0, y0: 0, ox: 0, active: false, dir: 0 as -1 | 0 | 1 };
+const JOY = { wake: 10, dead: 8, follow: 60 };
+const joyEl = document.createElement('div');
+joyEl.id = 'joy';
+joyEl.innerHTML = '<i class="l">◀</i><b></b><i class="r">▶</i>';
+const joyKnob = joyEl.querySelector('b') as HTMLElement;
+if (isTouch) uiRoot.appendChild(joyEl);
+
+/** The lower-left zone that belongs to the movement slider (fractions of the stage). */
+function inJoyZone(ev: PointerEvent) {
+  const r = stage.getBoundingClientRect();
+  return ev.clientX - r.left < r.width * 0.4 && ev.clientY - r.top > r.height * 0.35;
+}
+
+function placeJoy(x: number, y: number, knobDx: number) {
+  const r = stage.getBoundingClientRect();
+  joyEl.style.left = `${x - r.left}px`;
+  joyEl.style.top = `${y - r.top}px`;
+  joyKnob.style.transform = `translate(calc(-50% + ${knobDx}px), -50%)`;
+}
+
+/** A tap on the field: open what's under the finger, close a menu, or walk there. */
+function tapField(ev: PointerEvent, steer: boolean) {
   const [mx, my] = toWorld(ev);
   view.mouseX = mx;
   view.mouseY = my;
-  if (view.aiming) {
-    aimPointer = ev.pointerId;
-    canvas.setPointerCapture(ev.pointerId);
-    return;
-  }
   const t = pick(mx, my);
   if (t) {
     hud.openMenu(t);
@@ -404,31 +438,78 @@ canvas.addEventListener('pointerdown', (ev) => {
   }
   if (hud.menuOpen) { hud.closeMenu(); return; }
   view.walkTo = Math.max(0, Math.min(WORLD.width, mx));
-  steerPointer = ev.pointerId;
+  if (steer) steerPointer = ev.pointerId;
+}
+
+canvas.addEventListener('pointerdown', (ev) => {
+  if (ev.pointerType === 'mouse') return;
+  ev.preventDefault();
+  hideWorldTip();
+  if (!started || paused || game.over || hud.choiceOpen) return;
   canvas.setPointerCapture(ev.pointerId);
+  if (inJoyZone(ev) && joy.id < 0) {
+    // undecided yet: a slide becomes the slider, a short tap is a tap
+    joy.id = ev.pointerId;
+    joy.x0 = ev.clientX;
+    joy.y0 = ev.clientY;
+    joy.active = false;
+    return;
+  }
+  tapField(ev, true);
 });
 canvas.addEventListener('pointermove', (ev) => {
   if (ev.pointerType === 'mouse') return;
-  if (ev.pointerId !== steerPointer && ev.pointerId !== aimPointer) return;
+  if (ev.pointerId === joy.id) {
+    if (!joy.active) {
+      if (Math.hypot(ev.clientX - joy.x0, ev.clientY - joy.y0) < JOY.wake) return;
+      joy.active = true;
+      joy.ox = joy.x0;
+      view.walkTo = null;
+      joyEl.classList.add('on');
+    }
+    let dx = ev.clientX - joy.ox;
+    // the zero point follows a finger that went far, so turning back is instant
+    if (Math.abs(dx) > JOY.follow) { joy.ox = ev.clientX - Math.sign(dx) * JOY.follow; dx = ev.clientX - joy.ox; }
+    joy.dir = Math.abs(dx) < JOY.dead ? 0 : dx < 0 ? -1 : 1;
+    placeJoy(joy.ox, joy.y0, Math.max(-42, Math.min(42, dx)));
+    joyEl.classList.toggle('left', joy.dir < 0);
+    joyEl.classList.toggle('right', joy.dir > 0);
+    return;
+  }
+  if (ev.pointerId !== steerPointer) return;
   const [mx, my] = toWorld(ev);
   view.mouseX = mx;
   view.mouseY = my;
-  if (ev.pointerId === steerPointer) view.walkTo = Math.max(0, Math.min(WORLD.width, mx));
+  view.walkTo = Math.max(0, Math.min(WORLD.width, mx));
 });
 const fingerUp = (ev: PointerEvent, cancelled: boolean) => {
   if (ev.pointerType === 'mouse') return;
-  if (ev.pointerId === steerPointer) steerPointer = null;
-  if (ev.pointerId === aimPointer) {
-    aimPointer = null;
-    if (view.aiming && !cancelled && started && !paused && !game.over) {
-      const [mx, my] = toWorld(ev);
-      game.cast(view.aiming, mx, my);
-    }
-    cancelAim();
+  if (ev.pointerId === joy.id) {
+    const wasTap = !joy.active;
+    joy.id = -1;
+    joy.active = false;
+    joy.dir = 0;
+    joyEl.classList.remove('on', 'left', 'right');
+    joyEl.style.left = joyEl.style.top = '';
+    joyKnob.style.transform = '';
+    game.setMove(0);
+    if (wasTap && !cancelled && started && !paused && !game.over && !hud.choiceOpen) tapField(ev, false);
+    return;
   }
+  if (ev.pointerId === steerPointer) steerPointer = null;
 };
 canvas.addEventListener('pointerup', (ev) => fingerUp(ev, false));
 canvas.addEventListener('pointercancel', (ev) => fingerUp(ev, true));
+
+/** Short tap on an aimed rune: the Hammer leaps at the nearest creature, the Starfall hits the one closest to the Tree. */
+function autoAim(id: AbilityId): number {
+  const s = game.state;
+  const k = s.keeper;
+  const surface = s.enemies.filter((e) => e.y < WORLD.groundY + 4 && e.hp > 0);
+  if (!surface.length) return k.x + k.dir * 50;
+  const key = id === 'hammer' ? (e: { x: number }) => Math.abs(e.x - k.x) : (e: { x: number }) => Math.abs(e.x - WORLD.treeX);
+  return surface.reduce((a, b) => (key(b) < key(a) ? b : a)).x;
+}
 
 /**
  * Q / E — previous / next build node (like Shift+Tab / Tab): surface left→right, then the
