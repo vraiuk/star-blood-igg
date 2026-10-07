@@ -244,7 +244,13 @@ window.addEventListener('keyup', (e) => {
   if (ABILITY_KEYS[k] === 'spear') game.releaseBeam();
   updateMove();
 });
-window.addEventListener('blur', () => { held.clear(); updateMove(); });
+window.addEventListener('blur', () => { held.clear(); updateMove(); audio.setBackground(true); });
+window.addEventListener('focus', () => { if (!document.hidden) audio.setBackground(false); });
+// a hidden tab goes silent and, mid-run, pauses
+document.addEventListener('visibilitychange', () => {
+  audio.setBackground(document.hidden);
+  if (document.hidden && started && !game.over && !paused) setPaused(true);
+});
 
 function toWorld(ev: MouseEvent): [number, number] {
   const r = canvas.getBoundingClientRect();
