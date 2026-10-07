@@ -72,20 +72,20 @@ html.touch #quest .qt { font-size: 12px; }
 html.touch #quest .qh { font-size: 10px; }
 html.touch #quest .qr { font-size: 10px; }
 
-/* runes: an arc around the Spear in the lower-right corner (main 72 px, others 50 px on R 112, the Starfall 58 px further out) */
-html.touch #abilities { left: auto; right: calc(var(--pr) + 46px); bottom: calc(var(--pb) + 44px); width: 0; height: 0; transform: none; display: block; gap: 0; }
-html.touch .ab { position: absolute; left: 0; top: 0; width: 50px; height: 50px; border-radius: 50%; transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)); }
-html.touch .ab::after { border-radius: 50%; }
+/* runes: a compact half-ring hugging the right edge (Albion-style): the Spear 64 px in the
+   corner, the other five 44 px on R 104 from 176° to 284°, the Starfall on top */
+html.touch #abilities { left: auto; right: calc(var(--pr) + 48px); bottom: calc(var(--pb) + 40px); width: 0; height: 0; transform: none; display: block; gap: 0; }
+html.touch .ab { position: absolute; left: 0; top: 0; width: 44px; height: 44px; border-radius: 50%; transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)); }
+html.touch .ab::after { border-radius: 50%; inset: 2px; }
 html.touch .ab > .cd, html.touch .ab > .charge, html.touch .ab > .lock { border-radius: 50%; }
-html.touch .ab img { width: 30px; height: 30px; }
-html.touch .ab:nth-child(1) { width: 72px; height: 72px; }
-html.touch .ab:nth-child(1) img { width: 44px; height: 44px; }
-html.touch .ab:nth-child(2) { --dx: -112px; --dy: 0px; }
-html.touch .ab:nth-child(4) { --dx: -97px; --dy: -56px; }
-html.touch .ab:nth-child(5) { --dx: -56px; --dy: -97px; }
-html.touch .ab:nth-child(6) { --dx: 0px; --dy: -112px; }
-html.touch .ab:nth-child(3) { --dx: -163px; --dy: -76px; width: 58px; height: 58px; }
-html.touch .ab:nth-child(3) img { width: 36px; height: 36px; }
+html.touch .ab img { width: 28px; height: 28px; }
+html.touch .ab:nth-child(1) { width: 64px; height: 64px; }
+html.touch .ab:nth-child(1) img { width: 40px; height: 40px; }
+html.touch .ab:nth-child(2) { --dx: -104px; --dy: 7px; }
+html.touch .ab:nth-child(4) { --dx: -96px; --dy: -41px; }
+html.touch .ab:nth-child(5) { --dx: -67px; --dy: -80px; }
+html.touch .ab:nth-child(6) { --dx: -23px; --dy: -101px; }
+html.touch .ab:nth-child(3) { --dx: 25px; --dy: -101px; }
 html.touch .ab .cost { top: -3px; right: -3px; font-size: 9px; background: #0b0a18; border: 1px solid var(--line); border-radius: 6px; padding: 0 3px; line-height: 13px; }
 html.touch .ab .cdt { font-size: 15px; }
 html.touch .ab .lock img { width: 14px; height: 14px; }
@@ -95,16 +95,20 @@ html.touch .ab.dragging { border-color: var(--gold-hi); box-shadow: 0 0 14px rgb
 html.touch .ab.dragging.cancel { border-color: #ff6a6a; box-shadow: 0 0 14px rgba(255, 90, 90, 0.9); }
 html.touch .ab.dragging::before { content: '✕'; position: absolute; inset: 0; display: grid; place-items: center; color: #ffb0b0; font-size: 22px; background: rgba(40, 6, 12, 0.6); border-radius: 50%; z-index: 4; opacity: 0; }
 html.touch .ab.dragging.cancel::before { opacity: 1; }
-html.touch #abilities .chord { left: auto; right: 64px; bottom: 132px; transform: none; font-size: 10px; text-align: right; }
+html.touch #abilities .chord { left: auto; right: 40px; bottom: 136px; transform: none; font-size: 10px; text-align: right; }
 
-/* the movement slider: a ghost at rest, wakes where the finger slides */
+/* the movement joystick: born under the finger (one axis). Until the first use a faint ghost
+   in the lower left shows that it exists. */
 #joy { display: none; }
-html.touch #joy { display: flex; position: absolute; left: calc(var(--pl) + 70px); top: calc(100% - var(--pb) - 40px); width: 120px; height: 46px; transform: translate(-50%, -50%);
-  align-items: center; justify-content: space-between; padding: 0 8px; border: 2px solid rgba(255, 210, 120, 0.4); border-radius: 23px; background: rgba(10, 8, 24, 0.35);
-  opacity: 0.35; pointer-events: none; transition: opacity 0.15s; color: var(--gold-hi); font-size: 14px; }
-html.touch #joy b { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; border-radius: 50%; transform: translate(-50%, -50%);
-  background: radial-gradient(circle, #ffe58a, #c88a1a 70%); box-shadow: 0 0 10px rgba(255, 210, 90, 0.7); }
+html.touch #joy { display: flex; position: absolute; left: calc(var(--pl) + 80px); top: calc(100% - var(--pb) - 56px); width: 124px; height: 48px; transform: translate(-50%, -50%);
+  align-items: center; justify-content: space-between; padding: 0 9px; border: 2px solid rgba(255, 210, 120, 0.45); border-radius: 24px; background: rgba(10, 8, 24, 0.4);
+  opacity: 0.4; pointer-events: none; color: var(--gold-hi); font-size: 15px; }
+html.touch #joy::after { content: 'веди пальцем'; position: absolute; left: 50%; top: 100%; transform: translateX(-50%); margin-top: 4px; white-space: nowrap; font-family: var(--text); font-size: 10px; color: var(--ink); }
+html.touch #joy.used:not(.on) { opacity: 0; }
 html.touch #joy.on { opacity: 0.9; }
+html.touch #joy.on::after, html.touch #joy.used::after { content: none; }
+html.touch #joy b { position: absolute; left: 50%; top: 50%; width: 36px; height: 36px; border-radius: 50%; transform: translate(-50%, -50%);
+  background: radial-gradient(circle, #ffe58a, #c88a1a 70%); box-shadow: 0 0 10px rgba(255, 210, 90, 0.7); }
 html.touch #joy.left .l, html.touch #joy.right .r { color: #fff; text-shadow: 0 0 8px #ffd24a; }
 html.touch #joy i { font-style: normal; }
 
@@ -147,19 +151,99 @@ html.touch #revive .btn { min-height: calc(18 * var(--u)); }
 html.touch #pause .box .btn { min-height: calc(20 * var(--u)); }
 html.touch .gloss-tip { max-width: calc(170 * var(--u)); }
 
-/* ── «turn the phone» ── */
+/* ── «turn the phone»: big, centred, nothing else visible ── */
 #rotate { display: none; }
 @media (orientation: portrait) {
   html.touch #rotate {
-    display: grid; place-items: center; position: fixed; inset: 0; z-index: 100; background: #05040c; color: var(--gold-hi);
-    font-family: var(--serif); text-align: center; padding: 24px;
+    display: grid; place-items: center; position: fixed; inset: 0; z-index: 100; background: radial-gradient(ellipse at 50% 40%, #1a1030, #05040c 70%); color: var(--gold-hi);
+    font-family: var(--serif); text-align: center; padding: 8vw;
   }
-  html.touch #rotate .ph { width: 54px; height: 90px; margin: 0 auto 22px; border: 3px solid var(--gold); border-radius: 10px; animation: rot 2.2s ease-in-out infinite; box-shadow: 0 0 18px rgba(255, 200, 70, 0.4); }
-  html.touch #rotate b { display: block; font-size: 26px; letter-spacing: 0.04em; }
-  html.touch #rotate span { display: block; margin-top: 8px; font-family: var(--text); font-size: 16px; color: var(--ink); opacity: 0.8; }
+  html.touch #rotate .ph { width: 30vw; height: 50vw; margin: 0 auto 10vw; border: 1.6vw solid var(--gold); border-radius: 5vw; animation: rot 2.2s ease-in-out infinite; box-shadow: 0 0 6vw rgba(255, 200, 70, 0.45), inset 0 0 4vw rgba(255, 200, 70, 0.2); position: relative; }
+  html.touch #rotate .ph::after { content: ''; position: absolute; left: 50%; bottom: 3vw; width: 6vw; height: 1.4vw; transform: translateX(-50%); border-radius: 1vw; background: var(--gold); }
+  html.touch #rotate b { display: block; font-size: 10vw; line-height: 1.1; letter-spacing: 0.02em; text-shadow: 0 0 4vw rgba(255, 190, 70, 0.6); }
+  html.touch #rotate span { display: block; margin-top: 4vw; font-family: var(--text); font-size: 5vw; color: var(--ink); opacity: 0.85; }
 }
 @keyframes rot { 0%, 25% { transform: rotate(0); } 55%, 100% { transform: rotate(-90deg); } }
 
 /* the pause screen hides the HUD under it (on a phone the buttons would show through and overlap) */
 html.touch #ui:has(#pause:not(.hidden)) > :not(.screen) { visibility: hidden; }
 html.touch #sidepanel h3 { padding-right: calc(14 * var(--u)); }
+
+/* ═══════════ v3: full phone pass after the UX review ═══════════ */
+
+/* «call the night»: bottom centre between the joystick and the runes (any thumb reaches it) */
+html.touch #callnight { top: auto; bottom: calc(var(--pb) + 8px); min-height: 44px; font-size: 13px; }
+html.touch #tip { bottom: calc(var(--pb) + 62px); }
+html.touch #toast { bottom: calc(var(--pb) + 62px); }
+
+/* the Sacrifice of Light: a red button under the Tree bar, held for a second */
+html.touch #sacbtn { position: absolute; left: 50%; top: 56px; transform: translateX(-50%); min-height: 44px; padding: 4px 16px; font-size: 13px;
+  color: #ffe0e0; border: 2px solid #ff6a6a; background: linear-gradient(180deg, #8a1e2c, #3a0c14); box-shadow: 0 0 12px rgba(255, 70, 90, 0.6); overflow: hidden; white-space: nowrap; }
+html.touch #sacbtn small { font-family: var(--text); font-size: 10px; opacity: 0.8; }
+html.touch #sacbtn.hidden { display: none !important; }
+html.touch #sacbtn.holding::before, html.touch .sh-buy.danger.holding::before { content: ''; position: absolute; inset: 0; background: rgba(255, 255, 255, 0.35); transform-origin: left; animation: holdfill 1s linear forwards; pointer-events: none; }
+html.touch .sh-buy.danger.holding::before { animation-duration: 0.6s; }
+
+/* readable sizes */
+html.touch #res .kbar { height: 12px; }
+html.touch #res .kbar > span { font-size: 9px; line-height: 10px; }
+html.touch #res .lightbar { height: 7px; }
+html.touch #topbtns .btn small { font-size: 9px; }
+html.touch #night { font-size: 11px; }
+html.touch #treebar .caption { font-size: 11px; }
+html.touch #quest { min-height: 44px; display: flex; flex-direction: column; justify-content: center; }
+html.touch #quest .chip { font-size: 12px; }
+html.touch #quest .qh, html.touch #quest .qr, html.touch #quest .who { font-size: 11px; }
+html.touch .ab .cost { font-size: 10px; }
+html.touch .ab .lock span { font-size: 9px; }
+/* a rune that can't even be learned yet: a small dim ghost without a price */
+html.touch .ab.far { scale: 0.8; opacity: 0.35; }
+html.touch .ab.far .cost, html.touch .ab.far .lock span { display: none; }
+
+/* ── build / upgrade: a bottom sheet + a card above it (the world is paused meanwhile) ── */
+html.touch #ring.sheet { position: absolute; left: var(--pl); top: auto; bottom: calc(var(--pb) + 6px); width: auto; height: auto; transform: none;
+  pointer-events: auto; padding: 6px 10px 8px; background: rgba(9, 8, 22, 0.94); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 4px 18px #000c; }
+html.touch #ring.sheet:not(.show) { display: none; }
+html.touch #ring.sheet .sh-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-family: var(--serif); font-weight: 700; font-size: 14px; color: var(--gold-hi); margin-bottom: 4px; white-space: nowrap; }
+html.touch #ring.sheet .sh-close { width: 36px; height: 36px; margin: -4px -4px -4px 0; background: none; border: 1px solid #3a3060; border-radius: 8px; color: var(--ink); font-size: 16px; }
+html.touch #ring.sheet .sh-row { display: flex; gap: 8px; align-items: flex-end; }
+html.touch #ring.sheet .ropt { position: relative; left: auto; top: auto; transform: none; width: 56px; height: 62px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0; animation: none; font-family: var(--pix); color: var(--ink); }
+html.touch #ring.sheet .ropt img { width: 32px; height: 32px; }
+html.touch #ring.sheet .ropt .rp { position: static; transform: none; font-size: 11px; }
+html.touch #ring.sheet .ropt .rp img { width: 11px; height: 11px; }
+html.touch #ring.sheet .ropt.sel { border: 2px solid var(--gold-hi); box-shadow: 0 0 12px rgba(255, 220, 120, 0.8); background: radial-gradient(circle, #3a2a10 55%, #140e08 80%); }
+html.touch #ring.sheet .sh-sep { width: 1px; align-self: stretch; background: #3a3060; margin: 0 2px; }
+html.touch #ring.sheet .aspect { min-width: 48px; height: 62px; justify-content: center; font-size: 16px; border-radius: 12px; }
+html.touch #ring.sheet .aspect span { font-size: 10px; }
+html.touch #card.sheetcard { top: auto !important; bottom: calc(var(--pb) + 6px); transform: none; max-width: none; max-height: calc(100% - var(--pb) - 64px);
+  overflow-y: auto; pointer-events: auto; padding: 8px 12px; background: rgba(12, 10, 26, 0.97); border-radius: 12px; touch-action: pan-y; }
+html.touch #card.sheetcard h4 { font-size: 16px; }
+html.touch #card.sheetcard .sub { font-size: 12px !important; }
+html.touch #card.sheetcard .stats { font-size: 11px; line-height: 1.4; }
+html.touch #card.sheetcard .sh-act { display: flex; gap: 10px; align-items: center; justify-content: flex-end; margin-top: 6px; }
+html.touch #card.sheetcard .sh-buy { position: relative; overflow: hidden; min-height: 44px; padding: 4px 16px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
+html.touch #card.sheetcard .sh-buy .pa img, html.touch #card.sheetcard .sh-buy .ps img { width: 14px; height: 14px; }
+html.touch #card.sheetcard .sh-buy.danger { color: #ffd0d0; border-color: #a04050; background: linear-gradient(180deg, #5a1a24, #2a0c12); }
+html.touch #card.sheetcard .sh-stars { display: inline-flex; align-items: center; gap: 6px; margin-right: auto; font-size: 14px; color: var(--gold-hi); }
+html.touch #card.sheetcard .sh-stars .btn { width: 44px; height: 44px; padding: 0; font-size: 20px; }
+/* while the sheet is open the world stands: hide what would sit under it */
+html.touch #ui:has(#ring.show) :is(#abilities, #joy, #callnight, #tip, #sacbtn, #quest) { visibility: hidden; }
+
+/* ── side panels: solid, finger-sized, alone on screen ── */
+html.touch #sidepanel { background: rgba(9, 8, 22, 0.97); }
+html.touch #sidepanel .close { width: 44px; height: 44px; top: 2px; right: 2px; font-size: 18px; }
+html.touch #sidepanel h3 { padding-right: 46px; font-size: 18px; }
+html.touch #sidepanel h3 small { display: block; font-size: 11px !important; }
+html.touch #sidepanel .btn { min-height: 40px; font-size: 13px !important; }
+html.touch #sidepanel .btn.tiny { min-height: 36px; font-size: 12px !important; padding: 2px 8px; }
+html.touch #sidepanel .sub, html.touch #sidepanel .hint, html.touch .ladder .un, html.touch .rune small, html.touch .shop .item .ds { font-size: 12px !important; }
+html.touch #ui:has(#sidepanel.show) :is(#topbtns, #abilities, #joy, #callnight, #quest, #sacbtn, #tip) { visibility: hidden; }
+
+/* ── modal moments: decisions are 44 px, nothing talks over them ── */
+html.touch #revive .btn, html.touch #pause .btn { min-height: 44px; font-size: 14px; }
+html.touch #revive h4 { font-size: 18px; }
+html.touch #revive .sub { font-size: 12px; }
+html.touch #pause .giveup { position: static; display: block; margin: 14px auto 0; }
+html.touch #ui:has(#revive.show) #notice, html.touch #ui:has(.screen.modal:not(.hidden)) #notice { display: none; }
+html.touch .rcard .ds { font-size: 12px !important; }
+html.touch .rcard .nm { font-size: 15px; }

@@ -215,7 +215,10 @@ export class Renderer {
     this.particles.ambient(s.tree.radius, dt, s.phase === 'night');
     this.particles.update(dt);
     this.lighting.update(game, time, dt);
-    this.camera.update(s.tree.radius, dt, false, treeHeight(s.tree.stage) * treeScale(s.tree.rings));
+    // the deepest thing to keep in view underground: the worm lane or an open root node
+    let deep = WORLD.wormLaneY - WORLD.groundY;
+    for (const sl of SLOTS) if (sl.underground && game.slotUnlocked(sl)) deep = Math.max(deep, sl.y - WORLD.groundY);
+    this.camera.update(s.tree.radius, dt, false, treeHeight(s.tree.stage) * treeScale(s.tree.rings), deep + 14);
 
     c.save();
     c.clearRect(0, 0, WORLD.width, WORLD.height);

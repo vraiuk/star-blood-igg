@@ -219,45 +219,61 @@ export class Hud {
         this.cb.onCast(id);
       });
       if (isTouch) {
-        // a finger: press casts (and keeps casting while held); a long press shows the rune's card.
-        // The Hammer and the Starfall are dragged from the button onto the field and cast on
-        // release; a short tap aims them by itself, sliding back onto the button cancels.
+        // a finger. The Spear fires on press and keeps firing while held. Radiance, Swarm and
+        // Time Stop fire on release — a long press (0.45 s) only shows the rune's card. The
+        // Hammer and the Starfall are dragged onto the field and cast on release; a short tap
+        // aims them by itself; releasing over the rune arc (or a long press) cancels.
         const aimed = id === 'hammer' || id === 'starfall';
+        const onRelease = id === 'radiance' || id === 'swarm' || id === 'timestop';
         let tipT: ReturnType<typeof setTimeout> | undefined;
-        let aiming = false, moved = false, x0 = 0, y0 = 0;
-        const overBox = (ev: PointerEvent) => {
-          const r = box.getBoundingClientRect();
-          return ev.clientX >= r.left - 6 && ev.clientX <= r.right + 6 && ev.clientY >= r.top - 6 && ev.clientY <= r.bottom + 6;
+        let aiming = false, moved = false, info = false, down = false, x0 = 0, y0 = 0;
+        const overArc = (ev: PointerEvent) => {
+          const hit = document.elementFromPoint(ev.clientX, ev.clientY);
+          return !!hit?.closest('#abilities');
         };
         const up = (ev: PointerEvent, cancelled: boolean) => {
+          if (!down) return;
+          down = false;
           clearTimeout(tipT);
           this.abTip.classList.add('hidden');
           box.classList.remove('pressed', 'dragging', 'cancel');
-          if (aiming) { aiming = false; this.cb.onAimEnd(cancelled || (moved && overBox(ev))); return; }
+          this.root.classList.remove('aiming');
+          if (aiming) { aiming = false; this.cb.onAimEnd(cancelled || info || (moved && overArc(ev))); return; }
+          if (onRelease) { if (!cancelled && !info) this.cb.onCast(id); return; }
           this.cb.onCastHold(id, false);
         };
         box.addEventListener('pointerdown', (ev) => {
           ev.preventDefault();
+          if (down) return;
           box.setPointerCapture(ev.pointerId);
+          down = true;
           box.classList.add('pressed');
-          moved = false;
+          moved = info = false;
           x0 = ev.clientX;
           y0 = ev.clientY;
-          tipT = setTimeout(() => { if (!moved) this.showAbTip(id, box); }, 550);
           if (!this.game().abilityUnlocked(id)) { this.openTabletAt(id); return; }
-          if (aimed) { aiming = true; this.cb.onAimStart(id); return; }
+          if (id !== 'spear') tipT = setTimeout(() => { if (!moved) { info = true; this.showAbTip(id, box); } }, 450);
+          if (aimed) {
+            if (this.aiming) { down = false; box.classList.remove('pressed'); return; } // one aimed rune at a time
+            aiming = true;
+            this.root.classList.add('aiming');
+            this.cb.onAimStart(id);
+            return;
+          }
+          if (onRelease) return;
           this.cb.onCast(id);
           this.cb.onCastHold(id, true);
         });
         box.addEventListener('pointermove', (ev) => {
-          if (!aiming) return;
+          if (!aiming || info) return;
           if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 12) return;
-          if (!moved) { moved = true; clearTimeout(tipT); this.abTip.classList.add('hidden'); box.classList.add('dragging'); }
-          box.classList.toggle('cancel', overBox(ev));
+          if (!moved) { moved = true; clearTimeout(tipT); box.classList.add('dragging'); }
+          box.classList.toggle('cancel', overArc(ev));
           this.cb.onAimMove(ev.clientX, ev.clientY);
         });
         box.addEventListener('pointerup', (ev) => up(ev, false));
         box.addEventListener('pointercancel', (ev) => up(ev, true));
+        box.addEventListener('lostpointercapture', (ev) => up(ev, true));
         box.addEventListener('contextmenu', (e) => e.preventDefault());
       }
       abs.appendChild(box);
@@ -296,16 +312,24 @@ export class Hud {
       this.speedBtn.innerHTML = '×1<small>Скорость</small>';
       const pauseBtn = el('button', 'btn pausebtn', '❚❚<small>Пауза</small>') as HTMLButtonElement;
       pauseBtn.onclick = () => this.cb.onPause();
-      this.sacBtn = el('button', 'btn sacbtn hidden', '✶<small>Жертва</small>') as HTMLButtonElement;
-      let armed = 0;
-      this.sacBtn.onclick = () => {
-        if (performance.now() - armed < 2000) { armed = 0; this.sacBtn!.classList.remove('armed'); this.cb.onSacrifice(); return; }
-        armed = performance.now();
-        this.sacBtn!.classList.add('armed');
-        this.say('Жертва Света: коснись ✶ ещё раз — Хранитель взорвётся светом и падёт', true);
-        setTimeout(() => { if (this.sacBtn && performance.now() - armed >= 2000) this.sacBtn.classList.remove('armed'); }, 2100);
-      };
-      ctr.replaceChildren(this.sacBtn, this.keeperBtn, this.speedBtn, pauseBtn);
+      // the Sacrifice of Light: its own red button under the Tree bar, held for 1 s
+      this.sacBtn = el('button', 'btn sacbtn hidden', '✶ Жертва Света <small>держи</small>') as HTMLButtonElement;
+      this.sacBtn.id = 'sacbtn';
+      let sacT: ReturnType<typeof setTimeout> | undefined;
+      const sacStop = () => { clearTimeout(sacT); this.sacBtn!.classList.remove('holding'); };
+      this.sacBtn.addEventListener('pointerdown', (ev) => {
+        ev.preventDefault();
+        this.sacBtn!.classList.add('holding');
+        sacT = setTimeout(() => { sacStop(); this.cb.onSacrifice(); }, 1000);
+      });
+      this.sacBtn.addEventListener('pointerup', () => {
+        if (this.sacBtn!.classList.contains('holding')) this.say('Жертва Света: удерживай кнопку секунду — Хранитель взорвётся светом и падёт', true);
+        sacStop();
+      });
+      this.sacBtn.addEventListener('pointercancel', sacStop);
+      this.sacBtn.addEventListener('pointerleave', sacStop);
+      r.appendChild(this.sacBtn);
+      ctr.replaceChildren(this.keeperBtn, this.speedBtn, pauseBtn);
     }
     r.appendChild(ctr);
 
@@ -420,9 +444,9 @@ export class Hud {
         <h2>ДРЕВО ИГГ</h2>
         <p>«Каждое Игг-Древо — это форпост людей в борьбе против Червей.»<br>Восходящий, посади Семя у границы Теней, вырасти его в Великое Игг-Древо и держи Круг — сколько сможешь.</p>
         ${isTouch ? `<div class="keys touchkeys">
-          <span><b>Коснись земли</b> — Восходящий идёт туда (веди пальцем)</span><span><b>Руна у земли</b> — призвать гнездо</span>
-          <span><b>Кнопки внизу</b> — руны Хранителя (держи — повтор)</span><span><b>Древо</b> или полоса наверху — рост</span>
-          <span><b>В кольце</b>: касание — описание, ещё раз — купить</span><span><b>Долгое касание</b> руны — её карточка</span>
+          <span><b>Зажми палец на поле</b> и веди влево / вправо — ходить</span><span><b>Тап по руне у земли</b> — призвать гнездо</span>
+          <span><b>Руны справа</b>: Копьё — держи для повтора</span><span><b>Молот, Звездопад</b> — тяни с кнопки на поле</span>
+          <span><b>Древо</b> или полоса наверху — рост</span><span><b>Долгое касание</b> руны — её описание</span>
         </div>` : ''}<div class="keys${isTouch ? ' hidden' : ''}">
           <span><b>A / D</b> — ходить, собирать Янтарь и Кровь</span><span><b>Клик</b> по руне у земли — призвать гнездо</span>
           <span><b>1–6</b> — руны Хранителя</span><span><b>Клик</b> по Древу — стадии и рост</span>
@@ -710,6 +734,7 @@ export class Hud {
     this.panel.classList.remove('show');
     this.menuTarget = t;
     this.ringSig = '';
+    this.sheetSig = this.cardSig = '';
     this.hoverOpt = -1;
     this.ring.classList.add('show');
     this.renderRing();
@@ -717,6 +742,7 @@ export class Hud {
 
   closeMenu() {
     this.ringAnimKey = '';
+    this.sheetSig = this.cardSig = '';
     const had = this.menuTarget !== null || this.panelKind !== null;
     this.menuTarget = null;
     this.ring.classList.remove('show');
@@ -915,6 +941,7 @@ export class Hud {
     const data = this.buildRingOptions();
     if (!data) { this.closeMenu(); return; }
     this.ringOpts = data.opts;
+    if (isTouch) { this.renderSheet(data); return; }
     const sc = this.scale;
     const tgt = this.menuTarget?.kind === 'structure' ? g.state.structures.find((x) => x.id === (this.menuTarget as { id: number }).id) : undefined;
     const sig = data.title + JSON.stringify(this.buildStars) + JSON.stringify(tgt?.asp ?? null) + (tgt ? Math.floor(g.state.amber) : '')
@@ -1027,7 +1054,122 @@ export class Hud {
     this.showCard();
   }
 
+  /**
+   * Phone: a slot's / nest's options as a bottom sheet (a row of 52 px buttons, the point
+   * upgrades beside them) and a card above it with the selected option, its ★ stepper and a
+   * big «buy» button. Nothing hangs over the field around the nest, nothing is bought by an
+   * accidental tap; releasing a nest is held for 0.6 s.
+   */
+  private sheetSig = '';
+  private cardSig = '';
+  private renderSheet(data: { title: string; opts: RingOpt[] }) {
+    const g = this.game();
+    const opts = data.opts;
+    // a selection always exists: the first option that can be taken (or the first at all)
+    if (!opts[this.hoverOpt]) {
+      // never the «release» by default: an affordable option, else any open one, else the first
+      const pickI = [opts.findIndex((o) => !o.locked && !o.danger && o.ok), opts.findIndex((o) => !o.locked && !o.danger)].find((i) => i >= 0);
+      this.hoverOpt = pickI ?? 0;
+    }
+    const order = opts.map((o, i) => ({ o, i })).sort((a, b) => (a.o.pos ?? a.i) - (b.o.pos ?? b.i));
+    const st = this.menuTarget?.kind === 'structure' ? g.state.structures.find((x) => x.id === (this.menuTarget as { id: number }).id) : undefined;
+    const sig = data.title + this.hoverOpt + JSON.stringify(st?.asp ?? null) + Math.floor(g.state.amber) + '|' + Math.floor(g.state.star)
+      + opts.map((o) => o.title + o.ok + JSON.stringify(o.price)).join('|');
+    if (sig !== this.sheetSig) {
+      this.sheetSig = sig;
+      this.ring.classList.add('sheet', 'still');
+      let html = `<div class="sh-title">${data.title}<button class="sh-close" aria-label="Закрыть">✕</button></div><div class="sh-row">`;
+      for (const { o, i } of order) {
+        html += `<button class="ropt ${o.ok ? '' : 'no'} ${o.locked ? 'locked' : ''} ${o.danger ? 'danger' : ''} ${this.hoverOpt === i ? 'sel' : ''}" data-i="${i}">
+          <img src="${o.icon}"><span class="rp">${o.price && !o.locked ? priceHtml(o.price, g) : ''}</span></button>`;
+      }
+      if (st) {
+        html += `<span class="sh-sep"></span>${(['dmg', 'rng', 'spd'] as Aspect[]).map((key) => {
+          const a = ASPECT[key];
+          const lv = st.asp?.[key] ?? 0;
+          const cost = g.aspectCost(st, key);
+          return `<button class="aspect ${g.state.amber >= cost ? '' : 'no'}" data-asp="${key}" title="${a.name}">${a.icon}${lv ? `<i>${lv}</i>` : ''}<span><img class="icon" src="${icon('amber')}">${cost}</span></button>`;
+        }).join('')}`;
+      }
+      html += `</div>`;
+      this.ring.innerHTML = html;
+      this.ring.querySelector('.sh-close')!.addEventListener('click', () => this.closeMenu());
+      this.ring.querySelectorAll<HTMLElement>('.ropt').forEach((node) => {
+        node.addEventListener('click', () => { this.hoverOpt = Number(node.dataset.i); this.renderRing(); });
+      });
+      this.ring.querySelectorAll<HTMLButtonElement>('.aspect').forEach((b) => {
+        b.addEventListener('click', () => {
+          const t = this.menuTarget;
+          if (t?.kind === 'structure') g.upgradeAspect(t.id, b.dataset.asp as Aspect);
+          this.renderRing();
+        });
+      });
+      this.ring.style.left = this.ring.style.top = '';
+    }
+    this.renderSheetCard();
+  }
+
+  private renderSheetCard() {
+    const o = this.ringOpts[this.hoverOpt];
+    if (!o || !this.menuTarget) { this.card.classList.remove('show'); this.cb.onPreview(null); return; }
+    const g = this.game();
+    const stars = o.fam ? this.buildStars[o.fam] ?? 0 : 0;
+    // not tied to the Amber counter: a held «release» must survive drops being picked up
+    const sig = `${this.hoverOpt}|${o.title}|${o.ok}|${JSON.stringify(o.price)}|${stars}|${JSON.stringify(this.menuTarget)}`;
+    if (sig !== this.cardSig) {
+      this.cardSig = sig;
+      const priceTxt = o.price ? priceHtml(o.price, g) : '';
+      const buy = o.locked ? '' : o.danger
+        ? `<button class="btn sh-buy danger" data-a="sell">Отпустить · держи ${priceTxt}</button>`
+        : `<button class="btn gold sh-buy" data-a="buy" ${o.ok ? '' : 'disabled'}>${o.fam ? 'Призвать' : 'Взять'} ${priceTxt}</button>`;
+      const step = o.fam ? `<span class="sh-stars"><button class="btn" data-d="-1" ${stars > 0 ? '' : 'disabled'}>−</button><b>★${stars}</b><button class="btn" data-d="1">+</button></span>` : '';
+      this.card.innerHTML = `<h4>${o.title}</h4><div class="sub">${o.sub.replace(/ · с клавиатуры — нажми 4 дважды/, '')}</div>${o.body}<div class="sh-act">${step}${buy}</div>`;
+      this.card.classList.add('hit', 'sheetcard', 'show');
+      const act = () => {
+        this.ringOpts[this.hoverOpt]?.act();
+        // the option list may have changed (level 2 → specialisations): pick afresh
+        this.hoverOpt = -1;
+        this.sheetSig = this.cardSig = '';
+        if (this.menuTarget) this.renderRing();
+      };
+      this.card.querySelector('[data-a=buy]')?.addEventListener('click', act);
+      const sell = this.card.querySelector<HTMLButtonElement>('[data-a=sell]');
+      if (sell) {
+        let t: ReturnType<typeof setTimeout> | undefined;
+        const stop = () => { clearTimeout(t); sell.classList.remove('holding'); };
+        sell.addEventListener('pointerdown', () => { sell.classList.add('holding'); t = setTimeout(() => { stop(); act(); }, 600); });
+        sell.addEventListener('pointerup', stop);
+        sell.addEventListener('pointercancel', stop);
+        sell.addEventListener('pointerleave', stop);
+      }
+      this.card.querySelectorAll<HTMLButtonElement>('.sh-stars button').forEach((b) => {
+        b.addEventListener('click', () => {
+          if (!o.fam) return;
+          this.buildStars[o.fam] = Math.max(0, stars + Number(b.dataset.d));
+          this.sheetSig = '';
+          this.renderRing();
+        });
+      });
+    }
+    // beside the sheet when there is room (the field above stays visible), else above it
+    const root = this.root.getBoundingClientRect();
+    const sh = this.ring.getBoundingClientRect();
+    const left = sh.right - root.left + 8;
+    const room = root.width - left - 12;
+    if (room >= 300) {
+      this.card.style.left = `${left}px`;
+      this.card.style.width = `${Math.min(460, room)}px`;
+      this.card.style.bottom = '';
+    } else {
+      this.card.style.left = `${sh.left - root.left}px`;
+      this.card.style.width = `${Math.min(460, root.width - (sh.left - root.left) - 12)}px`;
+      this.card.style.bottom = `${root.bottom - sh.top + 8}px`;
+    }
+    this.cb.onPreview(o.preview ?? null);
+  }
+
   private showCard() {
+    if (isTouch) { this.renderSheetCard(); return; }
     const o = this.ringOpts[this.hoverOpt];
     if (!o || !this.menuTarget) {
       this.card.classList.remove('show');
@@ -1453,6 +1595,11 @@ export class Hud {
         if (lk.innerHTML !== t) lk.innerHTML = t;
         box.classList.toggle('learnable', g.abilityAvailable(id) && s.star >= ABILITIES[id].learn);
       }
+      // a phone: a rune that can't even be learned yet is a small dim ghost, not a button with a price
+      box.classList.toggle('far', !unlocked && !g.abilityAvailable(id));
+      if (isTouch && unlocked && (id === 'hammer' || id === 'starfall')) {
+        this.once(`aim-${id}`, `«${ABILITIES[id].name}»: тяни с кнопки на поле и отпусти — удар. Короткий тап бьёт сам, сброс обратно на руны — отмена.`);
+      }
       const c = s.keeper.cooldowns[id];
       const nights = id === 'timestop' ? s.keeper.timeStopNights : 0;
       const frac = nights > 0 ? Math.min(1, nights / ABILITIES.timestop.nights) : c > 0 ? Math.min(1, c / Math.max(0.01, s.keeper.cdMax[id])) : 0;
@@ -1517,7 +1664,7 @@ export class Hud {
   private unfoldQuest(open: boolean) {
     clearTimeout(this.questFoldT);
     this.questBox.classList.toggle('open', open);
-    if (open) this.questFoldT = setTimeout(() => this.questBox.classList.remove('open'), 5000);
+    if (open) this.questFoldT = setTimeout(() => this.questBox.classList.remove('open'), 4000);
   }
 
   /** Observer's tasks: one goal at a time with a highlight and a reward. */
@@ -1536,7 +1683,7 @@ export class Hud {
     if (sig !== this.questSig) {
       this.questSig = sig;
       this.callout(`${q.text} ${q.hint ?? ''}`);
-      if (isTouch) this.unfoldQuest(true);
+      if (isTouch && g.state.phase !== 'night') this.unfoldQuest(true);
       this.questBox.innerHTML = `${isTouch ? `<div class="chip">📜 ${this.questIdx + 1}/${QUESTS.length}</div>` : ''}<div class="who">Задание Наблюдателя · ${this.questIdx + 1}/${QUESTS.length}</div>
         <div class="qt">${touchText(q.text)}</div>${q.hint ? `<div class="qh">${touchText(q.hint)}</div>` : ''}
         <div class="qr"><img class="icon" src="${icon('amber')}"> ${q.reward}</div>`;
@@ -1576,6 +1723,17 @@ export class Hud {
   }
 
   /** Context tips (the Observer's tutorial) for the first minutes. */
+  private tipText = '';
+  private tipAt = 0;
+  /** Phone: a hint shows for 6 s after it changes and never at night (it would cover the field). */
+  private setTip(text: string, night: boolean) {
+    if (!isTouch) { if (this.tip.innerHTML !== text) this.tip.innerHTML = text; return; }
+    if (text !== this.tipText) { this.tipText = text; this.tipAt = performance.now(); }
+    const show = !!text && !night && performance.now() - this.tipAt < 6000;
+    const html = show ? text : '';
+    if (this.tip.innerHTML !== html) this.tip.innerHTML = html;
+  }
+
   private updateTips(g: Game) {
     const s = g.state;
     if (s.enemies.some((e) => e.kind === 'devourer')) this.once('devourer', 'Тень Пожирателя! Разрушив гнездо, она пожирает его и лечится, из пасти сыплются Копатели. Сбей панцирь Молотом и Звездопадом и не подпускай к гнёздам.');
@@ -1591,7 +1749,7 @@ export class Hud {
     if (s.structures.some((x) => x.family === 'spider')) mark('spider');
     if (Object.values(s.keeper.props).some((a) => a.length > 0)) mark('shop');
     let text = '';
-    if (this.questIdx < QUESTS.length) { const q = QUESTS[this.questIdx]; const h = touchText(q.hint ?? ''); if (this.tip.innerHTML !== h) this.tip.innerHTML = h; return; }
+    if (this.questIdx < QUESTS.length) { const q = QUESTS[this.questIdx]; this.setTip(touchText(q.hint ?? ''), s.phase === 'night'); return; }
     const nestT2 = s.structures.find((x) => x.tier === 1);
     if (g.over || this.bannerTimer > 0.5 || this.choiceOpen) text = '';
     else if (!done('build')) text = 'Кликни по золотой <b>руне</b> у Древа — призови гнездо светоносных. <kbd>A</kbd>/<kbd>D</kbd> — ходить';
@@ -1602,7 +1760,6 @@ export class Hud {
     else if (s.star >= 6 && !this.tipsDone.has('shop') && s.phase === 'day') { text = '<kbd>R</kbd> — Скрижаль: купи у Наблюдателя Свойства для рун за Звёздную Кровь'; }
     else if (nestT2 && s.star >= 4 && !done('spec')) text = 'Гнездо 2 ур. можно <b>специализировать</b> — кликни по нему (нужна Звёздная Кровь)';
     else if (s.phase === 'day' && s.amber >= 60 && !done('upgrade') && s.night >= 1) text = 'Кликни по гнезду, чтобы усилить его <kbd>U</kbd>';
-    text = touchText(text);
-    if (this.tip.innerHTML !== text) this.tip.innerHTML = text;
+    this.setTip(touchText(text), s.phase === 'night');
   }
 }

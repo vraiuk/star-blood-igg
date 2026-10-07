@@ -189,6 +189,8 @@ function fit() {
     cssH = Math.floor((cssW * 9) / 16);
   }
   renderer.camera.aspect = cssH / cssW;
+  // the phone HUD in screen px: top bar ~58, bottom controls ~64, the rune arc ~172 tall
+  if (isTouch) Camera.hud = { top: 58 / cssH, bot: 64 / cssH, groundMax: 1 - 172 / cssH };
   // on a phone the interface is sized for a finger, not for the 640×360 frame
   const base = Math.min(cssW / 640, cssH / 360);
   scale = isTouch ? Math.max(base, Math.min(cssH / 230, cssW / 480)) : base;
@@ -225,6 +227,7 @@ function updateMove() {
 /** Tap-to-walk: steer the Ascended towards the tapped point, stop when there. */
 function steerWalk() {
   if (joy.active) { game.setMove(joy.dir); return; }
+  if (isTouch) return;
   if (view.walkTo == null) return;
   const k = game.state.keeper;
   if (!k.alive) { view.walkTo = null; game.setMove(0); return; }
@@ -241,11 +244,26 @@ let steerPointer: number | null = null;
 
 function setPaused(p: boolean) {
   paused = p;
+  if (p) { heldRunes.clear(); held.clear(); updateMove(); }
   hud.setPaused(p);
 }
 
 /** Abilities that need a target point enter aim mode on click; the hammer casts at once. */
+/**
+ * A phone has no cursor to turn to: before a Spear, the Ascended turns to the creatures if
+ * there are none in front within the Spear's reach but some behind.
+ */
+function faceForSpear() {
+  const s = game.state, k = s.keeper;
+  const reach = ABILITIES.spear.range * game.runeArea('spear');
+  const near = s.enemies.filter((e) => e.hp > 0 && e.y < WORLD.groundY + 4 && Math.abs(e.x - k.x) <= reach);
+  const ahead = near.some((e) => (e.x - k.x) * k.dir > 0);
+  const behind = near.some((e) => (e.x - k.x) * k.dir < 0);
+  if (!ahead && behind) game.face(k.dir > 0 ? -1 : 1);
+}
+
 function beginAim(id: AbilityId) {
+  if (isTouch && id === 'spear') faceForSpear();
   hud.closeMenu();
   // the Starfall and the Hammer's leap are aimed with the next click
   if (id !== 'starfall' && id !== 'hammer') { game.cast(id, game.state.keeper.x); return; }
@@ -315,7 +333,13 @@ window.addEventListener('keyup', (e) => {
   if (ABILITY_KEYS[k] === 'spear') game.releaseBeam();
   updateMove();
 });
-window.addEventListener('blur', () => { held.clear(); heldRunes.clear(); updateMove(); });
+window.addEventListener('blur', () => { held.clear(); heldRunes.clear(); updateMove(); audio.setBackground(true); });
+window.addEventListener('focus', () => { if (!document.hidden) audio.setBackground(false); });
+// a hidden tab (switched away, phone locked) goes silent and, mid-run, pauses
+document.addEventListener('visibilitychange', () => {
+  audio.setBackground(document.hidden);
+  if (document.hidden && started && !game.over && !paused) setPaused(true);
+});
 
 function toWorld(ev: MouseEvent | PointerEvent): [number, number] {
   const r = canvas.getBoundingClientRect();
@@ -326,10 +350,15 @@ hud.setProjector((x, y) => renderer.camera.toScreen(x, y, cssW, cssH));
 /** Clickable height of surface nests (matches their sprites). */
 const PICK_H: Record<string, number> = { hive: 42, beetle: 20, dragonfly: 36, termite: 22, spider: 12 };
 
-/** A finger is wider than a cursor: touch picks with a larger radius (world px). */
-const PAD = isTouch ? 7 : 0;
+/**
+ * A finger is wider than a cursor: touch picks with a larger radius — at least ~22 screen px
+ * around a slot whatever the zoom (in world px, it grows as the camera pulls out).
+ */
+let PAD = 0;
+const updatePad = () => { if (isTouch) PAD = Math.max(7, 22 / (cssW / renderer.camera.w) - 10); };
 
 function pick(mx: number, my: number): MenuTarget | null {
+  updatePad();
   const s = game.state;
   // the crown first: on a young tree its slots hang low, right above the surface nests
   for (const st of s.structures) {
@@ -396,9 +425,9 @@ canvas.addEventListener('mousedown', (ev) => {
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ───────────────────────────── touch ───────────────────────────────
-// A finger: tap a slot / nest / the Tree to open its menu. Movement is a one-axis floating
-// slider in the lower-left zone (it wakes after a 10 px slide, so a short tap there still
-// opens menus); a tap on the ground elsewhere walks there. Aimed runes are dragged from
+// A finger: tap a slot / nest / the Tree to open its menu. Anywhere else a press spawns the
+// movement joystick right under the finger (one axis: left / right); a press that starts on
+// a slot or nest becomes the joystick once it slides 10 px. Aimed runes are dragged from
 // their button onto the field (see onAim* in the HUD callbacks).
 
 /** The movement slider: where the finger came down and the current direction. */
@@ -410,12 +439,6 @@ joyEl.innerHTML = '<i class="l">◀</i><b></b><i class="r">▶</i>';
 const joyKnob = joyEl.querySelector('b') as HTMLElement;
 if (isTouch) uiRoot.appendChild(joyEl);
 
-/** The lower-left zone that belongs to the movement slider (fractions of the stage). */
-function inJoyZone(ev: PointerEvent) {
-  const r = stage.getBoundingClientRect();
-  return ev.clientX - r.left < r.width * 0.4 && ev.clientY - r.top > r.height * 0.35;
-}
-
 function placeJoy(x: number, y: number, knobDx: number) {
   const r = stage.getBoundingClientRect();
   joyEl.style.left = `${x - r.left}px`;
@@ -423,80 +446,82 @@ function placeJoy(x: number, y: number, knobDx: number) {
   joyKnob.style.transform = `translate(calc(-50% + ${knobDx}px), -50%)`;
 }
 
-/** A tap on the field: open what's under the finger, close a menu, or walk there. */
-function tapField(ev: PointerEvent, steer: boolean) {
+/** What a finger touches on the field (slot, nest, the Tree) — or nothing. */
+function pickAt(ev: PointerEvent): MenuTarget | null {
   const [mx, my] = toWorld(ev);
   view.mouseX = mx;
   view.mouseY = my;
-  const t = pick(mx, my);
-  if (t) {
-    hud.openMenu(t);
-    if (t.kind === 'slot') view.selectedSlot = t.slotId;
-    else if (t.kind === 'structure') view.selectedSlot = game.state.structures.find((s) => s.id === t.id)?.slotId ?? null;
-    else view.selectedSlot = null;
-    return;
-  }
-  if (hud.menuOpen) { hud.closeMenu(); return; }
-  view.walkTo = Math.max(0, Math.min(WORLD.width, mx));
-  if (steer) steerPointer = ev.pointerId;
+  return pick(mx, my);
 }
 
+/** Open the menu of what was tapped. */
+function openTarget(t: MenuTarget) {
+  hud.openMenu(t);
+  if (t.kind === 'slot') view.selectedSlot = t.slotId;
+  else if (t.kind === 'structure') view.selectedSlot = game.state.structures.find((s) => s.id === t.id)?.slotId ?? null;
+  else view.selectedSlot = null;
+}
+
+/** Show the joystick under the finger. */
+function wakeJoy(x: number, y: number) {
+  joy.active = true;
+  joy.ox = x;
+  joy.y0 = y;
+  joyEl.classList.add('on', 'used');
+  placeJoy(x, y, 0);
+}
+
+let joyTarget: MenuTarget | null = null;
 canvas.addEventListener('pointerdown', (ev) => {
   if (ev.pointerType === 'mouse') return;
   ev.preventDefault();
   hideWorldTip();
   if (!started || paused || game.over || hud.choiceOpen) return;
-  canvas.setPointerCapture(ev.pointerId);
-  if (inJoyZone(ev) && joy.id < 0) {
-    // undecided yet: a slide becomes the slider, a short tap is a tap
-    joy.id = ev.pointerId;
-    joy.x0 = ev.clientX;
-    joy.y0 = ev.clientY;
-    joy.active = false;
+  if (joy.id >= 0) {
+    // one finger drives; a second one may still tap a slot / nest open
+    const t = pickAt(ev);
+    if (t) openTarget(t);
     return;
   }
-  tapField(ev, true);
+  canvas.setPointerCapture(ev.pointerId);
+  joy.id = ev.pointerId;
+  joy.x0 = ev.clientX;
+  joy.y0 = ev.clientY;
+  joy.active = false;
+  joyTarget = pickAt(ev);
+  // on empty ground the joystick appears at once; on a slot / nest it waits for a slide
+  if (!joyTarget) {
+    if (hud.menuOpen) hud.closeMenu();
+    wakeJoy(ev.clientX, ev.clientY);
+  }
 });
 canvas.addEventListener('pointermove', (ev) => {
-  if (ev.pointerType === 'mouse') return;
-  if (ev.pointerId === joy.id) {
-    if (!joy.active) {
-      if (Math.hypot(ev.clientX - joy.x0, ev.clientY - joy.y0) < JOY.wake) return;
-      joy.active = true;
-      joy.ox = joy.x0;
-      view.walkTo = null;
-      joyEl.classList.add('on');
-    }
-    let dx = ev.clientX - joy.ox;
-    // the zero point follows a finger that went far, so turning back is instant
-    if (Math.abs(dx) > JOY.follow) { joy.ox = ev.clientX - Math.sign(dx) * JOY.follow; dx = ev.clientX - joy.ox; }
-    joy.dir = Math.abs(dx) < JOY.dead ? 0 : dx < 0 ? -1 : 1;
-    placeJoy(joy.ox, joy.y0, Math.max(-42, Math.min(42, dx)));
-    joyEl.classList.toggle('left', joy.dir < 0);
-    joyEl.classList.toggle('right', joy.dir > 0);
-    return;
+  if (ev.pointerType === 'mouse' || ev.pointerId !== joy.id) return;
+  if (!joy.active) {
+    if (Math.hypot(ev.clientX - joy.x0, ev.clientY - joy.y0) < JOY.wake) return;
+    if (hud.menuOpen) hud.closeMenu();
+    wakeJoy(joy.x0, joy.y0);
   }
-  if (ev.pointerId !== steerPointer) return;
-  const [mx, my] = toWorld(ev);
-  view.mouseX = mx;
-  view.mouseY = my;
-  view.walkTo = Math.max(0, Math.min(WORLD.width, mx));
+  let dx = ev.clientX - joy.ox;
+  // the zero point follows a finger that went far, so turning back is instant
+  if (Math.abs(dx) > JOY.follow) { joy.ox = ev.clientX - Math.sign(dx) * JOY.follow; dx = ev.clientX - joy.ox; }
+  joy.dir = Math.abs(dx) < JOY.dead ? 0 : dx < 0 ? -1 : 1;
+  placeJoy(joy.ox, joy.y0, Math.max(-42, Math.min(42, dx)));
+  joyEl.classList.toggle('left', joy.dir < 0);
+  joyEl.classList.toggle('right', joy.dir > 0);
 });
 const fingerUp = (ev: PointerEvent, cancelled: boolean) => {
-  if (ev.pointerType === 'mouse') return;
-  if (ev.pointerId === joy.id) {
-    const wasTap = !joy.active;
-    joy.id = -1;
-    joy.active = false;
-    joy.dir = 0;
-    joyEl.classList.remove('on', 'left', 'right');
-    joyEl.style.left = joyEl.style.top = '';
-    joyKnob.style.transform = '';
-    game.setMove(0);
-    if (wasTap && !cancelled && started && !paused && !game.over && !hud.choiceOpen) tapField(ev, false);
-    return;
-  }
-  if (ev.pointerId === steerPointer) steerPointer = null;
+  if (ev.pointerType === 'mouse' || ev.pointerId !== joy.id) return;
+  const tapped = !joy.active ? joyTarget : null;
+  joy.id = -1;
+  joy.active = false;
+  joy.dir = 0;
+  joyTarget = null;
+  joyEl.classList.remove('on', 'left', 'right');
+  joyEl.style.left = joyEl.style.top = '';
+  joyKnob.style.transform = '';
+  game.setMove(0);
+  if (tapped && !cancelled && started && !paused && !game.over && !hud.choiceOpen) openTarget(tapped);
 };
 canvas.addEventListener('pointerup', (ev) => fingerUp(ev, false));
 canvas.addEventListener('pointercancel', (ev) => fingerUp(ev, true));
@@ -579,7 +604,10 @@ function frame(now: number) {
       if (id === 'spear' && game.state.keeper.forms.spear === 'B') continue;
       // aimed runes are cast where the finger lifts, not repeated
       if (heldRunes.has(id) && (id === 'hammer' || id === 'starfall')) continue;
-      if (game.abilityReady(id)) game.cast(id, view.mouseX, view.mouseY);
+      if (game.abilityReady(id)) {
+        if (isTouch && id === 'spear') faceForSpear();
+        game.cast(id, view.mouseX, view.mouseY);
+      }
     }
   }
   steerWalk();
