@@ -178,6 +178,8 @@ export class Coop {
   private tick = 0;
   /** host: commands waiting for the next tick */
   private inbox: Array<[number, string, unknown[], string?]> = [];
+  /** commands already applied while the world was held: they ride the next tick to the guests */
+  private applied: Array<[number, string, unknown[], string?]> = [];
   /** host: frames run since the last flush */
   private out: FrameCmd[] = [];
   private outAt = 0;
@@ -561,6 +563,7 @@ export class Coop {
     this.game = game;
     this.tick = 0;
     this.inbox = [];
+    this.applied = [];
     this.out = [];
     this.outAt = 0;
     this.outN = 0;
@@ -591,12 +594,25 @@ export class Coop {
     if (!g) return;
     for (let i = 0; i < n; i++) {
       const cmds = this.inbox.splice(0);
-      for (const [p, m, a, s] of cmds) this.out.push([this.outN, p, m, a, s]);
+      // the guests replay the held commands first, then this tick's — the host's order exactly
+      for (const [p, m, a, s] of [...this.applied.splice(0), ...cmds]) this.out.push([this.outN, p, m, a, s]);
       if (this.outN === 0) this.outAt = this.tick;
       this.outN++;
       this.runTick(g, cmds);
       if (this.tick % DIGEST_EVERY === 0) this.digests.push({ tick: this.tick, h: g.digest() });
     }
+  }
+
+  /**
+   * Host: the world is held (a pause, an open panel in a solo run) — apply the queued commands
+   * now so purchases show at once; time doesn't move, the next tick carries them to the guests.
+   */
+  hostHold() {
+    const g = this.game;
+    if (!g || this.role === 'guest' || !this.inbox.length) return;
+    const cmds = this.inbox.splice(0);
+    for (const [p, m, a, s] of cmds) g.exec(p, m, a, s);
+    this.applied.push(...cmds);
   }
 
   /** Host: ship the frames of this animation frame to every guest. */

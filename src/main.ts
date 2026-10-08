@@ -489,6 +489,8 @@ function frame(now: number) {
     coop.hostTicks(n);
   } else {
     acc = 0;
+    // time stands still, but a purchase in an open panel still lands right away
+    if (running && !coop.isGuest) coop.hostHold();
   }
   coop.flush();
   const frozen = !started || game.over || !!game.choice || (coop.isGuest ? coopPanel.hostPaused : paused);
