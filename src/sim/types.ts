@@ -156,6 +156,8 @@ export interface Projectile {
   giant?: boolean;
   /** a shard of a burst star (small, flies out of the crater) */
   shard?: boolean;
+  /** index of the Ascended who cast it (spears, stars) — their Light, rhythm and charge */
+  owner?: number;
 }
 
 export type DropKind = 'amber' | 'star';
@@ -213,6 +215,8 @@ export interface Keeper {
   /** channelled Piercing Beam: seconds left, direction, damage per second */
   channel: number;
   channelDir: 1 | -1;
+  /** the beam key was tapped: let go once the beam has shone its minimum */
+  beamRelease?: boolean;
   channelDps: number;
   /** Сияние Игг remaining; Зов Роя remaining and where it was called */
   radianceT: number;
@@ -326,13 +330,17 @@ export interface Worker {
 
 export type Phase = 'day' | 'night' | 'lost';
 
-/** A pending choice that pauses the day timer until resolved. */
-export type Choice =
+/**
+ * A pending choice that pauses the day timer until resolved. `k` is the Ascended it belongs to
+ * (their dawn roulette, their rune's facets); without it anyone may pick (a Tree branch).
+ */
+export type Choice = (
   | { kind: 'dawn'; offers: string[]; start?: boolean }
   | { kind: 'branch'; stage: number }
   | { kind: 'facet'; rune: KeeperRuneId; rank: number; offers: string[] }
   | { kind: 'form'; rune: KeeperRuneId; rank: number; offers: string[] }
-  | { kind: 'facetUp'; rune: KeeperRuneId; rank: number; offers: string[] };
+  | { kind: 'facetUp'; rune: KeeperRuneId; rank: number; offers: string[] }
+) & { k?: number };
 
 export type GameEvent =
   | { type: 'hit'; x: number; y: number; amount: number; crit: boolean }
@@ -351,9 +359,9 @@ export type GameEvent =
   | { type: 'treeGrew'; stage: number }
   | { type: 'shield' }
   | { type: 'secondWind' }
-  | { type: 'keeperHit' }
-  | { type: 'keeperDown' }
-  | { type: 'keeperBack' }
+  | { type: 'keeperHit'; k: number }
+  | { type: 'keeperDown'; k: number; x: number }
+  | { type: 'keeperBack'; k: number }
   | { type: 'rankUp'; rank: number }
   | { type: 'rune'; id: string }
   | { type: 'devRune'; x: number }
@@ -435,7 +443,17 @@ export interface GameState {
   tempLights: TempLight[];
   burns: GroundBurn[];
   tunnels: Tunnel[];
+  /**
+   * The Ascended whose turn it is: the local player's between ticks (UI), the acting one
+   * inside commands and per-keeper updates. Always one of `keepers`.
+   */
   keeper: Keeper;
+  /**
+   * Every Ascended of the run (co-op: up to 4). They share the Tree, the resources and the
+   * rune progression (Properties, ranks, facets, attributes are the same objects); each one
+   * has its own body — position, HP, Light, cooldowns, casts in flight.
+   */
+  keepers: Keeper[];
   tree: Tree;
   pending: PendingSpawn[];
   /** queue of choices; the first one is shown */

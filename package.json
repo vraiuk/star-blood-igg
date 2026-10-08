@@ -1,7 +1,7 @@
 {
   "name": "star-blood-igg",
   "private": true,
-  "version": "0.6.6",
+  "version": "0.6.10",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "prepare": "git config core.hooksPath .githooks || true"
+  },
+  "dependencies": {
+    "peerjs": "^1.5.5"
   },
   "devDependencies": {
     "tsx": "^4.23.15",

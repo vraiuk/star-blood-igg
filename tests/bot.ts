@@ -110,7 +110,7 @@ export async function runBotAsync(planName: keyof typeof PLANS, seed = 1, maxMin
 
 
 
-function act(g: Game, plan: BotPlan) {
+export function act(g: Game, plan: BotPlan) {
   const s = g.state;
   const k = s.keeper;
 

@@ -9,6 +9,8 @@ import { Hud, type MenuTarget } from './ui/hud';
 import { openMetaTree } from './ui/metaTree';
 import { buildRunLog, saveRunLog } from './state/runlog';
 import { openStats } from './ui/stats';
+import { Coop, commandProxy, type StartInfo } from './net/coop';
+import { CoopPanel } from './ui/coop';
 import { hideWorldTip, showWorldTip } from './ui/glossary';
 import { VERSION_LABEL } from './version';
 
@@ -18,12 +20,14 @@ const ctx = canvas.getContext('2d')!;
 ctx.imageSmoothingEnabled = false;
 
 const save = loadSave();
-const newGame = () => new Game({
+/** What this peer would start a run with (as the host: for everyone). */
+const runInfo = (): Omit<StartInfo, 'players'> => ({
   seed: (Math.random() * 1e9) | 0,
   meta: metaPatches(save),
   startRune: hasStartRune(save),
   path: Math.min(save.path, save.pathUnlocked),
 });
+const newGame = (info: StartInfo = { ...runInfo(), players: 1 }) => new Game(info);
 
 let game = newGame();
 let started = false;
@@ -59,51 +63,114 @@ const titleInfo = () => {
   const p = Math.min(save.path, save.pathUnlocked);
   const run = savedRun();
   hud.renderTitle(`${PATHS[p].name} · рекорд: ${save.bestNight[p] ?? 0} ноч. · Монеты Наблюдателя: ${save.coins}`, save.coins, run ? `ночь ${run.night + 1}` : '');
+  // the title was rebuilt: put the lobby back into it
+  if (lobby) coopPanel.renderLobby(lobby);
 };
 
-const hud: Hud = new Hud(uiRoot, () => game, {
+// ───────────────────────────── co-op ───────────────────────────────
+
+const coopPanel = new CoopPanel(uiRoot);
+let lobby: import('./net/coop').LobbyView | null = null;
+const coop = new Coop({
+  lobby(v) { lobby = v; coopPanel.renderLobby(v); },
+  start(info, you) { beginRun(info, you); },
+  paused(on, why) {
+    coopPanel.hostPaused = on;
+    coopPanel.pauseWhy = why === 'hidden' ? 'Пауза: хост свернул игру — ждём, пока он вернётся'
+      : why === 'silent' ? 'Хост не отвечает… Если он ушёл, через пару секунд вернёмся в лобби'
+      : 'Пауза: хост открыл меню';
+  },
+  desync() { coopPanel.desync = true; },
+  hostGone() {
+    // the host left: a guest's run can't go on — back to the lobby
+    if (!started) return;
+    logQuit();
+    started = false;
+    hud.closeMenu();
+    hud.hideEnd();
+    setPaused(false);
+    hud.showTitle();
+    titleInfo();
+  },
+});
+/** The UI and the input talk to this: commands go out over the network, reads pass through. */
+let cmd = commandProxy(game, coop);
+
+/** A run starts on this peer (the host started it, or a guest got the start message). */
+function beginRun(info: StartInfo, you: number) {
+  logQuit();
+  game = newGame(info);
+  game.setLocal(you);
+  cmd = commandProxy(game, coop);
+  // alone the run plays like the solo game (tips, the death hold, panels stop time)
+  hud.coop = info.players > 1;
+  coop.attach(game);
+  logged = false;
+  hud.resetQuests();
+  hud.hideEnd();
+  hud.closeMenu();
+  renderer.resetCamera(game.state.tree.radius);
+  started = true;
+  endShown = false;
+  coopPanel.hostPaused = false;
+  coopPanel.desync = false;
+  lastMove = 0;
+  setPaused(false);
+  audio.start();
+  hud.hideTitle();
+}
+
+/** A guest leaves the run (the others play on): back to a fresh lobby search. */
+function leaveRun() { logQuit(); location.reload(); }
+
+/** The run ends on this peer without a summary: back to the title and the lobby. */
+function leaveSolo() {
+  setPaused(false);
+  hud.closeMenu();
+  started = false;
+  coop.ended();
+  game = newGame();
+  cmd = commandProxy(game, coop);
+  hud.resetQuests();
+  renderer.resetCamera(game.state.tree.radius);
+  hud.showTitle();
+  titleInfo();
+}
+
+const hud: Hud = new Hud(uiRoot, () => cmd, {
   onContinue() {
+    // a saved run is a solo one: it goes on only while nobody else is in the lobby
     const run = savedRun();
-    game = newGame();
-    if (!run || !game.restore(run.json)) { dropRun(); titleInfo(); return; }
-    logged = false;
-    hud.resetQuests();
+    if (!run || !coop.canStart || (lobby?.ids.length ?? 1) > 1) return;
+    coop.start(runInfo());
+    if (!game.restore(run.json)) { dropRun(); leaveSolo(); return; }
     renderer.resetCamera(game.state.tree.radius);
-    started = true;
-    endShown = false;
-    audio.start();
-    hud.hideTitle();
   },
   onFeedback() {
     // a prefilled GitHub issue: the author sees the version and this run's numbers
     const s = game.state;
-    const body = `Версия: ${VERSION_LABEL}\nТропа: ${PATHS[game.path].name}\nНочей: ${s.night}\nДрево: ${s.tree.stage + 1}/6, колец ${s.tree.rings}\n\n**Что понравилось:**\n\n**Что сломано / непонятно:**\n\n**Чего хочется дальше:**\n`;
+    const body = `Версия: ${VERSION_LABEL}\nТропа: ${PATHS[game.path].name}\nНочей: ${s.night}\nИгроков: ${s.keepers.length}\nДрево: ${s.tree.stage + 1}/6, колец ${s.tree.rings}\n\n**Что понравилось:**\n\n**Что сломано / непонятно:**\n\n**Чего хочется дальше:**\n`;
     window.open(`https://github.com/vraiuk/star-blood-igg/issues/new?title=${encodeURIComponent('Отзыв: ')}&body=${encodeURIComponent(body)}`, '_blank');
   },
   onStart() {
+    if (!coop.canStart) return;
     dropRun();
-    game = newGame();
-    logged = false;
-    hud.resetQuests();
-    renderer.resetCamera(game.state.tree.radius);
-    started = true;
-    endShown = false;
-    audio.start();
-    hud.hideTitle();
+    coop.start(runInfo());
   },
   onRestart() {
-    logQuit();
+    if (coop.canStart) { coop.start(runInfo()); return; }
+    // a guest waits for the host's next run in the lobby
     hud.hideEnd();
     hud.closeMenu();
-    game = newGame();
-    logged = false;
-    hud.resetQuests();
-    renderer.resetCamera(game.state.tree.radius);
-    endShown = false;
+    if (!game.over) { leaveRun(); return; }
+    started = false;
+    hud.showTitle();
+    titleInfo();
   },
   onGiveUp() {
     setPaused(false);
-    game.surrender();
+    if (coop.isGuest) leaveRun();
+    else cmd.surrender();
   },
   onOpenStats() {
     metaOpen = true;
@@ -114,31 +181,27 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     openMetaTree(uiRoot, save, () => {
       metaOpen = false;
       titleInfo();
-      if (game.over) { hud.hideEnd(); started = false; game = newGame(); hud.showTitle(); }
+      if (game.over) { hud.hideEnd(); started = false; hud.showTitle(); titleInfo(); }
     });
   },
   onCast(id) { beginAim(id); },
-  onCallNight() { game.callNight(); },
-  onToggleSpeed() { speed = nextSpeed(); hud.setSpeed(speed); },
-  onSpeed(step) { speed = stepSpeed(step); hud.setSpeed(speed); },
+  onCallNight() { cmd.callNight(); },
+  onToggleSpeed() { if (!coop.isGuest) { speed = nextSpeed(); hud.setSpeed(speed); } },
+  onSpeed(step) { if (!coop.isGuest) { speed = stepSpeed(step); hud.setSpeed(speed); } },
   onQuitToMenu() {
     logQuit();
-    setPaused(false);
-    hud.closeMenu();
-    started = false;
-    game = newGame();
-    logged = false;
-    hud.resetQuests();
-    renderer.resetCamera(game.state.tree.radius);
-    hud.showTitle();
-    titleInfo();
+    // together the run can't be set aside: a guest leaves it, the host's leaving ends it for everyone
+    if (coop.isGuest || game.state.keepers.length > 1) { location.reload(); return; }
+    leaveSolo();
   },
   onToggleSound() { hud.setSound(audio.toggle()); },
   onResume() { setPaused(false); },
   onMenuClosed() { view.selectedSlot = null; view.preview = null; },
   onPreview(p) { view.preview = p; },
 });
+hud.resetQuests();
 titleInfo();
+coop.connect();
 
 // ───────────────────────────── layout ──────────────────────────────
 
@@ -161,23 +224,36 @@ fit();
 // ───────────────────────────── input ───────────────────────────────
 
 const held = new Set<string>();
+/** the walk direction last sent (commands are only sent when it changes) */
+let lastMove: -1 | 0 | 1 = 0;
+let lastMoveAt = 0;
 
-function updateMove() {
+function wantedMove(): -1 | 0 | 1 {
   const l = held.has('a') || held.has('arrowleft') || held.has('ф');
   const r = held.has('d') || held.has('arrowright') || held.has('в');
-  game.setMove(l === r ? 0 : l ? -1 : 1);
+  return l === r ? 0 : l ? -1 : 1;
+}
+
+function updateMove() {
+  const m = wantedMove();
+  if (m === lastMove) return;
+  lastMove = m;
+  lastMoveAt = performance.now();
+  cmd.setMove(m);
 }
 
 function setPaused(p: boolean) {
   paused = p;
   hud.setPaused(p);
+  // the host's pause holds the whole world; a guest's is just the menu
+  coop.setPaused(p);
 }
 
 /** Abilities that need a target point enter aim mode on click; the hammer casts at once. */
 function beginAim(id: AbilityId) {
   hud.closeMenu();
   // the Starfall and the Hammer's leap are aimed with the next click
-  if (id !== 'starfall' && id !== 'hammer') { game.cast(id, game.state.keeper.x); return; }
+  if (id !== 'starfall' && id !== 'hammer') { cmd.cast(id, game.state.keeper.x); return; }
   hud.aiming = id;
   view.aiming = id;
 }
@@ -212,26 +288,28 @@ window.addEventListener('keydown', (e) => {
   updateMove();
   if (hud.target && hud.ringKey(k)) return;
   if (ABILITY_KEYS[k] && !e.repeat) {
-    game.cast(ABILITY_KEYS[k], view.mouseX, view.mouseY);
+    cmd.cast(ABILITY_KEYS[k], view.mouseX, view.mouseY);
     cancelAim();
   }
   if (k === ' ') {
     e.preventDefault();
     if (hud.deathPause) hud.releaseDeath();
-    else game.callNight();
+    else cmd.callNight();
   }
-  if (k === 'f') { speed = nextSpeed(); hud.setSpeed(speed); }
-  if (k === '-' || k === '_') { speed = stepSpeed(-1); hud.setSpeed(speed); }
-  if (k === '=' || k === '+') { speed = stepSpeed(1); hud.setSpeed(speed); }
+  if (!coop.isGuest) {
+    if (k === 'f') { speed = nextSpeed(); hud.setSpeed(speed); }
+    if (k === '-' || k === '_') { speed = stepSpeed(-1); hud.setSpeed(speed); }
+    if (k === '=' || k === '+') { speed = stepSpeed(1); hud.setSpeed(speed); }
+  }
   if (k === 'm') hud.setSound(audio.toggle());
   if (k === 'r' || k === 'b') hud.togglePanel('keeper');
-  if (k === 'v') game.revive('amber');
-  if (k === 'g') game.revive('sacrifice');
+  if (k === 'v') cmd.revive('amber');
+  if (k === 'g') cmd.revive('sacrifice');
   if (k === 't') hud.togglePanel('tree');
   if (k === 'x') {
     // «Жертва Света» needs two presses within 2 s
     const now = performance.now();
-    if (now - sacrificeArmed < 2000) { sacrificeArmed = 0; game.sacrificeKeeper(); }
+    if (now - sacrificeArmed < 2000) { sacrificeArmed = 0; cmd.sacrificeKeeper(); }
     else { sacrificeArmed = now; hud.observerSay('Нажми X ещё раз — Жертва Света: Хранитель взорвётся светом и падёт'); }
   }
   if (k === 'q') cycleNode(-1);
@@ -241,7 +319,7 @@ window.addEventListener('keyup', (e) => {
   const k = ALIAS[e.key.toLowerCase()] ?? e.key.toLowerCase();
   held.delete(k);
   // releasing the spear key lets go of the Piercing Beam
-  if (ABILITY_KEYS[k] === 'spear') game.releaseBeam();
+  if (ABILITY_KEYS[k] === 'spear') cmd.releaseBeam();
   updateMove();
 });
 window.addEventListener('blur', () => { held.clear(); updateMove(); audio.setBackground(true); });
@@ -314,7 +392,7 @@ canvas.addEventListener('mousedown', (ev) => {
   const [mx, my] = toWorld(ev);
   if (ev.button === 2) { cancelAim(); hud.closeMenu(); return; }
   if (view.aiming) {
-    game.cast(view.aiming, mx, my);
+    cmd.cast(view.aiming, mx, my);
     cancelAim();
     return;
   }
@@ -379,6 +457,8 @@ function finishRun() {
 // ───────────────────────────── loop ────────────────────────────────
 
 let last = performance.now();
+/** when a held rune key last asked for a cast (the answer takes a tick or a round-trip) */
+const holdCastAt: Partial<Record<AbilityId, number>> = {};
 let acc = 0;
 let time = 0;
 
@@ -386,43 +466,57 @@ function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   time += dt;
-  // choices (dawn rune, tree branch) pause the world
   // hold-to-cast: a held rune key fires again as soon as the rune is ready;
-  // the Piercing Beam is held while its key is down
+  // the Piercing Beam is held while its key is down (co-op: at most one request per rune in flight)
   if (started && !paused && !game.over && !game.choice && !hud.target && !hud.tabletOpen) {
     for (const [key, id] of Object.entries(ABILITY_KEYS)) {
       if (!held.has(key)) continue;
       if (id === 'spear' && game.state.keeper.forms.spear === 'B') continue;
-      if (game.abilityReady(id)) game.cast(id, view.mouseX, view.mouseY);
+      if (game.abilityReady(id) && now - (holdCastAt[id] ?? 0) > 150) { holdCastAt[id] = now; cmd.cast(id, view.mouseX, view.mouseY); }
     }
   }
-  const frozen = !started || paused || game.over || !!game.choice || metaOpen || hud.panelOpen || hud.ringOpen || hud.deathPause;
-  if (!frozen) {
+  // co-op lockstep: the host runs the world (its pause holds everyone), guests replay its frames;
+  // a pending choice (dawn rune, tree branch) holds the world still on every peer;
+  // alone, an open panel or the death hold stops time like in the solo game
+  const running = started && !game.over;
+  const alone = game.state.keepers.length < 2 && (metaOpen || hud.panelOpen || hud.ringOpen || hud.deathPause);
+  if (running && coop.isGuest) {
+    coop.guestTicks(dt);
+  } else if (running && !paused && !coop.hidden && !alone) {
     acc += dt * speed;
-    while (acc >= STEP) {
-      game.step();
-      acc -= STEP;
-      if (game.over || game.choice) { acc = 0; break; }
-    }
+    let n = 0;
+    while (acc >= STEP && n < 60) { acc -= STEP; n++; }
+    coop.hostTicks(n);
   } else {
     acc = 0;
+    // time stands still, but a purchase in an open panel still lands right away
+    if (running && !coop.isGuest) coop.hostHold();
   }
+  coop.flush();
+  const frozen = !started || game.over || !!game.choice || (coop.isGuest ? coopPanel.hostPaused : paused);
+  // keep the walk in sync if a command got lost in a death or a channel
+  const me = game.state.keeper;
+  if (running && me.alive && me.move !== lastMove && me.channel <= 0 && now - lastMoveAt > 300) { lastMoveAt = now; cmd.setMove(lastMove); }
   hud.inRun = started;
   const events = game.drainEvents();
-  // the Ascended falls or the Tree is in danger: back to normal speed so the moment isn't missed
-  if (speed !== 1 && events.some((e) => e.type === 'keeperDown' || e.type === 'treeDanger')) { speed = 1; hud.setSpeed(1); }
-  // save the run at every dawn; a lost run has nothing to continue
-  if (events.some((e) => e.type === 'dawn')) storeRun();
+  // my own Ascended's fall and hits are mine to hear and see in the HUD
+  const mine = events.filter((e) => !('k' in e) || e.k === game.local);
+  // my Ascended falls or the Tree is in danger: back to normal speed so the moment isn't missed
+  if (speed !== 1 && mine.some((e) => e.type === 'keeperDown' || e.type === 'treeDanger')) { speed = 1; hud.setSpeed(1); }
+  // a solo run is saved at every dawn; a lost run has nothing to continue
+  if (game.state.keepers.length < 2 && !coop.isGuest && events.some((e) => e.type === 'dawn')) storeRun();
   if (events.some((e) => e.type === 'lost')) dropRun();
   if (events.length) {
     renderer.onEvents(events, game);
-    hud.onEvents(events);
-    audio.play(events);
+    hud.onEvents(mine);
+    audio.play(mine);
     audio.setPhase(game.state.phase);
   }
+  coopPanel.update(game, started, coop.lag);
   if (game.over && !endShown && started) {
     endShown = true;
     hud.closeMenu();
+    coop.ended();
     const coins = finishRun();
     // let the Tree fall and its light go out before the summary
     setTimeout(() => hud.showEnd(coins, save.bestNight[game.path] ?? 0, lastRecord), 3600);
@@ -437,6 +531,7 @@ requestAnimationFrame(frame);
 // debug hooks for automated playtests
 (window as unknown as Record<string, unknown>).__igg = {
   get game() { return game; },
+  coop,
   save,
   start: () => { if (!started) hud.hideTitle(); started = true; },
   setSpeed: (x: number) => { speed = x; },

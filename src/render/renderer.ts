@@ -1,6 +1,6 @@
 import { ABILITIES, ENEMIES, SLOTS, WORLD, crownPos, treeScale } from '../data/balance';
 import { beamFalloff, type Game } from '../sim/game';
-import type { GameEvent } from '../sim/types';
+import type { GameEvent, Keeper } from '../sim/types';
 import { type Backdrop, buildBackdrop } from './background';
 import { Camera } from './camera';
 import { Lighting } from './lighting';
@@ -195,7 +195,7 @@ export class Renderer {
           break;
         case 'spikeStrike': p.addFx(e.web ? 'web' : 'spikeThrust', e.x, e.y, e.web ? 0.6 : 0.3, 0, e.tx, e.ty - 2); break;
         case 'brood': p.acid(e.x, WORLD.groundY - 10); break;
-        case 'keeperDown': p.goldBurst(game.state.keeper.x, WORLD.groundY - 10, 20); break;
+        case 'keeperDown': p.goldBurst(e.x, WORLD.groundY - 10, 20); break;
         case 'keeperBack': p.goldBurst(WORLD.treeX, WORLD.groundY - 10, 20); break;
         case 'milestone': p.goldBurst(WORLD.treeX, WORLD.groundY - 80, 160); break;
         default: break;
@@ -291,13 +291,17 @@ export class Renderer {
     for (const tn of s.tunnels) if (tn.open) drawTunnelMouths(c, tn, time);
     for (const e of s.enemies) if (e.layer !== 'under') drawFog(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
     this.drawEnemiesOutlined(c, s.enemies.filter((e) => e.layer !== 'under'), time);
-    // Прыжок Молота: the Ascended arcs through the air
-    const lp = game.leapProgress();
-    if (lp >= 0) { c.save(); c.translate(0, -Math.round(Math.sin(lp * Math.PI) * 46)); }
-    drawKeeper(c, s.keeper, time);
-    if (lp >= 0) {
-      c.restore();
-      if (Math.random() < 0.7) this.particles.emit(1, s.keeper.x, WORLD.groundY - 10 - Math.sin(lp * Math.PI) * 46, { speed: 15, max: 0.35, colors: [PAL.gold5, PAL.gold3], glow: true });
+    // Прыжок Молота: the Ascended arcs through the air (every one of them in co-op, the local one on top)
+    const order = s.keepers.map((_, i) => i).sort((a, b) => (a === game.local ? 1 : 0) - (b === game.local ? 1 : 0));
+    for (const i of order) {
+      const k = s.keepers[i];
+      const lp = leapOf(k);
+      if (lp >= 0) { c.save(); c.translate(0, -Math.round(Math.sin(lp * Math.PI) * 46)); }
+      drawKeeper(c, k, time, i);
+      if (lp >= 0) {
+        c.restore();
+        if (Math.random() < 0.7) this.particles.emit(1, k.x, WORLD.groundY - 10 - Math.sin(lp * Math.PI) * 46, { speed: 15, max: 0.35, colors: [PAL.gold5, PAL.gold3], glow: true });
+      }
     }
     for (const w of s.workers) drawWorker(c, w, time);
     for (const u of s.soldiers) drawSoldier(c, u);
@@ -305,12 +309,12 @@ export class Renderer {
 
     // ── darkness
     this.lighting.drawDarkness(c);
-    this.lighting.drawGlow(c, (s.phase === 'day' ? 0.32 : 0.4) + (s.keeper.radianceT > 0 ? 0.25 : 0));
-    if (s.keeper.swarmT > 0) {
-      const r = game.swarmReach();
-      const k = s.keeper;
+    this.lighting.drawGlow(c, (s.phase === 'day' ? 0.32 : 0.4) + (s.keepers.some((k) => k.radianceT > 0) ? 0.25 : 0));
+    s.keepers.forEach((k, ki) => {
+      if (k.swarmT <= 0) return;
+      const r = game.asKeeper(ki, () => game.swarmReach());
       for (let i = -r; i <= r; i += 4) if (Math.sin(time * 8 + i * 0.2) > 0) rect(c, k.swarmX + i, WORLD.groundY + 2, 2, 1, '#9cff8a');
-    }
+    });
 
     // ── above darkness: eyes, light, drops, projectiles
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
@@ -318,9 +322,11 @@ export class Renderer {
     if (s.phase === 'night' || (s.phase === 'day' && s.dayLeft < 10)) this.drawIncoming(c, game, time);
     this.drawSkyMood(c, game, time);
     // Остановка Времени: a pale-blue hush over the world, frost glints on the frozen
-    const ts = s.keeper.timeStopT;
+    // the Ascended holding time the longest shows the clock
+    const tk = s.keepers.reduce((a, b) => (b.timeStopT > a.timeStopT ? b : a));
+    const ts = tk.timeStopT;
     if (ts > 0) {
-      const fade = Math.min(1, ts / 0.6, (s.keeper.timeStopMax - ts) / 0.3 + 0.2);
+      const fade = Math.min(1, ts / 0.6, (tk.timeStopMax - ts) / 0.3 + 0.2);
       c.fillStyle = `rgba(140,190,255,${0.13 * fade})`;
       c.fillRect(0, 0, WORLD.width, WORLD.height);
       for (const e of s.enemies) {
@@ -331,7 +337,7 @@ export class Renderer {
       }
       // the clock face on the trunk
       const cy = WORLD.groundY - 46;
-      const a = (1 - ts / Math.max(0.01, s.keeper.timeStopMax)) * Math.PI * 2 - Math.PI / 2;
+      const a = (1 - ts / Math.max(0.01, tk.timeStopMax)) * Math.PI * 2 - Math.PI / 2;
       for (let i = 0; i < 24; i++) { const b = (i / 24) * Math.PI * 2; rect(c, WORLD.treeX + Math.cos(b) * 14, cy + Math.sin(b) * 14, 1, 1, i % 6 ? '#8fd0ff' : PAL.white); }
       line(c, WORLD.treeX, cy, WORLD.treeX + Math.cos(a) * 11, cy + Math.sin(a) * 11, '#e8f6ff');
     }
@@ -382,20 +388,26 @@ export class Renderer {
       }
     }
     for (const d of s.drops) drawDrop(c, d, time);
-    const spearTint = s.keeper.runeRank.spear > 0 ? runeColor(s.keeper.runeRank.spear) : undefined;
-    const starTint = s.keeper.runeRank.starfall > 0 ? runeColor(s.keeper.runeRank.starfall) : undefined;
-    for (const p of s.projectiles) drawProjectile(c, p, p.kind === 'spear' ? spearTint : p.kind === 'meteor' ? starTint : undefined);
-    if (s.keeper.channel > 0 && s.keeper.alive) this.drawChannel(c, game, time);
+    // spears and stars glow in the colour of their caster's rune rank
+    const tint = (rank: number) => (rank > 0 ? runeColor(rank) : undefined);
+    for (const p of s.projectiles) {
+      const own = s.keepers[p.owner ?? 0] ?? s.keeper;
+      drawProjectile(c, p, p.kind === 'spear' ? tint(own.runeRank.spear) : p.kind === 'meteor' ? tint(own.runeRank.starfall) : undefined);
+    }
+    s.keepers.forEach((k, i) => { if (k.channel > 0 && k.alive) this.drawChannel(c, game, i, time); });
     for (const t of s.tempLights) if (t.dps) this.drawDome(c, t.x, t.radius, t.life / t.maxLife, time);
     this.particles.draw(c, true);
     for (const e of s.enemies) drawEnemyHp(c, e);
     for (const e of s.enemies) drawAffix(c, e, time);
     for (const e of s.enemies) drawWeb(c, e);
     // the HP bar rides along with the Hammer's leap
-    const lpHp = game.leapProgress();
-    if (lpHp >= 0) { c.save(); c.translate(0, -Math.round(Math.sin(lpHp * Math.PI) * 46)); }
-    drawKeeperHp(c, s.keeper, game.keeperMaxHp());
-    if (lpHp >= 0) c.restore();
+    const coop = s.keepers.length > 1;
+    s.keepers.forEach((k, i) => {
+      const lpHp = leapOf(k);
+      if (lpHp >= 0) { c.save(); c.translate(0, -Math.round(Math.sin(lpHp * Math.PI) * 46)); }
+      drawKeeperHp(c, k, game.asKeeper(i, () => game.keeperMaxHp()), coop ? i : -1, i === game.local);
+      if (lpHp >= 0) c.restore();
+    });
     if (view.aiming) this.drawAim(c, game, view, time);
     if (view.preview?.merge) this.drawMergePreview(c, game, view.preview.merge, time);
     else if (view.preview) this.drawRangeRaw(c, view.preview.x, view.preview.r, view.preview.underground, true, view.preview.y);
@@ -555,14 +567,15 @@ export class Renderer {
   }
 
   /** The channelled Piercing Beam, attached to the keeper's staff. */
-  private drawChannel(c: Ctx, game: Game, time: number) {
-    const k = game.state.keeper;
+  private drawChannel(c: Ctx, game: Game, i: number, time: number) {
+    const k = game.state.keepers[i];
     const y = WORLD.groundY - 12;
     const k01 = Math.min(1, k.channel / 0.25);
     const wob = Math.sin(time * 40) > 0 ? 1 : 0;
-    const col = runeColor(game.state.keeper.runeRank.spear);
+    const col = runeColor(k.runeRank.spear);
     // «Обоюдное древко»: the beam shines backwards too (weaker)
-    const twin = game.facetLv('sp-twin') > 0 ? Math.min(1, 0.6 + 0.2 * (game.facetLv('sp-twin') - 1)) : 0;
+    const tw = game.asKeeper(i, () => game.facetLv('sp-twin'));
+    const twin = tw > 0 ? Math.min(1, 0.6 + 0.2 * (tw - 1)) : 0;
     const dirs: Array<[1 | -1, number]> = [[k.channelDir, 1]];
     if (twin > 0) dirs.push([(k.channelDir * -1) as 1 | -1, twin]);
     for (const [dir, power] of dirs) {
@@ -778,3 +791,6 @@ export class Renderer {
     }
   }
 }
+
+/** Hammer leap progress of one Ascended (0..1 of the flight, or -1 on the ground). */
+function leapOf(k: Keeper) { return k.leapT > 0 ? 1 - k.leapT / k.leapDur : -1; }

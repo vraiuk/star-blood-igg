@@ -1,5 +1,5 @@
 import {
-  ABILITIES, ABILITY_STAGE_SCALING, CHORD, EXCHANGE, PACE, SACRIFICE, AFFIXES, ARMOR_FLOOR, ATTR_MAX, PLATES, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
+  ABILITIES, ABILITY_STAGE_SCALING, CHORD, COOP, EXCHANGE, PACE, SACRIFICE, AFFIXES, ARMOR_FLOOR, ATTR_MAX, PLATES, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
   SLOT_MARGIN, SLOTS, crownPos, ringsForCrownSlot, WORLD, WORM_LIGHT_MULT, FOG,
   type AbilityId, type AttrId, type EnemyKind, type SlotDef,
 } from '../data/balance';
@@ -17,7 +17,7 @@ import {
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
 import { mulberry32 } from './rng';
-import type { Choice, Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Projectile, Soldier, Structure, Tunnel } from './types';
+import type { Choice, Drop, DropKind, Enemy, GameEvent, GameState, Keeper, PendingSpawn, Projectile, Soldier, Structure, Tunnel } from './types';
 
 /** Big underground Imago that toughen faster in endless nights. */
 const HEAVY = new Set<EnemyKind>(['worm', 'guard', 'tyrant']);
@@ -68,12 +68,19 @@ export interface GameOptions {
   startRune?: boolean;
   /** difficulty path index (0..2) */
   path?: number;
+  /** number of Ascended (co-op players), 1..MAX_KEEPERS */
+  players?: number;
 }
+
+/** Co-op: at most this many Ascended guard one Tree. */
+export const MAX_KEEPERS = 4;
+/** Where each Ascended starts, relative to the trunk (the first one keeps the solo spot). */
+const KEEPER_START = [-28, 28, -52, 52] as const;
 
 export type Target =
   | { kind: 'structure'; s: Structure; x: number }
   | { kind: 'soldier'; u: Soldier; x: number }
-  | { kind: 'keeper'; x: number }
+  | { kind: 'keeper'; k: Keeper; x: number }
   | { kind: 'tree'; x: number };
 
 /**
@@ -87,7 +94,12 @@ export class Game {
   /** stars earned at the night-10 milestone (0 if not reached) */
   milestoneStars = 0;
   readonly path: number;
-  mods: Mods;
+  /** mods of the run without any Ascended's runes (meta, Tree branches, boons) */
+  private baseMods: Mods;
+  /** each Ascended's mods: the shared ones plus their own rune Properties */
+  private keeperMods = new Map<Keeper, Mods>();
+  /** Mods of the acting Ascended (`state.keeper`). */
+  get mods(): Mods { return this.keeperMods.get(this.state?.keeper) ?? this.baseMods; }
   private rand: () => number;
   private metaMods: ModPatch[];
   /** beetles to revive at dawn (meta capstone) */
@@ -98,14 +110,10 @@ export class Game {
     this.customNights = opts.nights;
     this.path = opts.path ?? 0;
     this.metaMods = opts.meta ?? [];
-    this.mods = combine(this.metaMods);
+    this.baseMods = combine(this.metaMods);
     const st0 = TREE_STAGES[0];
-    this.state = {
-      phase: 'day', night: 0, phaseTime: 0, dayLeft: DAY.firstLength,
-      amber: ECONOMY.startAmber + this.mods.startAmber, star: this.mods.startStar, devRunes: 0, wrath: 1, rushedDawns: 0,
-      enemies: [], structures: [], projectiles: [], drops: [], workers: [], soldiers: [], tempLights: [], burns: [], tunnels: [],
-      keeper: {
-        x: WORLD.treeX - 28, dir: 1, hp: KEEPER.hp, alive: true, respawn: 0, light: KEEPER.startLight, move: 0,
+    const keeper: Keeper = {
+        x: WORLD.treeX + KEEPER_START[0], dir: 1, hp: KEEPER.hp, alive: true, respawn: 0, light: KEEPER.startLight, move: 0,
         cooldowns: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0, timestop: 0 },
         cdMax: { spear: 1, hammer: 1, starfall: 1, radiance: 1, swarm: 1, timestop: 1 }, charge: 0, rank: 0,
         timeStopT: 0, timeStopMax: 0, timeStopNights: 0, chord: 0, chordT: 0, lastCast: null, heat: 0, heatT: 0,
@@ -119,7 +127,12 @@ export class Game {
         facets: [], facetLv: {}, propLv: {},
         learned: { spear: true, hammer: false, starfall: false, radiance: false, swarm: false, timestop: false },
         castAnim: 9, hitFlash: 0, walkT: 0, rhythm: 0, rhythmT: 0, freeCast: 0, lastLightCd: 0,
-      },
+    };
+    this.state = {
+      phase: 'day', night: 0, phaseTime: 0, dayLeft: DAY.firstLength,
+      amber: ECONOMY.startAmber + this.mods.startAmber, star: this.mods.startStar, devRunes: 0, wrath: 1, rushedDawns: 0,
+      enemies: [], structures: [], projectiles: [], drops: [], workers: [], soldiers: [], tempLights: [], burns: [], tunnels: [],
+      keeper, keepers: [keeper],
       tree: {
         stage: 0, growth: 0, hp: st0.maxHp, radius: st0.radius, sparkCd: 0, hitFlash: 0,
         branches: [], shield: 0, shieldUsed: false, secondWindUsed: false, rings: 0,
@@ -128,10 +141,103 @@ export class Game {
       stats: { kills: 0, amberCollected: 0, starCollected: 0, amberToTree: 0, time: 0, dmg: {}, casts: {}, killsBy: {}, treeDmgBy: {}, keeperDeaths: 0, rushes: 0, nights: [] },
       nextId: 1, time: 0,
     };
+    // co-op: every Ascended grows their own runes, ranks and attributes; boons stay the Circle's
+    const players = Math.max(1, Math.min(MAX_KEEPERS, Math.floor(opts.players ?? 1)));
+    for (let i = 1; i < players; i++) {
+      const own = JSON.parse(JSON.stringify({
+        props: keeper.props, slots: keeper.slots, runeRank: keeper.runeRank, forms: keeper.forms, facets: keeper.facets,
+        facetLv: keeper.facetLv, learned: keeper.learned, attrs: keeper.attrs, propLv: keeper.propLv,
+      })) as Pick<Keeper, 'props' | 'slots' | 'runeRank' | 'forms' | 'facets' | 'facetLv' | 'learned' | 'attrs' | 'propLv'>;
+      this.state.keepers.push({
+        ...keeper, ...own, x: WORLD.treeX + KEEPER_START[i], dir: KEEPER_START[i] < 0 ? 1 : -1,
+        cooldowns: { ...keeper.cooldowns }, cdMax: { ...keeper.cdMax },
+      });
+    }
     this.recalc();
     this.state.tree.hp = this.treeMaxHp();
-    this.state.keeper.hp = this.keeperMaxHp();
+    for (const k of this.state.keepers) k.hp = this.as(k, () => this.keeperMaxHp());
     if (opts.startRune) this.offerDawn(true);
+  }
+
+  // ───────────────────────────── co-op ───────────────────────────────
+
+  /** Index of the Ascended this client plays (UI context only — never read by the simulation). */
+  private localIdx = 0;
+  get local() { return this.localIdx; }
+  /** Pick which Ascended the UI (`state.keeper` between ticks) shows. */
+  setLocal(i: number) {
+    this.localIdx = Math.max(0, Math.min(this.state.keepers.length - 1, i));
+    this.state.keeper = this.state.keepers[this.localIdx];
+  }
+  /** Index of an Ascended in `keepers`. */
+  keeperIndex(k: Keeper) { return Math.max(0, this.state.keepers.indexOf(k)); }
+
+  /** Run `fn` as the Ascended `k` (commands, per-keeper updates), then restore the context. */
+  private as<T>(k: Keeper, fn: () => T): T {
+    const prev = this.state.keeper;
+    this.state.keeper = k;
+    try { return fn(); } finally { this.state.keeper = prev; }
+  }
+
+  /** Co-op scaling factor: 1 + `per` for every Ascended beyond the first. */
+  private coopScale(per: number) { return 1 + per * (this.state.keepers.length - 1); }
+  /** Does any Ascended satisfy this? (effects that are global while one of them holds them) */
+  private anyK(pred: (k: Keeper) => boolean) { return this.state.keepers.some(pred); }
+  /**
+   * The strongest `val` among the Ascended for whom `pred` holds, each judged by their own runes
+   * (a swarm, a flare, frozen time is as strong as its caster's facets), else `off`.
+   */
+  private best(pred: (k: Keeper) => boolean, val: () => number, off: number, pick: (a: number, b: number) => number = Math.max): number {
+    let out: number | null = null;
+    for (const k of this.state.keepers) {
+      if (!this.as(k, () => pred(k))) continue;
+      const v = this.as(k, val);
+      out = out === null ? v : pick(out, v);
+    }
+    return out ?? off;
+  }
+  /** This Ascended's Зов Роя covers `x` (judge inside their context). */
+  private swarming(k: Keeper, x: number) { return k.swarmT > 0 && Math.abs(x - k.swarmX) <= this.swarmReach(); }
+  /** Read something as Ascended `i` (UI: another player's max HP, swarm reach…). */
+  asKeeper<T>(i: number, fn: () => T): T { return this.as(this.state.keepers[i] ?? this.state.keeper, fn); }
+
+  /** Commands a player may send over the network (all validate on their own). */
+  static readonly COMMANDS = new Set([
+    'setMove', 'face', 'build', 'buildStars', 'upgrade', 'specialize', 'mergeNests', 'ascendNest', 'sell', 'feed',
+    'revive', 'addRing', 'raiseAttr', 'ascend', 'choose', 'buyProperty', 'buyRuneSlot', 'developRune', 'surrender',
+    'callNight', 'cast', 'releaseBeam', 'promoteRune', 'chooseForm', 'removeProperty', 'upgradeProperty', 'learnAbility', 'rerollDawn',
+    'upgradeAspect', 'sacrificeKeeper', 'exchange',
+  ]);
+
+  /** Signature of the pending choice: a pick made for another choice must not resolve this one. */
+  choiceSig(player = this.localIdx): string {
+    const c = this.choiceFor(player);
+    return c ? `${c.kind}:${'offers' in c ? c.offers.join(',') : ''}:${'stage' in c ? c.stage : ''}:${'rune' in c ? c.rune : ''}` : '';
+  }
+
+  /**
+   * Execute a player's command as their Ascended (deterministic: every peer runs the same
+   * commands at the same tick). `sig` guards choice picks against a choice that changed meanwhile.
+   */
+  exec(player: number, method: string, args: unknown[], sig?: string): void {
+    if (!Game.COMMANDS.has(method)) return;
+    const k = this.state.keepers[player];
+    if (!k) return;
+    if ((method === 'choose' || method === 'rerollDawn') && sig !== undefined && sig !== this.choiceSig(player)) return;
+    const fn = (this as unknown as Record<string, (...a: unknown[]) => unknown>)[method];
+    this.as(k, () => fn.apply(this, args));
+  }
+
+  /** Cheap state digest to spot peers drifting apart. */
+  digest(): number {
+    const s = this.state;
+    let h = 2166136261;
+    const mix = (v: number) => { h = Math.imul(h ^ (Math.round(v * 16) | 0), 16777619) >>> 0; };
+    mix(s.amber); mix(s.star); mix(s.tree.hp); mix(s.nextId); mix(s.enemies.length); mix(s.night);
+    for (const e of s.enemies) { mix(e.x); mix(e.hp); }
+    for (const k of s.keepers) { mix(k.x); mix(k.hp); mix(k.light); }
+    for (const st of s.structures) mix(st.hp);
+    return h;
   }
 
   // ───────────────────────────── derived stats ─────────────────────────
@@ -141,8 +247,8 @@ export class Game {
   /** Nest / spark power: stage power × growth rings. */
   treePower() { return this.stageDef.power * (1 + RINGS.power * this.state.tree.rings); }
   treeRadius() {
-    const flare = this.state?.keeper?.radianceT > 0
-      ? ABILITIES.radiance.radius * this.runeArea('radiance') + (this.propCount('radiance', 'rd-wide') ? 0.15 : 0) + (this.state.keeper.facets.includes('rd-sun') ? 0.1 : 0) : 0;
+    const flare = this.state?.keepers ? this.best((k) => k.radianceT > 0,
+      () => ABILITIES.radiance.radius * this.runeArea('radiance') + (this.propCount('radiance', 'rd-wide') ? 0.15 : 0) + (this.state.keeper.facets.includes('rd-sun') ? 0.1 : 0), 0) : 0;
     return this.stageDef.radius * (1 + this.mods.lightRadius + flare);
   }
   keeperMaxHp() { return Math.round((KEEPER_RANKS[this.state.keeper.rank].hp + this.mods.keeperHp) * (1 + 0.1 * this.state.keeper.attrs.body)); }
@@ -217,19 +323,27 @@ export class Game {
   /** Rebuild aggregated mods from meta, tree branches and runes. */
   private recalc() {
     const s = this.state;
-    const patches: ModPatch[] = [...this.metaMods];
-    for (const id of s.tree.branches) { const b = branchById(id); if (b) patches.push(b.mods); }
+    const shared: ModPatch[] = [...this.metaMods];
+    for (const id of s.tree.branches) { const b = branchById(id); if (b) shared.push(b.mods); }
     const counts = pathCounts(s.tree.branches);
-    for (const p of Object.keys(counts) as TreePath[]) if (counts[p] >= PATH_CAPSTONE) patches.push(TREE_PATHS[p].mods);
-    const k = s.keeper;
-    for (const rune of Object.keys(k.props) as KeeperRuneId[]) {
-      k.props[rune].forEach((id, i) => {
-        const p = propertyById(id);
-        if (p) patches.push(scalePatch(p.mods, propLvFactor(this.propLevel(rune, i))));
+    for (const p of Object.keys(counts) as TreePath[]) if (counts[p] >= PATH_CAPSTONE) shared.push(TREE_PATHS[p].mods);
+    // boons (creature runes, lasting gifts) are the whole Circle's — one list for every Ascended
+    const boons: ModPatch[] = [];
+    for (const id of s.keepers[0].boons) { const b = boonById(id); if (b) boons.push(b.mods); }
+    this.baseMods = combine([...shared, ...boons]);
+    this.keeperMods.clear();
+    for (const k of s.keepers) {
+      const own: ModPatch[] = [];
+      this.as(k, () => {
+        for (const rune of Object.keys(k.props) as KeeperRuneId[]) {
+          k.props[rune].forEach((id, i) => {
+            const p = propertyById(id);
+            if (p) own.push(scalePatch(p.mods, propLvFactor(this.propLevel(rune, i))));
+          });
+        }
       });
+      this.keeperMods.set(k, combine([...shared, ...own, ...boons]));
     }
-    for (const id of k.boons) { const b = boonById(id); if (b) patches.push(b.mods); }
-    this.mods = combine(patches);
   }
 
   /** Effective stats of a nest including specialization, stage power and mods. */
@@ -420,7 +534,10 @@ export class Game {
 
   /** Number of hand-made campaign nights (the milestone). */
   get campaignNights() { return this.customNights?.length ?? ENDLESS.campaignNights; }
+  /** Any pending choice — while there is one the world holds still (for every player). */
   get choice() { return this.state.choices[0] ?? null; }
+  /** The first pending choice this Ascended may make (theirs, or a shared one like a Tree branch). */
+  choiceFor(player: number) { return this.state.choices.find((c) => c.k === undefined || c.k === player) ?? null; }
 
   /** Stars earned at the campaign milestone (night 10). */
   stars(): number { return this.milestoneStars; }
@@ -444,6 +561,11 @@ export class Game {
       if (d.v !== 1 || !d.state?.keeper) return false;
       // the state object keeps its identity (the renderer and HUD hold on to it)
       Object.assign(this.state, d.state, { events: [] });
+      // JSON split the shared objects apart: the acting Ascended is one of the Circle, the boons are common
+      const s = this.state;
+      if (!s.keepers?.length) s.keepers = [s.keeper];
+      for (const k of s.keepers) k.boons = s.keepers[0].boons;
+      this.setLocal(this.localIdx);
       this.graveyard = d.graveyard ?? [];
       this.rerolls = d.rerolls ?? 0;
       this.milestoneStars = d.milestoneStars ?? 0;
@@ -670,7 +792,7 @@ export class Game {
     this.emit({ type: 'sacrifice', x: k.x });
     k.sacrificed = true;
     k.hp = 1;
-    this.damageKeeper(1e9);
+    this.damageKeeper(k, 1e9);
     return true;
   }
 
@@ -721,17 +843,16 @@ export class Game {
       this.recalc();
     }
     // back at once (the game may be paused on the death screen — no waiting for a tick)
-    this.reviveKeeper();
+    this.reviveKeeper(k);
     return true;
   }
 
-  private reviveKeeper() {
-    const k = this.state.keeper;
+  private reviveKeeper(k: Keeper) {
     k.alive = true;
     k.respawn = 0;
     k.hp = this.keeperMaxHp();
     k.x = WORLD.treeX;
-    this.emit({ type: 'keeperBack' });
+    this.emit({ type: 'keeperBack', k: this.keeperIndex(k) });
   }
 
   /** Growth ring after the Great Igg-Tree (endless Amber sink). */
@@ -783,15 +904,16 @@ export class Game {
   /** Resolve the current dawn offer or tree branch choice. */
   choose(index: number): boolean {
     const s = this.state;
-    const c = this.choice;
+    const c = this.choiceFor(this.keeperIndex(s.keeper));
     if (!c) return false;
+    const done = () => { s.choices.splice(s.choices.indexOf(c), 1); };
     if (c.kind === 'facet') {
       const id = c.offers[index];
       if (!id) return false;
       s.keeper.facets.push(id);
       s.keeper.facetLv[id] = 1;
       this.emit({ type: 'rune', id: `facet:${id}` });
-      s.choices.shift();
+      done();
       return true;
     }
     if (c.kind === 'form') {
@@ -799,7 +921,7 @@ export class Game {
       if (!f || (c.rune !== 'spear' && c.rune !== 'hammer' && c.rune !== 'starfall')) return false;
       s.keeper.forms[c.rune] = f;
       this.emit({ type: 'rune', id: `form:${c.rune}:${f}` });
-      s.choices.shift();
+      done();
       return true;
     }
     if (c.kind === 'facetUp') {
@@ -807,7 +929,7 @@ export class Game {
       if (!id) return false;
       s.keeper.facetLv[id] = Math.min(FACET_MAX, this.facetLv(id) + 1);
       this.emit({ type: 'rune', id: `facetUp:${id}` });
-      s.choices.shift();
+      done();
       return true;
     }
     if (c.kind === 'branch') {
@@ -836,7 +958,7 @@ export class Game {
       }
       this.emit({ type: 'rune', id });
     }
-    s.choices.shift();
+    done();
     this.recalc();
     this.refreshNestHp();
     return true;
@@ -1026,9 +1148,8 @@ export class Game {
     if (k.channel <= 0) return;
     // a tap holds the beam for a moment; holding the key keeps it as long as there is Light
     if (k.channel >= BEAM_MIN_HOLD) this.endChannel();
-    else this.beamRelease = true;
+    else k.beamRelease = true;
   }
-  private beamRelease = false;
   private dangerTold = false;
 
   /** Cooldown of an ability after rank, form, properties, facets and tree mods. */
@@ -1083,9 +1204,8 @@ export class Game {
 
   /** Is this creature held by frozen time? (bosses break free at half time) */
   frozen(e: Enemy) {
-    const k = this.state.keeper;
     // giants thaw early: they stay frozen for 50% + 50% × ccMult of the time
-    return k.timeStopT > k.timeStopMax * (1 - (0.5 + 0.5 * ENEMIES[e.kind].ccMult));
+    return this.anyK((k) => k.timeStopT > k.timeStopMax * (1 - (0.5 + 0.5 * ENEMIES[e.kind].ccMult)));
   }
 
   /** Зов Роя: nests around the Ascended rally. */
@@ -1127,7 +1247,7 @@ export class Game {
       // Пронзающий луч: the Ascended stands still and holds a beam to the edge of the world
       // for as long as the Light lasts (press again to let go); the cooldown starts after
       k.channel = 0.001;
-      this.beamRelease = false;
+      k.beamRelease = false;
       k.channelDir = dir;
       k.channelDps = (def.damage * 2.2 * mult) / BEAM_CHANNEL;
       k.move = 0;
@@ -1143,14 +1263,14 @@ export class Game {
         s.projectiles.push({
           id: s.nextId++, kind: 'spear', x: k.x + dir * 4, y: WORLD.groundY - 11 + spread * 6, vx: dir * def.speed * (0.8 + 0.2 * Math.abs(spread)),
           vy: spread * 30, damage: def.damage * 0.8 * mult, targetId: 0, tx: 0, ty: 0, pierce: 2 + this.mods.spearPierce, hit: [],
-          life: (150 * this.runeArea('spear')) / def.speed, age: 0, knock: this.apotheosis('spear') ? 140 : 0, airMult,
+          life: (150 * this.runeArea('spear')) / def.speed, age: 0, knock: this.apotheosis('spear') ? 140 : 0, airMult, owner: this.keeperIndex(k),
         });
       }
     } else {
       s.projectiles.push({
         id: s.nextId++, kind: 'spear', x: k.x + dir * 6, y: WORLD.groundY - 11, vx: dir * def.speed, vy: 0,
         damage: def.damage * mult, targetId: 0, tx: 0, ty: 0, pierce: def.pierce + this.mods.spearPierce + (k.runeRank.spear >= 1 ? 1 : 0) + (k.runeRank.spear >= 3 ? 1 : 0), hit: [],
-        life: range / def.speed, age: 0, airMult,
+        life: range / def.speed, age: 0, airMult, owner: this.keeperIndex(k),
       });
     }
     // Обоюдное древко: the same throw flies backwards too
@@ -1193,13 +1313,13 @@ export class Game {
       // Отголосок: the rune strikes again (any Form), stronger with each level
       const x = k.x;
       const echoMult = this.fx('hm-after', 0.5, 0.25, 0);
-      this.later(0.8, () => {
+      this.later(0.8, () => this.as(k, () => {
         const back = k.x;
         k.x = x;
         this.castHammer(mult * echoMult, true);
         k.x = back;
         this.emit({ type: 'cast', ability: 'hammer', x, tx: x });
-      });
+      }));
     }
     if (this.facet('hm-shield')) {
       const heal = this.fx('hm-shield', 0.3, 0.15, 0);
@@ -1297,7 +1417,7 @@ export class Game {
     }
     s.projectiles.push({
       id: s.nextId++, kind: 'meteor', x: x - 70, y: -30, vx: 70 / fall, vy: (WORLD.groundY + 30) / fall,
-      damage, targetId: 0, tx: x, ty: WORLD.groundY, pierce: 0, hit: [], life: fall, age: 0, radius, ...extra,
+      damage, targetId: 0, tx: x, ty: WORLD.groundY, pierce: 0, hit: [], life: fall, age: 0, radius, owner: this.keeperIndex(s.keeper), ...extra,
     });
   }
 
@@ -1376,7 +1496,7 @@ export class Game {
    */
   fogLevel(e: Enemy): number {
     if (!e.fogged) return 0;
-    const thin = (this.mods.fogPierce ? 1 : 0) + (this.state.keeper.radianceT > 0 ? Math.min(2, this.facetLv('rd-fog')) : 0);
+    const thin = (this.mods.fogPierce ? 1 : 0) + this.best((k) => k.radianceT > 0, () => Math.min(2, this.facetLv('rd-fog')), 0);
     return thin >= 2 ? 0 : thin === 1 ? 0.5 : 1;
   }
 
@@ -1434,7 +1554,7 @@ export class Game {
     this.state.star -= cost;
     k.runeRank[rid]++;
     const c = this.rankChoice(rid, k.runeRank[rid]);
-    if (c) this.state.choices.push(c);
+    if (c) this.state.choices.push({ ...c, k: this.keeperIndex(k) });
     this.emit({ type: 'rune', id: `rank:${rid}` });
     return true;
   }
@@ -1453,6 +1573,12 @@ export class Game {
 
   /** Advance the simulation by exactly one fixed step. */
   step(): void {
+    // the simulation never sees the local player: it starts every tick as the first Ascended
+    this.state.keeper = this.state.keepers[0];
+    try { this.tick(); } finally { this.state.keeper = this.state.keepers[this.localIdx]; }
+  }
+
+  private tick(): void {
     const s = this.state;
     if (this.over) return;
     const dt = STEP;
@@ -1465,12 +1591,17 @@ export class Game {
     else this.updateSpawns();
 
     this.updateTimers(dt);
-    s.keeper.coldT = Math.max(0, s.keeper.coldT - dt);
-    if (s.keeper.timeStopT > 0) {
-      s.keeper.timeStopT = Math.max(0, s.keeper.timeStopT - dt);
-      if (s.keeper.timeStopT <= 0 && this.facet('ts-cold')) s.keeper.coldT = this.fx('ts-cold', 4, 2, 0);
-      if (this.facet('ts-mend')) {
-        const mend = this.fx('ts-mend', 0.03, 0.015, 0);
+    const standing: Keeper[] = [];
+    for (const k of s.keepers) {
+      k.coldT = Math.max(0, k.coldT - dt);
+      if (k.timeStopT <= 0) continue;
+      standing.push(k);
+      k.timeStopT = Math.max(0, k.timeStopT - dt);
+      if (k.timeStopT <= 0) this.as(k, () => { if (this.facet('ts-cold')) k.coldT = this.fx('ts-cold', 4, 2, 0); });
+    }
+    if (standing.length) {
+      const mend = this.best((k) => standing.includes(k) && this.facet('ts-mend'), () => this.fx('ts-mend', 0.03, 0.015, 0), 0);
+      if (mend > 0) {
         s.tree.hp = Math.min(this.treeMaxHp(), s.tree.hp + this.treeMaxHp() * mend * dt);
         for (const st of s.structures) st.hp = Math.min(st.maxHp, st.hp + st.maxHp * mend * dt);
       }
@@ -1478,7 +1609,7 @@ export class Game {
       for (const p of s.pending) p.at += dt;
       this.nightDeadline += dt;
     }
-    this.updateKeeper(dt);
+    for (const k of s.keepers) this.as(k, () => this.updateKeeper(dt));
     this.updateEnemies(dt);
     this.updateTunnels(dt);
     this.updateStructures(dt);
@@ -1598,9 +1729,11 @@ export class Game {
     }
     this.graveyard = [];
     s.tunnels = [];
-    s.keeper.timeStopNights = Math.max(0, s.keeper.timeStopNights - 1);
-    s.keeper.sacrificed = false;
-    if (!s.keeper.alive) s.keeper.respawn = 0.5;
+    for (const k of s.keepers) {
+      k.timeStopNights = Math.max(0, k.timeStopNights - 1);
+      k.sacrificed = false;
+      if (!k.alive) k.respawn = 0.5;
+    }
     this.adaptWrath(finished);
     this.emit({ type: 'dawn', night: finished, gift });
     this.offerDawn(false);
@@ -1613,8 +1746,10 @@ export class Game {
    */
   private offerDawn(start: boolean) {
     const s = this.state;
-    const offers = this.rollOffers(start ? 1 : maxRankForNight(s.night - 1));
-    if (offers.length) s.choices.push({ kind: 'dawn', offers, start });
+    s.keepers.forEach((k, i) => this.as(k, () => {
+      const offers = this.rollOffers(start ? 1 : maxRankForNight(s.night - 1));
+      if (offers.length) s.choices.push({ kind: 'dawn', offers, start, k: i });
+    }));
   }
 
   private rollOffers(maxRank: number): string[] {
@@ -1628,8 +1763,9 @@ export class Game {
       for (const c of pool) { r -= weight(c); if (r <= 0) return c.id; }
       return pool[0].id;
     };
-    // a rune gift already waiting in another queued dawn is never offered twice
-    const queued = new Set(s.choices.flatMap((c) => (c.kind === 'dawn' ? c.offers : [])));
+    // a rune gift already waiting in another of this Ascended's queued dawns is never offered twice
+    const me = this.keeperIndex(s.keeper);
+    const queued = new Set(s.choices.flatMap((c) => (c.kind === 'dawn' && (c.k ?? 0) === me ? c.offers : [])));
     const keeper = PROPERTIES.filter((p) => p.rank <= maxRank && this.canInstall(p) && this.abilityUnlocked(p.rune === 'light' ? 'spear' : p.rune))
       .map((p) => ({ id: p.id, rank: p.rank }));
     const creatures = BOONS.filter((b) => b.kind === 'creature' && b.rank <= maxRank && !s.keeper.boons.includes(b.id))
@@ -1656,7 +1792,7 @@ export class Game {
   rerollCost() { return 3 + 3 * this.rerolls; }
   rerollDawn(): boolean {
     const s = this.state;
-    const c = this.choice;
+    const c = this.choiceFor(this.keeperIndex(s.keeper));
     if (!c || c.kind !== 'dawn') return false;
     const cost = this.rerollCost();
     if (s.star < cost) return this.deny('Нужна Звёздная Кровь');
@@ -1683,7 +1819,7 @@ export class Game {
     const pathMul = PATHS[this.path].hp;
     // bosses are tuned at their absolute value on first appearance, then grow slowly
     let hp = Math.round(def.hp * (def.boss ? ENDLESS.bossHp(s.night) : nightMul) * pathMul * s.wrath
-      * (HEAVY.has(kind) ? ENDLESS.heavyHp(s.night) : 1) * (def.worm && !def.boss ? ENDLESS.wormHp(s.night) : 1));
+      * (HEAVY.has(kind) ? ENDLESS.heavyHp(s.night) : 1) * (def.worm && !def.boss ? ENDLESS.wormHp(s.night) : 1) * this.coopScale(COOP.enemyHp));
     let affix: Enemy['affix'] = null;
     if (!def.boss && kind !== 'larva' && s.night >= ELITE.fromNight && this.rand() < ELITE.chance(s.night)) {
       const list = Object.keys(AFFIXES) as Array<NonNullable<Enemy['affix']>>;
@@ -1736,7 +1872,7 @@ export class Game {
     if (k.rhythmT <= 0) k.rhythm = 0;
     k.freeCast = Math.max(0, k.freeCast - dt);
     k.lastLightCd = Math.max(0, k.lastLightCd - dt);
-    const hurry = k.timeStopT > 0 ? this.fx('ts-hurry', 3, 1, 1) : 1;
+    const hurry = this.anyK((o) => o.timeStopT > 0) ? this.fx('ts-hurry', 3, 1, 1) : 1;
     for (const id of Object.keys(k.cooldowns) as AbilityId[]) k.cooldowns[id] = Math.max(0, k.cooldowns[id] - dt * hurry);
     const maxL = this.maxLight();
     k.light = Math.min(maxL, k.light + this.stageDef.lightRegen * (1 + this.mods.lightRegen + 0.08 * k.attrs.spirit + this.fx('lt-flow', 0.25, 0.15, 0)) * this.lightRegenFactor() * dt);
@@ -1747,7 +1883,7 @@ export class Game {
 
     if (!k.alive) {
       k.respawn -= dt;
-      if (k.respawn <= 0) this.reviveKeeper();
+      if (k.respawn <= 0) this.reviveKeeper(k);
       return;
     }
     if (k.leapT > 0) {
@@ -1767,7 +1903,7 @@ export class Game {
     if (k.channel > 0) {
       const before = k.channel;
       k.channel += dt;
-      if (this.beamRelease && k.channel >= BEAM_MIN_HOLD) { this.beamRelease = false; this.endChannel(); k.walkT = 0; return; }
+      if (k.beamRelease && k.channel >= BEAM_MIN_HOLD) { k.beamRelease = false; this.endChannel(); k.walkT = 0; return; }
       // the beam feeds on Light; when it runs dry the beam goes out
       // Быстрая рука makes the beam cheaper to hold
       const drain = this.abilityCost('spear') * BEAM_DRAIN * dt * this.fx('sp-swift', 0.75, -0.05, 1);
@@ -1832,14 +1968,13 @@ export class Game {
     }
   }
 
-  private damageKeeper(amount: number) {
+  private damageKeeper(k: Keeper, amount: number) {
     const s0 = this.state;
-    const k = s0.keeper;
     if (!k.alive || k.leapT > 0) return;
     const shield = this.facet('lt-guard') && k.light >= this.maxLight() * 0.7 ? Math.max(0.4, this.fx('lt-guard', 0.75, -0.08, 1)) : 1;
     k.hp -= amount * (1 - this.keeperGuard()) * shield;
     k.hitFlash = 0.15;
-    this.emit({ type: 'keeperHit' });
+    this.emit({ type: 'keeperHit', k: this.keeperIndex(k) });
     if (k.hp <= 0) {
       k.hp = 0;
       k.alive = false;
@@ -1860,7 +1995,7 @@ export class Game {
         }
       }
       k.move = 0;
-      this.emit({ type: 'keeperDown' });
+      this.emit({ type: 'keeperDown', k: this.keeperIndex(k), x: k.x });
     }
   }
 
@@ -1872,10 +2007,9 @@ export class Game {
     const def = ENEMIES[e.kind];
     const fog = this.fogLevel(e);
     const worm = lightMult && def.worm && fog < 1 && this.isLit(e.x, e.layer === 'under');
-    const k0 = this.state.keeper;
-    const fury = fromNest && k0.swarmT > 0 && this.propCount('swarm', 'sw-fury') > 0 ? this.fx('sw-frenzy', 1.7, 0.15, 1.4) : 1;
+    const fury = fromNest ? this.best((k) => k.swarmT > 0 && this.propCount('swarm', 'sw-fury') > 0, () => this.fx('sw-frenzy', 1.7, 0.15, 1.4), 1) : 1;
     const mark = (fromNest && e.marked > 0 ? this.fx('sp-mark', 1.45, 0.15, 1.25) : 1) * fury
-      * (fromNest && k0.radianceT > 0 ? this.fx('rd-nests', 1.25, 0.1, 1) : 1);
+      * (fromNest ? this.best((k) => k.radianceT > 0, () => this.fx('rd-nests', 1.25, 0.1, 1), 1) : 1);
     const raw = amount * (worm ? WORM_LIGHT_MULT - (WORM_LIGHT_MULT - 1) * fog : 1) * mark * (1 + e.vuln);
     const exposed = def.plates && e.plates <= 0;
     const armor = e.armorBreak > 0 || pierceArmor || exposed ? 0 : def.armor + (e.affix === 'armored' ? ELITE.armor : 0) + (def.armor > 0 && HEAVY.has(e.kind) ? ENDLESS.heavyArmor(this.state.night) : 0);
@@ -1896,9 +2030,10 @@ export class Game {
     s.stats.kills++;
     s.stats.killsBy[e.kind] = (s.stats.killsBy[e.kind] ?? 0) + 1;
     const def = ENEMIES[e.kind];
-    const k = s.keeper;
-    if (this.abilityUnlocked('starfall')) {
-      k.charge = Math.min(ABILITIES.starfall.chargeMax, k.charge + def.charge * (1 + this.mods.chargeGain + this.fx('sf-hunger', 0.5, 0.25, 0)));
+    for (const k of s.keepers) {
+      this.as(k, () => {
+        if (this.abilityUnlocked('starfall')) k.charge = Math.min(ABILITIES.starfall.chargeMax, k.charge + def.charge * (1 + this.mods.chargeGain + this.fx('sf-hunger', 0.5, 0.25, 0)));
+      });
     }
     this.emit({ type: 'enemyDied', kind: e.kind, x: e.x, y: e.y });
     const bounty = ENDLESS.bounty(s.night) * (e.affix ? ELITE.loot : 1);
@@ -1914,6 +2049,11 @@ export class Game {
     if (def.star >= 1) star = Math.round(def.star * Math.sqrt(bounty)) + this.mods.wormStar;
     else if (def.star > 0 && this.rand() < def.star) star = 1;
     star = Math.round(star * (1 + this.mods.starGain));
+    // co-op: more Star Blood for more Ascended to grow (a fraction becomes an extra drop by chance)
+    if (star > 0 && s.keepers.length > 1) {
+      const x = star * this.coopScale(COOP.star);
+      star = Math.floor(x) + (this.rand() < x - Math.floor(x) ? 1 : 0);
+    }
     if (def.devRune > 0 && this.rand() < def.devRune) {
       s.devRunes++;
       this.emit({ type: 'devRune', x: e.x });
@@ -1978,7 +2118,7 @@ export class Game {
       const fog = this.fogLevel(e);
       if (def.worm && e.lit && fog < 1) {
         // Igg-light burns worms: «личинка сгорает за одну-две секунды» (the shroud dims it)
-        const flare = s.keeper.radianceT > 0 ? ABILITIES.radiance.burn * runeRankPower(s.keeper.runeRank.radiance) ** 0.6 : 1;
+        const flare = this.best((k) => k.radianceT > 0, () => ABILITIES.radiance.burn * runeRankPower(this.state.keeper.runeRank.radiance) ** 0.6, 1);
         e.hp -= this.stageDef.wormBurn * (1 + this.mods.wormBurn) * flare * (def.boss ? 0.5 : 1) * (1 - fog) * dt;
         if (e.hp <= 0) { this.killEnemy(e); continue; }
       }
@@ -2059,7 +2199,7 @@ export class Game {
           if (def.range > 0) this.spitAcid(e, target);
           else if (target.kind === 'structure') this.damageStructure(target.s, dmg * def.structureMult, e);
           else if (target.kind === 'soldier') { if (!def.cleave) this.damageSoldier(target.u, dmg, e); }
-          else if (target.kind === 'keeper') this.damageKeeper(dmg);
+          else if (target.kind === 'keeper') this.damageKeeper(target.k, dmg);
           else this.damageTree(dmg, e.kind, e);
         }
         continue;
@@ -2175,10 +2315,9 @@ export class Game {
   /** The Keeper standing on a mouth fills it in. */
   private updateTunnels(dt: number) {
     const s = this.state;
-    const k = s.keeper;
     for (const tn of [...s.tunnels]) {
       if (!tn.open) continue;
-      const near = k.alive && (Math.abs(k.x - tn.headX) <= TUNNELS.sealReach || Math.abs(k.x - tn.entryX) <= TUNNELS.sealReach);
+      const near = this.anyK((k) => k.alive && (Math.abs(k.x - tn.headX) <= TUNNELS.sealReach || Math.abs(k.x - tn.entryX) <= TUNNELS.sealReach));
       const roots = this.mods.rootSeal && this.isLit(tn.headX, false) ? TUNNELS.rootSeal : 0;
       tn.seal = near ? tn.seal + dt / TUNNELS.sealTime + roots * dt : roots > 0 ? tn.seal + roots * dt : Math.max(0, tn.seal - dt * 0.5);
       if (tn.seal >= 1) this.collapseTunnel(tn, 'keeper');
@@ -2259,8 +2398,11 @@ export class Game {
       if (t.slow && e.layer !== 'under' && Math.abs(e.x - t.x) <= t.radius) slow = Math.max(slow, t.slow);
     }
     if (e.web > 0) slow = Math.max(slow, 0.35 * ENEMIES[e.kind].ccMult);
-    if (this.state.keeper.coldT > 0) slow = Math.max(slow, 0.4);
-    if (e.lit && this.state.keeper.radianceT > 0 && this.facet('rd-dawn')) slow = Math.max(slow, this.fx('rd-dawn', 0.3, 0.1, 0) * ENEMIES[e.kind].ccMult);
+    if (this.anyK((k) => k.coldT > 0)) slow = Math.max(slow, 0.4);
+    if (e.lit) {
+      const dawn = this.best((k) => k.radianceT > 0 && this.facet('rd-dawn'), () => this.fx('rd-dawn', 0.3, 0.1, 0), 0);
+      if (dawn > 0) slow = Math.max(slow, dawn * ENEMIES[e.kind].ccMult);
+    }
     // big creatures shrug off slows by their size (ccMult)
     return Math.min(0.7, slow * ENEMIES[e.kind].ccMult);
   }
@@ -2289,9 +2431,9 @@ export class Game {
 
   /** «Высвечивание»: the strongest dragonfly light covering this enemy. */
   private vulnAt(e: Enemy): number {
-    const shatter = this.frozen(e) && this.propCount('timestop', 'ts-shatter') ? this.fx('ts-crack', 0.7, 0.2, 0.35) : 0;
+    const shatter = this.frozen(e) ? this.best((k) => k.timeStopT > 0 && this.propCount('timestop', 'ts-shatter') > 0, () => this.fx('ts-crack', 0.7, 0.2, 0.35), 0) : 0;
     if ((e.layer === 'under')) return shatter;
-    let v = shatter + (this.state.keeper.radianceT > 0 && e.lit ? ABILITIES.radiance.vuln * runeRankPower(this.state.keeper.runeRank.radiance) ** 0.75 : 0);
+    let v = shatter + (e.lit ? this.best((k) => k.radianceT > 0, () => ABILITIES.radiance.vuln * runeRankPower(this.state.keeper.runeRank.radiance) ** 0.75, 0) : 0);
     for (const st of this.state.structures) {
       if (st.family !== 'dragonfly') continue;
       const ns = this.nestStats(st);
@@ -2332,8 +2474,9 @@ export class Game {
       if (!ahead(st.x)) continue;
       if (Math.abs(st.x - e.x) <= contact + 4) return { kind: 'structure', s: st, x: st.x };
     }
-    const k = s.keeper;
-    if (k.alive && e.kind !== 'mother' && Math.abs(k.x - e.x) <= contact) return { kind: 'keeper', x: k.x };
+    if (e.kind !== 'mother') {
+      for (const k of s.keepers) if (k.alive && Math.abs(k.x - e.x) <= contact) return { kind: 'keeper', k, x: k.x };
+    }
     if (Math.abs(WORLD.treeX - e.x) <= WORLD.treeReach + def.radius) return { kind: 'tree', x: WORLD.treeX };
     return null;
   }
@@ -2358,8 +2501,7 @@ export class Game {
 
   private damageStructure(st: Structure, amount: number, attacker?: Enemy) {
     const s = this.state;
-    const k = s.keeper;
-    const chitin = k.swarmT > 0 && this.propCount('swarm', 'sw-shield') && Math.abs(st.x - k.swarmX) <= this.swarmReach() ? Math.max(0.2, this.fx('sw-carapace', 0.5, -0.08, 0.7)) : 1;
+    const chitin = this.best((k) => this.swarming(k, st.x) && this.propCount('swarm', 'sw-shield') > 0, () => Math.max(0.2, this.fx('sw-carapace', 0.5, -0.08, 0.7)), 1, Math.min);
     st.hp -= amount * chitin;
     st.hitFlash = 0.12;
     this.emit({ type: 'structureHit', id: st.id, x: st.x });
@@ -2394,10 +2536,9 @@ export class Game {
 
   private hasteMult(st: Structure): number {
     let m = st.haste > 0 ? 1.3 : 1;
-    if (this.state.keeper.timeStopT > 0) m *= this.fx('ts-hush', 1.5, 0.25, 1);
+    m *= this.best((k) => k.timeStopT > 0, () => this.fx('ts-hush', 1.5, 0.25, 1), 1);
     for (const t of this.state.tempLights) if (t.haste && Math.abs(st.x - t.x) <= t.radius) { m *= 1 + t.haste; break; }
-    const k = this.state.keeper;
-    if (k.swarmT > 0 && Math.abs(st.x - k.swarmX) <= this.swarmReach()) m *= 1 + ABILITIES.swarm.haste * runeRankPower(k.runeRank.swarm) ** 0.75;
+    m *= this.best((k) => this.swarming(k, st.x), () => 1 + ABILITIES.swarm.haste * runeRankPower(this.state.keeper.runeRank.swarm) ** 0.75, 1);
     if (this.mods.dragonflyHaste) {
       for (const d of this.state.structures) {
         if (d.family === 'dragonfly' && d !== st && Math.abs(d.x - st.x) <= this.nestStats(d).light!) { m *= 1.2; break; }
@@ -2551,8 +2692,7 @@ export class Game {
 
   /** Little dragonflies of a nest (more with level and merge stars). */
   dragonflyDrones(st: Structure) {
-    const k = this.state.keeper;
-    const vortex = k.swarmT > 0 && this.facet('sw-sky') && Math.abs(st.x - k.swarmX) <= this.swarmReach() ? this.fx('sw-sky', 2, 1, 1) : 1;
+    const vortex = this.best((k) => this.swarming(k, st.x) && this.facet('sw-sky'), () => this.fx('sw-sky', 2, 1, 1), 1);
     return (STING.drones + st.tier + st.merge) * vortex;
   }
 
@@ -2785,9 +2925,12 @@ export class Game {
 
   private updateProjectiles(dt: number) {
     const s = this.state;
-    const k = s.keeper;
     const spawned: typeof s.projectiles = [];
+    const first = s.keepers[0];
     for (const p of s.projectiles) {
+      // spears and stars act as the Ascended who cast them (Light, rhythm, Starfall charge)
+      const k = s.keepers[p.owner ?? 0] ?? first;
+      s.keeper = k;
       p.age += dt;
       p.life -= dt;
       this.src = PROJ_SRC[p.kind];
@@ -2838,7 +2981,7 @@ export class Game {
               spawned.push({
                 id: s.nextId++, kind: 'meteor', x: p.tx, y: WORLD.groundY - 14, vx: (tx2 - p.tx) / fall, vy: 14 / fall,
                 damage: p.damage * 0.12, targetId: 0, tx: tx2, ty: WORLD.groundY, pierce: 0, hit: [], life: fall, age: 0,
-                radius: def.impactRadius * 0.55, stun: 0.4, shard: true, burnTime: 2,
+                radius: def.impactRadius * 0.55, stun: 0.4, shard: true, burnTime: 2, owner: p.owner,
               });
             }
           }
@@ -2924,6 +3067,7 @@ export class Game {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
     }
+    s.keeper = first;
     s.projectiles.push(...spawned);
   }
 
@@ -2937,8 +3081,8 @@ export class Game {
    */
   private updateDrops(dt: number) {
     const s = this.state;
-    const k = s.keeper;
-    const magnet = KEEPER.magnetRadius * (1 + this.mods.magnet);
+    const alive = s.keepers.filter((x) => x.alive);
+    const magnets = new Map(alive.map((o) => [o, this.as(o, () => KEEPER.magnetRadius * (1 + this.mods.magnet))]));
     const bank = (d: Drop) => {
       if (d.kind === 'amber') { s.amber += d.value; s.stats.amberCollected += d.value; } else { s.star += d.value; s.stats.starCollected += d.value; }
       d.life = 0;
@@ -2952,9 +3096,15 @@ export class Game {
         if (d.y < WORLD.groundY - 140) d.life = 0;
         continue;
       }
-      const dist = Math.abs(d.x - k.x) + Math.abs(d.y - (WORLD.groundY - 10)) * 0.4;
-      if (k.alive && dist <= magnet && d.mode !== 2) d.pulled = true;
-      if (d.pulled && k.alive) {
+      // the nearest living Ascended draws it in
+      let k: Keeper | undefined;
+      let dist = Infinity;
+      for (const o of alive) {
+        const dd = Math.abs(d.x - o.x) + Math.abs(d.y - (WORLD.groundY - 10)) * 0.4;
+        if (dd < dist) { dist = dd; k = o; }
+      }
+      if (k && dist <= magnets.get(k)! && d.mode !== 2) d.pulled = true;
+      if (d.pulled && k) {
         const dx = k.x - d.x;
         const dy = WORLD.groundY - 10 - d.y;
         const len = Math.hypot(dx, dy) || 1;
@@ -3138,7 +3288,7 @@ export class Game {
           goal = foe.x - Math.sign(foe.x - u.x) * (ENEMIES[foe.kind].radius + 3);
           if (fd <= ENEMIES[foe.kind].radius + 5 && u.cd <= 0) {
             u.cd = ns.rate;
-            const clich = s.keeper.swarmT > 0 && this.facet('sw-termite') && Math.abs(u.x - s.keeper.swarmX) <= this.swarmReach() ? this.fx('sw-termite', 1.5, 0.25, 1) : 1;
+            const clich = this.best((k) => this.swarming(k, u.x) && this.facet('sw-termite'), () => this.fx('sw-termite', 1.5, 0.25, 1), 1);
             this.damageEnemy(foe, ns.damage * clich * (GIANTS.has(foe.kind) ? GIANT.small : 1), true, true);
           }
         }

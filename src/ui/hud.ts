@@ -339,7 +339,9 @@ export class Hud {
     this.title.querySelector('[data-a=stats]')!.addEventListener('click', () => this.cb.onOpenStats());
   }
 
-  resetQuests() { this.questIdx = 0; this.questSig = ''; }
+  /** Online co-op: no Observer's tasks (their rewards would pay out once per player), time never stops for one player. */
+  coop = false;
+  resetQuests() { this.questIdx = this.coop ? QUESTS.length : 0; this.questSig = ''; }
 
   hideTitle() { this.title.classList.add('hidden'); this.root.classList.remove('title-mode'); this.inRun = true; }
   showTitle() { this.title.classList.remove('hidden'); this.root.classList.add('title-mode'); this.inRun = false; this.modal.classList.add('hidden'); this.modalSig = ''; }
@@ -1001,7 +1003,7 @@ export class Hud {
       const k = s.keeper;
       const rank = KEEPER_RANKS[k.rank];
       const next = KEEPER_RANKS[k.rank + 1];
-      html += `<h3>Скрижаль Восходящего <small style="opacity:.6;font-size:11px">⏸ время стоит</small></h3><div class="sub">Ранг: <b style="color:${RUNE_RANK_COLORS[k.rank]}">${rank.name}</b> · HP ${Math.ceil(k.hp)}/${g.keeperMaxHp()} · Свет ${g.maxLight()} · сила умений ×${rank.power}</div>`;
+      html += `<h3>Скрижаль Восходящего ${this.coop ? '' : '<small style="opacity:.6;font-size:11px">⏸ время стоит</small>'}</h3><div class="sub">Ранг: <b style="color:${RUNE_RANK_COLORS[k.rank]}">${rank.name}</b> · HP ${Math.ceil(k.hp)}/${g.keeperMaxHp()} · Свет ${g.maxLight()} · сила умений ×${rank.power}</div>`;
       html += `<div class="ranks">${KEEPER_RANKS.map((r, i) => `<span class="${i <= k.rank ? 'on' : ''}" style="--c:${RUNE_RANK_COLORS[i]}">${r.name}</span>`).join('<i></i>')}</div>`;
       if (next) html += `<div class="row">${btn(`Восхождение: ${next.name} (<img class="icon" src="${icon('star')}"> ${next.cost})`, s.star >= next.cost, () => { g.ascend(); })}</div>`;
       html += `<div class="sub">Защита ${Math.round(g.keeperGuard() * 100)}% · сияние ${Math.round(g.keeperAura())}/с — сжигает тварей вплотную</div>`;
@@ -1127,7 +1129,8 @@ export class Hud {
   private renderChoice() {
     const g = this.game();
     // nothing to choose while the title screen is up (the run hasn't started yet)
-    const c = this.inRun && this.title.classList.contains('hidden') ? g.choice : null;
+    // co-op: only my own picks (and shared ones, like a Tree branch) — the others choose on their screens
+    const c = this.inRun && this.title.classList.contains('hidden') ? g.choiceFor(g.local) : null;
     if (!c || g.over) {
       if (!this.modal.classList.contains('hidden')) { this.modal.classList.add('hidden'); this.modalSig = ''; }
       return;
@@ -1399,7 +1402,7 @@ export class Hud {
     this.reviveBox.classList.toggle('show', show);
     if (!show) { this.reviveSig = ''; this.deathHold = false; this.deathSeen = false; return; }
     // the moment the Ascended falls, time stops so the choice can be made calmly
-    if (!this.deathSeen) { this.deathSeen = true; this.deathHold = true; this.reviveSig = ''; }
+    if (!this.deathSeen) { this.deathSeen = true; this.deathHold = !this.coop; this.reviveSig = ''; }
     const cost = g.reviveCost();
     const t = g.sacrificeTarget();
     const tdesc = t ? (t.kind === 'rank' ? `ранг руны «${KEEPER_RUNES[t.rune].name}» (${RUNE_RANKS[k.runeRank[t.rune]]} → ${RUNE_RANKS[k.runeRank[t.rune] - 1]})` : `Свойство из руны «${KEEPER_RUNES[t.rune].name}»`) : '';

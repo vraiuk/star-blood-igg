@@ -658,16 +658,25 @@ export function drawEnemyHp(c: Ctx, e: Enemy) {
 
 // ───────────────────────────── keeper ──────────────────────────────
 
-export function drawKeeper(c: Ctx, k: Keeper, time: number) {
+/** Cloak colours of the co-op Ascended (dark fold, light fold, name pip): pale, azure, crimson, jade. */
+export const KEEPER_COLORS: ReadonlyArray<{ c0: string; c1: string; pip: string }> = [
+  { c0: PAL.cloak0, c1: PAL.cloak1, pip: '#f2ead8' },
+  { c0: '#33518a', c1: '#6f9ae0', pip: '#8fc0ff' },
+  { c0: '#8a2f34', c1: '#d8676a', pip: '#ff8a8a' },
+  { c0: '#2f6a40', c1: '#6fbf7e', pip: '#9cff9c' },
+];
+
+export function drawKeeper(c: Ctx, k: Keeper, time: number, color = 0) {
   if (!k.alive) return;
+  const pal = KEEPER_COLORS[color] ?? KEEPER_COLORS[0];
   const x = Math.round(k.x), y = GY;
   const d = k.dir;
   const bob = k.walkT > 0 ? Math.abs(Math.sin(k.walkT * 12)) : Math.sin(time * 2) * 0.4;
   const flash = k.hitFlash > 0;
   const top = y - 15 - Math.round(bob);
   // cloak (flared, hand-painted steps)
-  const cloak0 = flash ? '#ffb0b0' : PAL.cloak0;
-  const cloak1 = flash ? '#ffd0d0' : PAL.cloak1;
+  const cloak0 = flash ? '#ffb0b0' : pal.c0;
+  const cloak1 = flash ? '#ffd0d0' : pal.c1;
   for (let i = 0; i < 12; i++) {
     const w = 2 + Math.floor(i * 0.42);
     rect(c, x - w, top + 3 + i, w * 2 + 1, 1, i < 2 ? cloak1 : cloak0);
@@ -695,11 +704,17 @@ export function drawKeeper(c: Ctx, k: Keeper, time: number) {
   }
 }
 
-/** Keeper HP bar (drawn above the darkness). */
-export function drawKeeperHp(c: Ctx, k: Keeper, maxHp: number) {
+/** Keeper HP bar (drawn above the darkness); in co-op a pip in the player's colour, a ring on your own. */
+export function drawKeeperHp(c: Ctx, k: Keeper, maxHp: number, color = -1, mine = false) {
   if (!k.alive) return;
   const w = 16;
   const x = Math.round(k.x - w / 2), y = GY - 24;
+  if (color >= 0) {
+    const pip = (KEEPER_COLORS[color] ?? KEEPER_COLORS[0]).pip;
+    rect(c, x + w / 2 - 1, y - 5, 3, 3, mine ? PAL.white : '#0a0610');
+    rect(c, x + w / 2, y - 4, 1, 1, pip);
+    if (!mine) rect(c, x + w / 2 - 1, y - 5, 3, 3, pip);
+  }
   rect(c, x - 1, y - 1, w + 2, 4, '#0a0610');
   rect(c, x, y, w, 2, '#3a1420');
   const f = Math.max(0, k.hp / maxHp);

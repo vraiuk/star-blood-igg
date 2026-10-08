@@ -1,0 +1,17 @@
+name: Co-op → Pages
+
+# Pages deploys only from main: a push here re-runs main's deploy, which builds this branch into /coop/.
+on:
+  push:
+    branches: [coop]
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh workflow run pages.yml --ref main --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
