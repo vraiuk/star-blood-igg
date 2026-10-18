@@ -46,6 +46,10 @@ export interface WorldFeatures {
   quests: boolean;
   /** meta tree (Observer's Coins) */
   meta: boolean;
+  /** Tree branch choices («Уклоны») on growth */
+  branches: boolean;
+  /** the Observer's dawn roulette (and the start-of-run rune choice) */
+  roulette: boolean;
 }
 
 /** How a nest family becomes available in a world. */
@@ -56,6 +60,20 @@ export type FamilyUnlock =
   /** opens when the Keeper wakes its Sleeping Creature (a `sleeper` object) */
   | { kind: 'sleeper' };
 export interface FamilyRule { family: Family; unlock: FamilyUnlock }
+
+/** How an in-world rune becomes known (spec §4, §5, §6). */
+export type RuneUnlockWhen =
+  | { kind: 'start' }
+  /** learned for free when the Tree reaches this stage (0-based index) */
+  | { kind: 'stage'; stage: number }
+  /** the Observer's fixed gift at the dawn after night `night` (1-based) */
+  | { kind: 'gift'; night: number };
+export interface RuneUnlock {
+  rune: AbilityId;
+  when: RuneUnlockWhen;
+  /** the Observer's one line when it is learned (what it gives) */
+  line?: string;
+}
 
 /** Win condition. */
 export type WinDef =
@@ -109,8 +127,14 @@ export interface WorldDef {
   /** index of the last Tree stage reachable in this world */
   maxStage: number;
   families: FamilyRule[];
-  /** Keeper runes available in this world */
+  /** Keeper runes available in this world (in-world: keys 1/2/3 in this order) */
   runes: AbilityId[];
+  /** in-world: how each rune of `runes` is learned (legacy: undefined — the Tablet / roulette) */
+  runeUnlocks?: RuneUnlock[];
+  /** in-world: Tree stage (0-based) from which nests take the A/B specialization; undefined = never (nests stop at BASE_TIERS) */
+  specStage?: number;
+  /** in-world: Tree stage (0-based) from which the Tablet stone wakes (needs `features.tablet`) */
+  tabletStage?: number;
   objects: WorldObjectDef[];
   /** starting Amber in the Treasury (`state.amber`) */
   startTreasury: number;
@@ -130,13 +154,21 @@ export interface WorldDef {
 const ALL_FEATURES: WorldFeatures = {
   inWorld: false, autoLoot: true, crown: true, merge: true, aspects: true, stars: true, facets: true, props: true,
   exchange: true, rush: true, termite: true, tablet: true, keeperRanks: true, ringMenu: true, quests: true, meta: true,
+  branches: true, roulette: true,
 };
 
 /** IGG2 worlds: the in-world control scheme with the heavy systems switched off (spec §4). */
 const IGG2_FEATURES: WorldFeatures = {
   inWorld: true, autoLoot: false, crown: false, merge: false, aspects: false, stars: false, facets: false, props: false,
   exchange: false, rush: false, termite: false, tablet: false, keeperRanks: false, ringMenu: false, quests: false, meta: false,
+  branches: false, roulette: false,
 };
+
+/** The Observer's lines for the in-world rune unlocks. */
+const RUNE_LINES = {
+  hammer: 'Новая руна: Прыжок Молота [2] — прыжок вперёд, удар оглушает и отбрасывает тварей.',
+  starfall: 'Новая руна: Звездопад [3] — заряжается убийствами; звёзды падают на самую густую стаю впереди.',
+} as const;
 
 const ALL_FAMILIES: Family[] = ['hive', 'beetle', 'dragonfly', 'spider', 'caterpillar', 'termite', 'honeycomb', 'mender'];
 const start = (family: Family): FamilyRule => ({ family, unlock: { kind: 'start' } });
@@ -161,6 +193,10 @@ export const WORLDS: Record<WorldId, WorldDef> = {
     nights: 'campaign', endless: false, maxStage: 2,
     families: [start('hive'), start('beetle'), start('spider'), { family: 'caterpillar', unlock: { kind: 'stage', stage: 1 } }],
     runes: ['spear', 'hammer'],
+    runeUnlocks: [
+      { rune: 'spear', when: { kind: 'start' } },
+      { rune: 'hammer', when: { kind: 'gift', night: 1 }, line: RUNE_LINES.hammer },
+    ],
     objects: [],
     startTreasury: 40,
     purseCap: (stage) => 30 + 15 * stage,
@@ -179,13 +215,20 @@ export const WORLDS: Record<WorldId, WorldDef> = {
       { family: 'caterpillar', unlock: { kind: 'sleeper' } }, { family: 'dragonfly', unlock: { kind: 'sleeper' } },
     ],
     runes: ['spear', 'hammer', 'starfall'],
+    runeUnlocks: [
+      { rune: 'spear', when: { kind: 'start' } },
+      { rune: 'hammer', when: { kind: 'start' } },
+      { rune: 'starfall', when: { kind: 'stage', stage: 3 }, line: RUNE_LINES.starfall },
+    ],
+    specStage: 2,
+    tabletStage: 1,
     objects: [],
     startTreasury: 60,
     purseCap: (stage) => 40 + 20 * stage,
     prices: { nest: 1, grow: 1, rune: 1 },
     win: { kind: 'rifts', count: 2 },
     maxSpeed: 5,
-    ascendStage: 3,
+    ascendStage: 4,
     dawnIncome: { base: 30, perStage: 20 },
     features: { ...IGG2_FEATURES, rush: true, tablet: true },
   },
@@ -207,8 +250,29 @@ export const INWORLD = {
   respawn: 8,
   /** trunk objects: offsets from treeX */
   treasury: -22, altar: 0, stone: 22,
-  /** runes cast ahead of the Keeper without the mouse (hammer / starfall; phase 4 refines) */
+  /** runes cast ahead of the Keeper without the mouse: the fallback point (starfall with no pack ahead) */
   castAhead: 80,
+  /** Starfall looks for the densest pack this far ahead of the Keeper, and this far behind */
+  starAhead: 260, starBehind: 40,
+  /** a creature this close outside the light still counts as «near-lit» for the Starfall */
+  starNearLit: 40,
+  /** the Hammer lands this far before the nearest creature on its leap */
+  hammerStop: 6,
+  /** highest rune rank at the Tablet stone (Дерево → Бронза → Серебро → Золото) */
+  maxRuneRank: 3,
 } as const;
+
+/** In-world rune descriptions (no mouse: everything goes along the Keeper's facing). */
+export const INWORLD_RUNE_DESC: Partial<Record<AbilityId, string>> = {
+  spear: 'Копьё летит туда, куда смотрит Хранитель: пробивает тварей, бьёт и во тьме.',
+  hammer: 'Прыжок Молота: Хранитель прыгает вперёд (до ближайшей твари) и бьёт — оглушает, отбрасывает, ломает броню, рушит Лазы.',
+  starfall: 'Заряжается убийствами. Звёзды падают на самую густую стаю впереди; нет стаи — прямо перед Хранителем.',
+};
+
+/** Tree stage names in the instrumental case («когда Древо станет …»), by 0-based stage. */
+export const STAGE_INSTR = ['Семенем', 'Ростком', 'Юным Игг', 'Малым Древом', 'Игг-Древом', 'Великим Древом'] as const;
+
+/** In-world rune keys: 1/2/3 → the world's runes in the order spear, hammer, starfall (spec §3). */
+export const INWORLD_RUNE_KEYS: Record<string, AbilityId> = { 1: 'spear', 2: 'hammer', 3: 'starfall' };
 
 export const isWorldId = (x: unknown): x is WorldId => x === 'legacy' || x === 'micro' || x === 'medium';

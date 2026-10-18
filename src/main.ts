@@ -238,12 +238,14 @@ function releaseVerbs() {
 /** In-world key presses (spec §3): S pour, W take, Q/E option, X sell, 1/2/3 runes ahead. */
 function inWorldKey(k: string, e: KeyboardEvent) {
   if (e.repeat) return;
+  // S or W at the Tablet stone opens the Tablet (spec §4)
+  if ((k === 's' || k === 'arrowdown' || k === 'w' || k === 'arrowup') && game.focus()?.kind === 'stone') { hud.togglePanel('keeper'); return; }
   if (k === 's' || k === 'arrowdown') game.setPour(true);
   else if (k === 'w' || k === 'arrowup') game.setTake(true);
   else if (k === 'x') game.setSell(true);
   else if (k === 'q') game.cycleOption(-1);
   else if (k === 'e') game.cycleOption(1);
-  else if (ABILITY_KEYS[k] && game.world.runes.includes(ABILITY_KEYS[k])) game.castAhead(ABILITY_KEYS[k]);
+  else if (game.runeForKey(k)) game.castKey(k);
   else if (k === ' ') { e.preventDefault(); game.callNight(); }
   else if (k === 'f') { speed = nextSpeed(); hud.setSpeed(speed); }
   else if (k === '-' || k === '_') { speed = stepSpeed(-1); hud.setSpeed(speed); }
@@ -271,7 +273,8 @@ window.addEventListener('keydown', (e) => {
   held.add(k);
   updateMove();
   if (inWorld()) {
-    if (hud.panelOpen) { if (k === 'r' || k === 'b') hud.togglePanel('keeper'); return; }
+    // the open Tablet closes with R / B, or S / W again at the stone
+    if (hud.panelOpen) { if (['r', 'b', 's', 'w', 'arrowdown', 'arrowup'].includes(k)) hud.togglePanel('keeper'); return; }
     inWorldKey(k, e);
     if (k === ' ' || k.startsWith('arrow')) e.preventDefault();
     return;
@@ -466,8 +469,8 @@ function frame(now: number) {
     for (const [key, id] of Object.entries(ABILITY_KEYS)) {
       if (!held.has(key)) continue;
       if (id === 'spear' && game.state.keeper.forms.spear === 'B') continue;
-      if (inWorld() && !game.world.runes.includes(id)) continue;
-      if (game.abilityReady(id)) { if (inWorld()) game.castAhead(id); else game.cast(id, view.mouseX, view.mouseY); }
+      if (inWorld()) { if (game.runeForKey(key) && game.abilityReady(id)) game.castKey(key); continue; }
+      if (game.abilityReady(id)) game.cast(id, view.mouseX, view.mouseY);
     }
   }
   // in the world: the camera leans toward the object being poured into / taken from

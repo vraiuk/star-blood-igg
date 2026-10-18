@@ -5,6 +5,8 @@ import type { KeeperRuneId } from '../data/runes';
 export interface Enemy {
   id: number;
   kind: EnemyKind;
+  /** a neutral creature (in-world grazing herds, phase 5): runes never aim at it */
+  neutral?: boolean;
   x: number;
   /** feet y (surface enemies) or body center y (underground) */
   y: number;
@@ -396,6 +398,8 @@ export type GameEvent =
   | { type: 'pledgeDone'; x: number; target: string }
   /** in-world: Amber knocked out of the purse by a hit / spilled on death */
   | { type: 'knock'; x: number; amount: number; death: boolean }
+  /** in-world: a rune became known — the Observer's fixed gift or a Tree stage (spec §4) */
+  | { type: 'runeLearned'; ability: AbilityId; by: 'gift' | 'stage'; line?: string }
   | { type: 'denied'; reason: string };
 
 /** In-world input and verb timers (spec §3). Held flags are set by `Game.setPour/setTake/setSell`. */

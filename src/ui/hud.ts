@@ -6,7 +6,7 @@ import {
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
 import type { Game } from '../sim/game';
-import type { WorldId } from '../data/worlds';
+import { INWORLD, INWORLD_RUNE_DESC, type WorldId } from '../data/worlds';
 import { VERSION_LABEL } from '../version';
 import { gloss, installGlossary } from './glossary';
 import type { GameEvent } from '../sim/types';
@@ -217,7 +217,12 @@ export class Hud {
       box.addEventListener('mousedown', (ev) => {
         ev.stopPropagation();
         // a rune not learned yet: open the Tablet right on it (that's where it's learned)
-        if (!this.game().abilityUnlocked(id)) { this.openTabletAt(id); return; }
+        const g = this.game();
+        if (!g.abilityUnlocked(id)) {
+          if (g.world.features.inWorld) this.say(`Руна «${ABILITIES[id].name}» откроется: ${g.runeLockHint(id) ?? '—'}`, true);
+          else this.openTabletAt(id);
+          return;
+        }
         this.cb.onCast(id);
       });
       abs.appendChild(box);
@@ -415,11 +420,19 @@ export class Hud {
           this.showBanner('Тот-Кто-Посадил-новое-Древо!', `Десять ночей позади. ${'★'.repeat(e.stars)} Дальше — Бесконечная ночь: держись за рекорд.`, false, 6);
           break;
         case 'dawn':
-          this.showBanner('Рассвет', `Тьма отступила. Рассветный дар: +${e.gift} Янтаря`, false, 2.6);
+          this.showBanner('Рассвет', g.world.features.inWorld ? `Тьма отступила. Доход Древа: +${e.gift} Янтаря в Казну` : `Тьма отступила. Рассветный дар: +${e.gift} Янтаря`, false, 2.6);
           break;
         case 'treeGrew':
-          this.showBanner(TREE_STAGES[e.stage].name, TREE_STAGES[e.stage].unlocks.join(' · '), false, 3.5);
+          // in-world: the legacy unlock list (runes for Star Blood, rings…) doesn't apply
+          this.showBanner(TREE_STAGES[e.stage].name, g.world.features.inWorld ? this.stageNews(g, e.stage) : TREE_STAGES[e.stage].unlocks.join(' · '), false, 3.5);
           break;
+        case 'runeLearned': {
+          // the world's fixed rune gift: a banner without a choice + one Observer line (spec §4)
+          const def = ABILITIES[e.ability];
+          this.queueBanner(`Новая руна: ${def.name} [${def.key}]`, e.by === 'gift' ? 'Дар Тот-Кто-Наблюдает' : 'Древо выросло — руна пробудилась', 4);
+          if (e.line) this.say(e.line);
+          break;
+        }
         case 'treeHit':
           this.hpBar.classList.remove('hurt');
           void this.hpBar.offsetWidth;
@@ -428,7 +441,9 @@ export class Hud {
         case 'denied': this.say(e.reason, true); break;
         case 'keeperDown': this.say('Восходящий пал! Четверть Звёздной Крови рассыпалась на месте гибели.', true); break;
         case 'pickup':
-          if (e.kind === 'star') this.once('star', 'Получена Звёздная Кровь. Обменяй её на специализацию гнезда или ранг Восходящего.');
+          if (e.kind === 'star') this.once('star', g.world.features.inWorld
+            ? 'Получена Звёздная Кровь — ключ: ею платят за развилки гнёзд и ранги рун у камня Скрижали.'
+            : 'Получена Звёздная Кровь. Обменяй её на специализацию гнезда или ранг Восходящего.');
           break;
         case 'rankUp': this.say(`Восходящий достиг ранга «${KEEPER_RANKS[e.rank].name}». Открыт слот руны.`); break;
         case 'shield': this.say('Нагрудник Светоносных закрыл Древо щитом!'); break;
@@ -464,7 +479,7 @@ export class Hud {
           if (!this.once('tunnel', 'Червь прорыл Лаз! Твари ныряют в него и выходят за строем. Встань Хранителем на выход (красная метка) — он засыплет Лаз; Игг-Молот обрушит его сразу.')) this.say('Червь прорыл Лаз за строем!', true);
           break;
         case 'treeDanger':
-          this.showBanner('Древо в опасности!', 'Хранитель, защити Древо любой ценой. Крайняя мера — Жертва Света [X ×2]: взрыв света отбросит тварей.', true, 3.5);
+          this.showBanner('Древо в опасности!', g.world.features.inWorld ? 'Хранитель, защити Древо любой ценой: Молот [2] отбросит тварей от ствола.' : 'Хранитель, защити Древо любой ценой. Крайняя мера — Жертва Света [X ×2]: взрыв света отбросит тварей.', true, 3.5);
           break;
         case 'sacrifice':
           this.say('Жертва Света! Хранитель пал, отбросив тьму. Воскрешение этой ночью втрое дороже.', true);
@@ -486,6 +501,28 @@ export class Hud {
     this.banner.className = night ? 'night show' : 'show';
     this.banner.innerHTML = `<div class="title">${title}</div><div class="rule"></div><div class="hint">${hint}</div>`;
     this.bannerTimer = secs;
+  }
+
+  /** Banners waiting for the current one to end (a gift at dawn comes after the «Рассвет» banner). */
+  private bannerQueue: Array<[string, string, number]> = [];
+  /** Show a day banner after the current one (choice-free announcements: new runes, openings). */
+  queueBanner(title: string, hint: string, secs = 3.5) {
+    if (this.bannerTimer > 0.3) this.bannerQueue.push([title, hint, secs]);
+    else this.showBanner(title, hint, false, secs);
+  }
+  /** A short banner now (e.g. «Скрижаль — у камня рядом с Древом»). */
+  notify(title: string, hint: string, secs = 2.2) { this.showBanner(title, hint, false, secs); }
+
+  /** In-world: what a new Tree stage opens in this world (Circle, rune, specializations, Ascension). */
+  private stageNews(g: Game, stage: number): string {
+    const w = g.world;
+    const out = [`Круг ${TREE_STAGES[stage].radius}`, 'новые места для гнёзд'];
+    for (const u of w.runeUnlocks ?? []) if (u.when.kind === 'stage' && u.when.stage === stage) out.push(`руна ${ABILITIES[u.rune].name} [${ABILITIES[u.rune].key}]`);
+    if (w.specStage === stage) out.push('развилки гнёзд');
+    if (w.ascendStage === stage) out.push('Возвышение гнёзд');
+    if (w.features.tablet && (w.tabletStage ?? 0) === stage && stage > 0) out.push('камень Скрижали');
+    if (stage === w.maxStage) out.push('предел этого мира');
+    return out.join(' · ');
   }
 
   /** The Observer's voice: an azure Tablet notice. */
@@ -548,7 +585,7 @@ export class Hud {
       else if (form === 'A') rows.push(['Урон', `${n0(ABILITIES.spear.damage * 0.8 * mult)} × 5 копий`]);
       else rows.push(['Урон', n0(ABILITIES.spear.damage * mult)], ['Пробивает', `${ABILITIES.spear.pierce + g.mods.spearPierce + (rr >= 1 ? 1 : 0) + (rr >= 3 ? 1 : 0)} тварей`]);
     } else if (id === 'hammer') {
-      rows.push(['Прыжок', `до ${n0(ABILITIES.hammer.leap * g.runeArea('hammer'))} (к курсору)`], ['Урон', n0(ABILITIES.hammer.damage * mult)], ['Радиус', n0(ABILITIES.hammer.radius * (1 + g.mods.hammerRadius) * g.runeArea('hammer'))], ['Оглушение', `${ABILITIES.hammer.stun} с`], ['Ломает броню', `${ABILITIES.hammer.armorBreak} с`]);
+      rows.push(['Прыжок', `до ${n0(ABILITIES.hammer.leap * g.runeArea('hammer'))} (${g.world.features.inWorld ? 'вперёд' : 'к курсору'})`], ['Урон', n0(ABILITIES.hammer.damage * mult)], ['Радиус', n0(ABILITIES.hammer.radius * (1 + g.mods.hammerRadius) * g.runeArea('hammer'))], ['Оглушение', `${ABILITIES.hammer.stun} с`], ['Ломает броню', `${ABILITIES.hammer.armorBreak} с`]);
     } else if (id === 'starfall') {
       rows.push(['Урон звезды', n0(ABILITIES.starfall.damage * mult)], ['Звёзд', String(ABILITIES.starfall.meteors + g.mods.starfallMeteors)], ['Заряд', `${Math.floor(k.charge)}/${ABILITIES.starfall.chargeMax} (убийства)`]);
     } else if (id === 'radiance') {
@@ -563,9 +600,12 @@ export class Hud {
     const props = g.runeProps(id);
     const facets = k.facets.map((f) => facetById(f)).filter((f) => f && f.rune === id);
     const locked = !g.abilityUnlocked(id);
+    const iw = g.world.features.inWorld;
+    const desc = iw ? INWORLD_RUNE_DESC[id] ?? def.desc : def.desc;
     this.abTip.innerHTML = `<div class="hd"><img src="${icon(id)}"><div><b>${def.name}</b><span style="color:${runeColor(rr)}">${runeRankName(rr)} · сила ×${runeRankPower(rr).toFixed(2)}</span></div><span class="key">${def.key}</span></div>
-      <div class="ds">${formDef ? `<b>${formDef.name}:</b> ${formDef.desc}` : def.desc}</div>
-      ${locked ? `<div class="lockline">${g.abilityAvailable(id) ? `Изучить в Скрижали [R] за ★${def.learn} или даром Наблюдателя` : `Откроется на стадии Древа ${def.unlockStage}`}</div>` : ''}
+      <div class="ds">${formDef ? `<b>${formDef.name}:</b> ${formDef.desc}` : desc}</div>
+      ${locked && iw ? `<div class="lockline">Откроется: ${g.runeLockHint(id) ?? '—'}</div>` : ''}
+      ${locked && !iw ? `<div class="lockline">${g.abilityAvailable(id) ? `Изучить в Скрижали [R] за ★${def.learn} или даром Наблюдателя` : `Откроется на стадии Древа ${def.unlockStage}`}</div>` : ''}
       <div class="st">${rows.map(([a, b]) => `<span>${a}</span><b>${b}</b>`).join('')}</div>
       ${props.length ? `<div class="tags">${props.map((p) => `<i style="--c:${RUNE_RANK_COLORS[p.rank]}">${p.name}</i>`).join('')}</div>` : ''}
       ${facets.length ? `<div class="tags">${facets.map((f) => `<i style="--c:#b48cff">◆ ${f!.name}</i>`).join('')}</div>` : ''}`;
@@ -947,9 +987,12 @@ export class Hud {
   // ───────────────────────────── side panels ─────────────────────────
 
   togglePanel(kind: 'tree' | 'keeper', force = false) {
-    const w = this.game().world.features;
+    const g = this.game();
+    const w = g.world.features;
     if (w.inWorld && (kind === 'tree' || !w.tablet)) return;
     if (this.panelKind === kind && !force) { this.closeMenu(); return; }
+    // in-world: the Tablet opens only at its stone by the Tree (spec §4)
+    if (w.inWorld && !g.canOpenTablet()) { this.notify('Скрижаль', g.tabletReason() ?? ''); return; }
     this.menuTarget = null;
     this.ring.classList.remove('show');
     this.card.classList.remove('show');
@@ -1024,6 +1067,8 @@ export class Hud {
           </div></div>`;
       });
       html += `</div>`;
+    } else if (this.panelKind === 'keeper' && g.world.features.inWorld) {
+      html += this.tabletInWorld(g, btn);
     } else if (this.panelKind === 'keeper') {
       const k = s.keeper;
       const rank = KEEPER_RANKS[k.rank];
@@ -1145,6 +1190,51 @@ export class Hud {
       });
       this.panel.querySelector('.close')!.addEventListener('click', () => this.closeMenu());
     }
+  }
+
+  /**
+   * The simplified in-world Tablet (spec §4): per rune of the world — icon, name, rank pips
+   * Дерево/Бронза/Серебро/Золото, current numbers, «Повысить за ★N» (disabled with the reason),
+   * the Form once chosen. Plus the Star Blood count. Nothing else.
+   */
+  private tabletInWorld(g: Game, btn: (label: string, ok: boolean, act: () => void, cls?: string) => string): string {
+    const s = g.state, k = s.keeper;
+    const n0 = (v: number) => String(Math.round(v));
+    let html = `<h3>Скрижаль рун <small style="opacity:.6;font-size:11px">⏸ время стоит</small></h3>
+      <div class="sub">Звёздная Кровь: <b class="starcount"><img class="icon" src="${icon('star')}"> ${s.star}</b> · ранг руны — сила, охват, на «${RUNE_RANKS[FORM_RANK]}» — Форма</div>`;
+    for (const id of g.world.runes) {
+      const def = ABILITIES[id];
+      const rr = k.runeRank[id];
+      const known = g.abilityUnlocked(id);
+      const mult = g.abilityMult(id);
+      const pips = RUNE_RANKS.slice(0, INWORLD.maxRuneRank + 1)
+        .map((r, i) => `<span class="${i <= rr ? 'on' : ''}" style="--c:${RUNE_RANK_COLORS[i]}">${r}</span>`).join('<i></i>');
+      const nums: Array<[string, string]> = [];
+      if (id === 'spear') nums.push(['Урон', n0(ABILITIES.spear.damage * mult)], ['Пробивает', String(ABILITIES.spear.pierce + (rr >= 1 ? 1 : 0) + (rr >= 3 ? 1 : 0))]);
+      else if (id === 'hammer') nums.push(['Урон', n0(ABILITIES.hammer.damage * mult)], ['Прыжок', n0(ABILITIES.hammer.leap * g.runeArea('hammer'))], ['Радиус', n0(ABILITIES.hammer.radius * g.runeArea('hammer'))]);
+      else if (id === 'starfall') nums.push(['Урон звезды', n0(ABILITIES.starfall.damage * mult)], ['Звёзд', String(ABILITIES.starfall.meteors)]);
+      if (def.cost) nums.push(['Свет', String(g.abilityCost(id))]);
+      if (id !== 'starfall') nums.push(['Откат', `${g.abilityCooldown(id).toFixed(1)} с`]);
+      html += `<div class="rblock iw ${known ? '' : 'dim'}" data-rune="${id}"><div class="rhead"><img src="${icon(id)}"><b>${def.name}</b><span class="key">[${def.key}]</span></div>
+        <div class="ranks">${pips}</div>`;
+      if (!known) {
+        html += `<div class="sub">Откроется: ${g.runeLockHint(id) ?? '—'}</div></div>`;
+        continue;
+      }
+      html += `<div class="nums">${nums.map(([a, b]) => `<span>${a} <b>${b}</b></span>`).join('')}</div>`;
+      if (id === 'spear' || id === 'hammer' || id === 'starfall') {
+        const f = k.forms[id];
+        if (f) html += `<div class="form on"><b>Форма: ${RUNE_FORMS[id][f].name}</b><small>${RUNE_FORMS[id][f].desc}</small></div>`;
+      }
+      if (rr < INWORLD.maxRuneRank) {
+        const cost = g.runeRankPrice(id);
+        const why = g.promoteBlock(id);
+        html += `<div class="row left">${btn(`Повысить за <img class="icon" src="${icon('star')}"> ${cost}`, !why, () => { g.promoteRune(id); }, 'tiny gold')}
+          <span class="hint">${why ?? `→ «${RUNE_RANKS[rr + 1]}» · сила ×${(runeRankPower(rr + 1) / runeRankPower(rr)).toFixed(2)}${rr + 1 === FORM_RANK ? ' · выбор Формы' : ''}`}</span></div>`;
+      } else html += `<div class="sub">Высший ранг этой Скрижали.</div>`;
+      html += `</div>`;
+    }
+    return html;
   }
 
   // ───────────────────────────── choice modal ────────────────────────
@@ -1343,10 +1433,16 @@ export class Hud {
       const { box, cd, lock, charge, cdt } = el;
       const unlocked = g.abilityUnlocked(id);
       // in-world: only the learned runes of this world are on the bar
-      const shown = !inWorld || (unlocked && g.world.runes.includes(id));
+      // a rune that a Tree stage will open is shown locked with its stage (medium Starfall); gifts stay hidden
+      const coming = inWorld && !unlocked && g.runeUnlock(id)?.when.kind === 'stage';
+      const shown = !inWorld || (g.world.runes.includes(id) && (unlocked || coming));
       if (box.classList.contains('hidden') === shown) box.classList.toggle('hidden', !shown);
       lock.style.display = unlocked ? 'none' : 'grid';
-      if (!unlocked) {
+      if (coming) {
+        const lk = lock.querySelector('.lk')!;
+        const t = g.runeLockHint(id) ?? '';
+        if (lk.innerHTML !== t) lk.innerHTML = t;
+      } else if (!unlocked) {
         const lk = lock.querySelector('.lk')!;
         const t = g.abilityAvailable(id) ? `<img class="icon" src="${icon('star')}">${ABILITIES[id].learn}` : `ст.${ABILITIES[id].unlockStage}`;
         if (lk.innerHTML !== t) lk.innerHTML = t;
@@ -1386,14 +1482,16 @@ export class Hud {
     const amberItem = this.amberNum.parentElement as HTMLElement;
     if (amberItem.classList.contains('spendme') !== spend) amberItem.classList.toggle('spendme', spend);
     // how many things the Tablet can buy right now (shown as a badge on its button)
-    const buyable = (canAscend ? 1 : 0) + (s.devRunes > 0 ? 1 : 0)
+    const buyable = inWorld ? g.world.runes.filter((r) => g.abilityUnlocked(r) && s.keeper.runeRank[r] < INWORLD.maxRuneRank && s.star >= g.runeRankPrice(r)).length : (canAscend ? 1 : 0) + (s.devRunes > 0 ? 1 : 0)
       + RUNE_IDS.filter((r) => (r === 'light' || g.abilityUnlocked(r)) && s.star >= runeRankCost(s.keeper.runeRank[r] + 1)).length
       + (Object.keys(ABILITIES) as AbilityId[]).filter((id) => !g.abilityUnlocked(id) && g.abilityAvailable(id) && s.star >= ABILITIES[id].learn).length;
-    this.keeperBtn.classList.toggle('hot', canAscend || slotsFree || s.devRunes > 0 || buyable > 0);
+    this.keeperBtn.classList.toggle('hot', inWorld ? buyable > 0 : canAscend || slotsFree || s.devRunes > 0 || buyable > 0);
     const badge = buyable > 0 ? String(buyable) : '';
     if (this.keeperBtn.dataset.badge !== badge) this.keeperBtn.dataset.badge = badge;
-    this.keeperBtn.title = `Ранг ${KEEPER_RANKS[s.keeper.rank].name}${slotsFree ? ' · можно купить Свойство' : ''}`;
-    const tabletShown = !inWorld || g.world.features.tablet;
+    this.keeperBtn.title = inWorld ? 'Скрижаль — открывается у камня рядом с Древом' : `Ранг ${KEEPER_RANKS[s.keeper.rank].name}${slotsFree ? ' · можно купить Свойство' : ''}`;
+    const kbHtml = `<img src="${icon('rune')}"> ${inWorld ? 'Скрижаль' : 'Восходящий'} <span class="k">[R]</span>`;
+    if (this.keeperBtn.dataset.sig !== String(inWorld)) { this.keeperBtn.dataset.sig = String(inWorld); this.keeperBtn.innerHTML = kbHtml; }
+    const tabletShown = !inWorld || (g.world.features.tablet && s.tree.stage >= (g.world.tabletStage ?? 0));
     if (this.keeperBtn.classList.contains('hidden') === tabletShown) this.keeperBtn.classList.toggle('hidden', !tabletShown);
 
     if (inWorld) {
@@ -1412,7 +1510,11 @@ export class Hud {
     this.renderChoice();
 
     this.bannerTimer -= dt;
-    if (this.bannerTimer <= 0) this.banner.classList.remove('show');
+    if (this.bannerTimer <= 0) {
+      const next = this.bannerQueue.shift();
+      if (next) this.showBanner(next[0], next[1], false, next[2]);
+      else this.banner.classList.remove('show');
+    }
     this.noticeTimer -= dt;
     if (this.noticeTimer <= 0) this.notice.classList.remove('show');
     this.updateTips(g);

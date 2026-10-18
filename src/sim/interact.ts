@@ -1,7 +1,7 @@
 import { SLOTS, WORLD } from '../data/balance';
 import { BASE_TIERS, MAX_TIER, NESTS, NEST_ROLE, type Family, type SpecId } from '../data/nests';
 import { TREE_STAGES } from '../data/tree';
-import { INWORLD } from '../data/worlds';
+import { INWORLD, STAGE_INSTR } from '../data/worlds';
 import type { Game } from './game';
 import type { DropKind, Structure } from './types';
 
@@ -130,7 +130,10 @@ function nestTarget(g: Game, st: Structure): Interactable {
   const options: FocusOption[] = [];
   let act: Interactable['act'];
   let reason: string | undefined;
-  if (st.tier === BASE_TIERS - 1) {
+  if (st.tier === BASE_TIERS - 1 && !g.specOpen()) {
+    // the fork is shown locked until the world's stage opens it (micro: never — the nest is at its top)
+    reason = g.specLockReason() ?? undefined;
+  } else if (st.tier === BASE_TIERS - 1) {
     for (const spec of ['A', 'B'] as SpecId[]) {
       const p = g.specPrice(st, spec);
       options.push({ id: spec, label: fam.specs[spec].name, price: p.amber, star: p.star });
@@ -140,7 +143,7 @@ function nestTarget(g: Game, st: Structure): Interactable {
     const p = g.upgradePrice(st);
     if (p) options.push({ id: 'up', label: `Уровень ${st.tier + 2}`, price: p.amber, star: p.star });
     act = () => g.upgrade(st.id);
-  } else if (g.world.ascendStage !== undefined && g.state.tree.stage >= g.world.ascendStage) {
+  } else if (g.world.ascendStage !== undefined && g.ascendOpen()) {
     options.push({ id: 'ascend', label: `Возвышение ${st.ascend + 1}`, price: g.ascendCost(st) });
     act = () => g.ascendNest(st.id);
   } else {
@@ -178,7 +181,9 @@ const trunkProvider: InteractProvider = (g) => {
   if (g.world.features.tablet) {
     out.push({
       kind: 'stone', id: 'stone', x: tx + INWORLD.stone, label: 'Камень Скрижали',
-      role: 'Скрижаль рун — прокачка за Звёздную Кровь', canAct: false, reason: 'Скрижаль откроется позже',
+      role: 'S или W — открыть Скрижаль: ранги рун за Звёздную Кровь',
+      canAct: s.tree.stage >= (g.world.tabletStage ?? 0),
+      reason: s.tree.stage >= (g.world.tabletStage ?? 0) ? undefined : `Скрижаль пробудится, когда Древо станет ${STAGE_INSTR[g.world.tabletStage ?? 0]}`,
     });
   }
   return out;

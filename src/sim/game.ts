@@ -16,7 +16,7 @@ import {
   type FormId, type KeeperRuneId, type PropertyDef,
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
-import { INWORLD, WORLDS, isWorldId, type WorldDef, type WorldId } from '../data/worlds';
+import { INWORLD, INWORLD_RUNE_KEYS, STAGE_INSTR, WORLDS, isWorldId, type RuneUnlock, type WorldDef, type WorldId } from '../data/worlds';
 import { focusOf, setVerb, spillAmber, updateInteract, cycleFocusOption, type Focus } from './interact';
 import { mulberry32 } from './rng';
 import type { Choice, Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Projectile, Soldier, Structure, Tunnel } from './types';
@@ -142,7 +142,8 @@ export class Game {
     this.recalc();
     this.state.tree.hp = this.treeMaxHp();
     this.state.keeper.hp = this.keeperMaxHp();
-    if (opts.startRune) this.offerDawn(true);
+    if (this.world.features.inWorld) this.applyRuneUnlocks();
+    if (opts.startRune && this.world.features.roulette) this.offerDawn(true);
   }
 
   // ───────────────────────────── derived stats ─────────────────────────
@@ -187,6 +188,7 @@ export class Game {
 
   /** Raise an installed numeric Property one level (+50% of its effect per level). */
   upgradeProperty(rune: KeeperRuneId, index: number): boolean {
+    if (!this.world.features.props) return false;
     const id = this.state.keeper.props[rune][index];
     const p = id ? propertyById(id) : undefined;
     if (!p || !propUpgradable(p)) return this.deny('Это Свойство не прокачивается — его усиливают Грани');
@@ -211,6 +213,7 @@ export class Game {
 
   /** Pull a Property out of a rune slot for Star Blood. */
   removeProperty(rune: KeeperRuneId, index: number): boolean {
+    if (!this.world.features.props) return false;
     const k = this.state.keeper;
     const id = k.props[rune][index];
     const p = id ? propertyById(id) : undefined;
@@ -299,7 +302,7 @@ export class Game {
   /** Point-upgrade one aspect of a nest (damage, reach or speed). */
   upgradeAspect(id: number, key: Aspect): boolean {
     const st = this.state.structures.find((x) => x.id === id);
-    if (!st || this.over) return false;
+    if (!st || this.over || !this.world.features.aspects) return false;
     const cost = this.aspectCost(st, key);
     if (this.state.amber < cost) return this.deny('Не хватает Янтаря');
     this.state.amber -= cost;
@@ -320,6 +323,7 @@ export class Game {
 
   /** Build a nest with merge stars right away (no need to plant three and fuse them). */
   buildStars(slotId: string, family: Family, stars: number): boolean {
+    if (stars > 0 && !this.world.features.stars) return this.deny('Гнёзд со звёздами здесь нет');
     const price = this.priceStars(family, stars);
     if (!this.canPay(price)) return this.deny('Не хватает Янтаря на гнездо со звёздами');
     const extra = { amber: price.amber - this.buildPrice(family).amber, star: price.star - this.buildPrice(family).star };
@@ -379,6 +383,8 @@ export class Game {
   learnAbility(id: AbilityId, gift = false): boolean {
     const s = this.state;
     if (s.keeper.learned[id]) return false;
+    // in the world runes are never bought: the world's script gives them (spec §4)
+    if (this.world.features.inWorld && !gift) return this.deny(this.runeLockHint(id) ?? 'Этой руны нет в этом мире');
     if (!gift && !this.abilityAvailable(id)) return this.deny(`Руна откроется на стадии Древа ${ABILITIES[id].unlockStage}`);
     if (!gift && s.star < ABILITIES[id].learn) return this.deny('Нужна Звёздная Кровь — её роняют Черви');
     if (!gift) s.star -= ABILITIES[id].learn;
@@ -474,10 +480,158 @@ export class Game {
   cycleOption(step: number) { cycleFocusOption(this, step); }
   /** The interactable the Keeper stands at (nearest within reach), or null. */
   focus(): Focus | null { return focusOf(this); }
-  /** Cast a rune ahead of the Keeper (no mouse): `INWORLD.castAhead` px along his facing. */
+  /**
+   * Cast a rune ahead of the Keeper (no mouse, spec §4): the Spear flies along his facing, the
+   * Hammer leaps forward (`hammerTarget`), the Starfall falls on the densest pack ahead
+   * (`starfallTarget`); anything else at `INWORLD.castAhead` px along his facing.
+   */
   castAhead(id: AbilityId): boolean {
     const k = this.state.keeper;
-    return this.cast(id, k.x + k.dir * INWORLD.castAhead);
+    const tx = id === 'hammer' ? this.hammerTarget() : id === 'starfall' ? this.starfallTarget() : k.x + k.dir * INWORLD.castAhead;
+    return this.cast(id, tx);
+  }
+
+  /** In-world rune key (1/2/3) → the rune it casts in this world, or null. */
+  runeForKey(key: string): AbilityId | null {
+    const id = INWORLD_RUNE_KEYS[key];
+    return id && this.world.runes.includes(id) ? id : null;
+  }
+  /** Press an in-world rune key: cast its rune ahead (false if the key has no rune here). */
+  castKey(key: string): boolean {
+    const id = this.runeForKey(key);
+    return id ? this.castAhead(id) : false;
+  }
+
+  /** Can a rune aim at this creature (alive, above ground, not a neutral grazer)? */
+  private runeTarget(e: Enemy) { return !e.dead && e.layer !== 'under' && !e.neutral; }
+
+  /**
+   * «Прыжок Молота» landing point: a fixed leap (`ABILITIES.hammer.leap` × rank area) along the
+   * Keeper's facing, clamped to the world; when a creature stands within the leap, he lands
+   * just before the nearest one instead of jumping over it.
+   */
+  hammerTarget(): number {
+    const k = this.state.keeper;
+    const reach = ABILITIES.hammer.leap * this.runeArea('hammer');
+    let to = k.x + k.dir * reach;
+    let best = Infinity;
+    for (const e of this.state.enemies) {
+      if (!this.runeTarget(e) || e.layer === 'air') continue;
+      const d = (e.x - k.x) * k.dir;
+      if (d <= 0 || d > reach || d >= best) continue;
+      best = d;
+      to = e.x - k.dir * (ENEMIES[e.kind].radius + INWORLD.hammerStop);
+    }
+    if ((to - k.x) * k.dir < 0) to = k.x;
+    return Math.max(8, Math.min(WORLD.width - 8, to));
+  }
+
+  /**
+   * Starfall aim: the centre of the densest pack of hostile creatures in the light (or just
+   * outside it) from `INWORLD.starBehind` px behind to `INWORLD.starAhead` px ahead of the
+   * Keeper; with no pack there, `INWORLD.castAhead` px ahead.
+   */
+  starfallTarget(): number {
+    const s = this.state, k = s.keeper;
+    const near = s.tree.radius + INWORLD.starNearLit;
+    const xs = s.enemies.filter((e) => {
+      if (!this.runeTarget(e)) return false;
+      const d = (e.x - k.x) * k.dir;
+      return d >= -INWORLD.starBehind && d <= INWORLD.starAhead && (e.lit || Math.abs(e.x - WORLD.treeX) <= near);
+    }).map((e) => e.x);
+    if (!xs.length) return k.x + k.dir * INWORLD.castAhead;
+    // the stars cover ±spread around the aim: count who is under them, take the fullest window
+    const half = ABILITIES.starfall.spread * this.runeArea('starfall');
+    let best: number[] = [];
+    for (const c of xs) {
+      const pack = xs.filter((x) => Math.abs(x - c) <= half);
+      if (pack.length > best.length) best = pack;
+    }
+    return best.reduce((a, x) => a + x, 0) / best.length;
+  }
+
+  // ─────────────────────────── in-world runes (spec §4) ───────────────────────────
+
+  /** How a rune is learned in this world (in-world only), or undefined. */
+  runeUnlock(id: AbilityId): RuneUnlock | undefined { return this.world.runeUnlocks?.find((r) => r.rune === id); }
+
+  /** Short lock hint for a not-yet-known in-world rune («стадия 4»), or null if it isn't coming. */
+  runeLockHint(id: AbilityId): string | null {
+    const u = this.runeUnlock(id);
+    if (!u || this.state.keeper.learned[id]) return null;
+    if (u.when.kind === 'stage') return `стадия ${u.when.stage + 1}`;
+    if (u.when.kind === 'gift') return `дар после ночи ${u.when.night}`;
+    return null;
+  }
+
+  /**
+   * Learn the in-world runes whose time has come: `start` ones silently, `stage` ones when the
+   * Tree reaches their stage (with a `runeLearned` event). Gifts come at dawn (`endNight`).
+   */
+  private applyRuneUnlocks() {
+    const k = this.state.keeper;
+    for (const u of this.world.runeUnlocks ?? []) {
+      if (k.learned[u.rune]) continue;
+      if (u.when.kind === 'start') k.learned[u.rune] = true;
+      else if (u.when.kind === 'stage' && this.state.tree.stage >= u.when.stage) this.giftRune(u, 'stage');
+    }
+  }
+
+  /** The world's fixed rune gift: learned for free with a banner and the Observer's line. */
+  private giftRune(u: RuneUnlock, by: 'gift' | 'stage') {
+    if (!this.learnAbility(u.rune, true)) return;
+    this.emit({ type: 'runeLearned', ability: u.rune, by, line: u.line });
+  }
+
+  /** Star Blood price of the next rune rank (world price multiplier applied). */
+  runeRankPrice(rid: KeeperRuneId): number {
+    return Math.round(runeRankCost(this.state.keeper.runeRank[rid] + 1) * this.world.prices.rune);
+  }
+
+  /** In-world: why this rune can't be promoted right now (null = it can). */
+  promoteBlock(rid: AbilityId): string | null {
+    const k = this.state.keeper;
+    if (!this.world.features.tablet) return 'Скрижали нет в этом мире';
+    const at = this.tabletReason();
+    if (at) return at;
+    if (!this.world.runes.includes(rid)) return 'Этой руны нет в этом мире';
+    if (!k.learned[rid]) return `Руна ещё не открыта${this.runeLockHint(rid) ? ` · ${this.runeLockHint(rid)}` : ''}`;
+    if (k.runeRank[rid] >= INWORLD.maxRuneRank) return 'Высший ранг';
+    const cost = this.runeRankPrice(rid);
+    if (this.state.star < cost) return `Нужна Звёздная Кровь: ${cost}`;
+    return null;
+  }
+
+  /** In-world: why the Tablet won't open here (null = it opens). Legacy: always open if the world has one. */
+  tabletReason(): string | null {
+    const w = this.world;
+    if (!w.features.tablet) return 'Скрижали нет в этом мире';
+    if (!w.features.inWorld) return null;
+    const from = w.tabletStage ?? 0;
+    if (this.state.tree.stage < from) return `Скрижаль пробудится, когда Древо станет ${STAGE_INSTR[from]}`;
+    if (this.focus()?.kind !== 'stone') return 'Скрижаль — у камня рядом с Древом';
+    return null;
+  }
+  /** Can the Tablet be opened right now (in-world: only standing at its stone)? */
+  canOpenTablet(): boolean { return this.tabletReason() === null; }
+
+  /** Do nests take the A/B specialization here and now (in-world: from `world.specStage`)? */
+  specOpen(): boolean {
+    const w = this.world;
+    if (!w.features.inWorld) return true;
+    return w.specStage !== undefined && this.state.tree.stage >= w.specStage;
+  }
+  /** Why the fork is closed (in-world), or null. */
+  specLockReason(): string | null {
+    if (this.specOpen()) return null;
+    const st = this.world.specStage;
+    return st === undefined ? 'Гнездо на пределе' : `Развилка откроется, когда Древо станет ${STAGE_INSTR[st]}`;
+  }
+  /** In-world: may nests take «Возвышение» now (from `world.ascendStage`)? */
+  ascendOpen(): boolean {
+    const w = this.world;
+    if (!w.features.inWorld) return true;
+    return w.ascendStage !== undefined && this.state.tree.stage >= w.ascendStage;
   }
 
   /** Add poured Amber to the Tree's growth (the altar's pledge) and grow when it is full. */
@@ -615,6 +769,7 @@ export class Game {
   specialize(structureId: number, spec: SpecId): boolean {
     const st = this.state.structures.find((x) => x.id === structureId);
     if (!st || this.over || st.tier !== BASE_TIERS - 1) return false;
+    if (!this.specOpen()) return this.deny(this.specLockReason()!);
     const price = this.specPrice(st, spec);
     if (!this.canPay(price)) return this.deny(price.star > this.state.star ? 'Нужна Звёздная Кровь — её роняют Черви' : 'Не хватает Янтаря');
     this.pay(price);
@@ -661,7 +816,7 @@ export class Game {
   mergeNests(structureId: number): boolean {
     const s = this.state;
     const st = s.structures.find((x) => x.id === structureId);
-    if (!st || this.over) return false;
+    if (!st || this.over || !this.world.features.merge) return false;
     const partners = this.mergePartners(st);
     if (!partners) return this.deny('Нужно ещё 2 таких же гнезда того же ранга слияния');
     const res = this.mergeResult(st, partners);
@@ -687,6 +842,7 @@ export class Game {
     const st = s.structures.find((x) => x.id === structureId);
     if (!st || this.over) return false;
     if (st.tier < MAX_TIER - 1) return this.deny('Сначала мастерство специализации');
+    if (!this.ascendOpen()) return this.deny('Возвышение здесь ещё не открыто');
     const c = this.ascendCost(st);
     if (!this.canPay({ amber: c, star: 0 })) return this.deny('Не хватает Янтаря');
     this.pay({ amber: c, star: 0 });
@@ -839,6 +995,7 @@ export class Game {
   ringCost() { return RINGS.cost(this.state.tree.rings); }
   addRing(): boolean {
     const s = this.state;
+    if (this.world.features.inWorld) return false;
     if (this.growNeed() > 0) return this.deny('Сначала вырасти Великое Игг-Древо');
     const c = this.ringCost();
     if (s.amber < c) return this.deny('Не хватает Янтаря');
@@ -853,6 +1010,7 @@ export class Game {
   /** Raise an Ascended attribute with Star Blood or a Lesser Rune of Development. */
   raiseAttr(id: AttrId, useDevRune = false): boolean {
     const s = this.state;
+    if (!this.world.features.keeperRanks) return false;
     const lv = s.keeper.attrs[id];
     if (lv >= ATTR_MAX) return this.deny('Атрибут развит до предела 10/10');
     if (useDevRune) {
@@ -871,6 +1029,7 @@ export class Game {
   /** Keeper Ascension: spend Star Blood for the next rank. */
   ascend(): boolean {
     const k = this.state.keeper;
+    if (!this.world.features.keeperRanks) return false;
     const next = KEEPER_RANKS[k.rank + 1];
     if (!next) return this.deny('Высший ранг');
     if (this.state.star < next.cost) return this.deny('Нужна Звёздная Кровь — её роняют Черви');
@@ -946,7 +1105,7 @@ export class Game {
   /** The Observer's treasury: buy a Property for Star Blood and install it into a rune slot. */
   buyProperty(id: string): boolean {
     const p = propertyById(id);
-    if (!p || this.over) return false;
+    if (!p || this.over || !this.world.features.props) return false;
     if (!this.canInstall(p)) {
       const k = this.state.keeper;
       return this.deny(p.rank > k.runeRank[p.rune] ? `Свойство ранга «${RUNE_RANKS[p.rank]}» не встанет в руну ранга «${RUNE_RANKS[Math.min(4, k.runeRank[p.rune])]}» — повысь руну`
@@ -968,6 +1127,7 @@ export class Game {
 
   /** Forge a 5th or 6th slot into a rune for a lot of Amber and Star Blood. */
   buyRuneSlot(rune: KeeperRuneId): boolean {
+    if (!this.world.features.props) return false;
     const p = this.slotPrice(rune);
     if (!p) return this.deny(this.state.keeper.slots[rune] < DEV_SLOTS ? 'Сначала 4-й слот — Малой Руной Развития' : 'В руне уже 6 слотов');
     if (!this.canPay(p)) return this.deny('Нужно больше Янтаря и Звёздной Крови');
@@ -979,6 +1139,7 @@ export class Game {
 
   /** Apply a Lesser Rune of Development: opens the 4th slot of a keeper rune. */
   developRune(rune: KeeperRuneId): boolean {
+    if (!this.world.features.props) return false;
     const k = this.state.keeper;
     if (this.state.devRunes <= 0) return this.deny('Нет Малой Руны Развития');
     if (k.slots[rune] >= DEV_SLOTS) return this.deny('4-й слот уже открыт — 5-й и 6-й куются за Янтарь и Кровь');
@@ -1064,6 +1225,12 @@ export class Game {
     const s = this.state;
     const k = s.keeper;
     if (this.over || !k.alive) return false;
+    // in the world only its own runes exist (no Radiance / Swarm / Time Stop there)
+    if (this.world.features.inWorld && !this.world.runes.includes(id)) return false;
+    if (this.world.features.inWorld && !this.abilityUnlocked(id)) {
+      const hint = this.runeLockHint(id);
+      return this.deny(hint ? `Руна «${ABILITIES[id].name}» откроется: ${hint}` : 'Руна ещё не открыта');
+    }
     if (!this.abilityUnlocked(id)) return this.deny(this.abilityAvailable(id) ? `Изучи руну «${ABILITIES[id].name}» в Скрижали [R]` : `Руна откроется на стадии Древа ${ABILITIES[id].unlockStage}`);
     // pressing the spear again lets go of the sustained beam
     if (id === 'spear' && k.channel > 0) { this.endChannel(); return true; }
@@ -1529,6 +1696,19 @@ export class Game {
   /** «Повышение»: raise a keeper rune's rank for Star Blood. */
   promoteRune(rid: KeeperRuneId): boolean {
     const k = this.state.keeper;
+    if (this.world.features.inWorld) {
+      // the simplified Tablet (spec §4): Дерево → Бронза → Серебро → Золото, the Form at Серебро,
+      // no facets, no star ranks; only at the stone
+      if (rid === 'light') return this.deny('Этой руны нет в этом мире');
+      const why = this.promoteBlock(rid);
+      if (why) return this.deny(why);
+      this.state.star -= this.runeRankPrice(rid);
+      k.runeRank[rid]++;
+      const fr = rid === 'spear' || rid === 'hammer' || rid === 'starfall' ? rid : null;
+      if (fr && k.runeRank[rid] === FORM_RANK && !k.forms[fr]) this.state.choices.push({ kind: 'form', rune: rid, rank: FORM_RANK, offers: ['A', 'B'] });
+      this.emit({ type: 'rune', id: `rank:${rid}` });
+      return true;
+    }
     const r = k.runeRank[rid];
     const cost = runeRankCost(r + 1);
     if (this.state.star < cost) return this.deny('Нужна Звёздная Кровь');
@@ -1708,6 +1888,11 @@ export class Game {
     if (!s.keeper.alive && !this.world.features.inWorld) s.keeper.respawn = 0.5;
     this.adaptWrath(finished);
     this.emit({ type: 'dawn', night: finished, gift });
+    // in-world: the Observer's gifts are fixed by the world's script (no roulette, spec §4)
+    for (const u of this.world.runeUnlocks ?? []) {
+      if (u.when.kind === 'gift' && finished + 1 >= u.when.night && !s.keeper.learned[u.rune]) this.giftRune(u, 'gift');
+    }
+    if (!this.world.features.roulette) return;
     this.offerDawn(false);
     for (let i = 0; i < extraDawns; i++) this.offerDawn(false);
   }
@@ -2045,7 +2230,7 @@ export class Game {
     if (def.star >= 1) star = Math.round(def.star * Math.sqrt(bounty)) + this.mods.wormStar;
     else if (def.star > 0 && this.rand() < def.star) star = 1;
     star = Math.round(star * (1 + this.mods.starGain));
-    if (def.devRune > 0 && this.rand() < def.devRune) {
+    if (def.devRune > 0 && this.rand() < def.devRune && this.world.features.props) {
       s.devRunes++;
       this.emit({ type: 'devRune', x: e.x });
     }
@@ -2822,8 +3007,9 @@ export class Game {
       if (d > prevR && d <= this.treeRadius()) this.damageEnemy(e, TREE.growBurn);
     }
     this.refreshNestHp();
-    if (TREE_BRANCHES[t.stage]) s.choices.push({ kind: 'branch', stage: t.stage });
+    if (this.world.features.branches && TREE_BRANCHES[t.stage]) s.choices.push({ kind: 'branch', stage: t.stage });
     this.emit({ type: 'treeGrew', stage: t.stage });
+    if (this.world.features.inWorld) this.applyRuneUnlocks();
   }
 
   private updateTreeRadius(dt: number) {

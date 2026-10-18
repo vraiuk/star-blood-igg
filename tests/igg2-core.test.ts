@@ -205,7 +205,9 @@ describe('pour: pledges and prepaid actions', () => {
   });
 
   it('upgrade, then the A/B fork chosen with Q/E', () => {
-    const g = micro();
+    // the fork exists in the medium world from stage 2 (micro has no specializations — phase 4)
+    const g = new Game({ seed: 1, world: 'medium' });
+    g.state.tree.stage = 2;
     g.state.amber = 500;
     g.state.star = 50;
     expect(g.build('L0', 'hive')).toBe(true);
@@ -226,7 +228,8 @@ describe('pour: pledges and prepaid actions', () => {
   });
 
   it('the fork waits for Star Blood (no pouring without it)', () => {
-    const g = micro();
+    const g = new Game({ seed: 1, world: 'medium' });
+    g.state.tree.stage = 2;
     g.state.amber = 500;
     g.build('L0', 'hive');
     g.upgrade(g.structureAt('L0')!.id);
