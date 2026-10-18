@@ -16,7 +16,8 @@ import {
   type FormId, type KeeperRuneId, type PropertyDef,
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
-import { WORLDS, isWorldId, type WorldDef, type WorldId } from '../data/worlds';
+import { INWORLD, WORLDS, isWorldId, type WorldDef, type WorldId } from '../data/worlds';
+import { focusOf, setVerb, spillAmber, updateInteract, cycleFocusOption, type Focus } from './interact';
 import { mulberry32 } from './rng';
 import type { Choice, Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Projectile, Soldier, Structure, Tunnel } from './types';
 
@@ -113,7 +114,7 @@ export class Game {
       amber: this.world.startTreasury + this.mods.startAmber, star: this.mods.startStar, devRunes: 0, wrath: 1, rushedDawns: 0,
       enemies: [], structures: [], projectiles: [], drops: [], workers: [], soldiers: [], tempLights: [], burns: [], tunnels: [],
       keeper: {
-        x: WORLD.treeX - 28, dir: 1, hp: KEEPER.hp, alive: true, respawn: 0, light: KEEPER.startLight, move: 0,
+        x: WORLD.treeX - 28, purse: 0, dir: 1, hp: KEEPER.hp, alive: true, respawn: 0, light: KEEPER.startLight, move: 0,
         cooldowns: { spear: 0, hammer: 0, starfall: 0, radiance: 0, swarm: 0, timestop: 0 },
         cdMax: { spear: 1, hammer: 1, starfall: 1, radiance: 1, swarm: 1, timestop: 1 }, charge: 0, rank: 0,
         timeStopT: 0, timeStopMax: 0, timeStopNights: 0, chord: 0, chordT: 0, lastCast: null, heat: 0, heatT: 0,
@@ -135,6 +136,8 @@ export class Game {
       pending: [], choices: [], events: [],
       stats: { kills: 0, amberCollected: 0, starCollected: 0, amberToTree: 0, time: 0, dmg: {}, casts: {}, killsBy: {}, treeDmgBy: {}, keeperDeaths: 0, rushes: 0, nights: [] },
       nextId: 1, time: 0,
+      pledges: {}, unlockedFamilies: [],
+      interact: { pour: false, take: false, sell: false, holdT: 0, acc: 0, sellT: 0, focusId: null, opt: {}, pledgeX: {}, told: false },
     };
     this.recalc();
     this.state.tree.hp = this.treeMaxHp();
@@ -276,7 +279,7 @@ export class Game {
   }
 
   private scalePrice(p: Price): Price {
-    return { amber: Math.round(p.amber * Math.max(0.5, 1 + this.mods.nestCost)), star: p.star };
+    return { amber: Math.round(p.amber * Math.max(0.5, 1 + this.mods.nestCost) * this.world.prices.nest), star: p.star };
   }
 
   buildPrice(family: Family): Price { return this.scalePrice(NESTS[family].costs[0]); }
@@ -332,7 +335,27 @@ export class Game {
     return true;
   }
 
-  canPay(p: Price) { return this.state.amber >= p.amber && this.state.star >= p.star; }
+  canPay(p: Price) { return (this.prepaid ?? this.state.amber) >= p.amber && this.state.star >= p.star; }
+
+  /**
+   * In-world prepaid source: while set, `canPay`/`pay` draw Amber from this pledge instead of
+   * the Treasury (Star Blood still comes from `state.star`). See `withPrepaid`.
+   */
+  private prepaid: number | null = null;
+
+  /**
+   * Run a command paid by `amount` of already-poured Amber (a fulfilled pledge, spec §3).
+   * Returns whether it succeeded and the Amber left over (to go back to the purse).
+   */
+  withPrepaid(amount: number, fn: () => boolean): { ok: boolean; left: number } {
+    this.prepaid = amount;
+    try {
+      const ok = fn();
+      return { ok, left: ok ? this.prepaid : amount };
+    } finally {
+      this.prepaid = null;
+    }
+  }
 
   abilityCost(id: AbilityId) {
     const own = id === 'spear' ? this.mods.spearCost : id === 'hammer' ? this.mods.hammerCost
@@ -413,11 +436,57 @@ export class Game {
   }
   structureAt(slotId: string): Structure | undefined { return this.state.structures.find((s) => s.slotId === slotId); }
 
+  /** Amber the current stage needs to grow (world price multiplier applied; 0 at max stage). */
+  growCost(): number {
+    if (this.state.tree.stage >= this.world.maxStage) return 0;
+    return Math.round(this.stageDef.growCost * this.world.prices.grow);
+  }
+
   /** Amber still needed for the next stage (0 at max stage). */
   growNeed(): number {
-    const def = this.stageDef;
-    if (this.state.tree.stage >= this.world.maxStage) return 0;
-    return def.growCost === 0 ? 0 : def.growCost - this.state.tree.growth;
+    const c = this.growCost();
+    return c === 0 ? 0 : c - this.state.tree.growth;
+  }
+
+  /** Is a nest family open in this world (start / Tree stage / woken Sleeping Creature)? */
+  familyOpen(f: Family): boolean {
+    if (f === 'termite' && !this.world.features.termite) return false;
+    const rule = this.world.families.find((r) => r.family === f);
+    if (!rule) return false;
+    const u = rule.unlock;
+    return u.kind === 'start' || (u.kind === 'stage' && this.state.tree.stage >= u.stage)
+      || (u.kind === 'sleeper' && this.state.unlockedFamilies.includes(f));
+  }
+
+  // ─────────────────────────── in-world verbs (spec §3) ───────────────────────────
+
+  /** Amber in the Keeper's purse (in-world worlds). */
+  get purse() { return this.state.keeper.purse; }
+  /** Purse capacity at the current Tree stage (Infinity in legacy). */
+  purseCap(): number { return this.world.features.inWorld ? this.world.purseCap(this.state.tree.stage) : Infinity; }
+  /** Hold / release S: pour the purse into the focused object. */
+  setPour(on: boolean) { setVerb(this, 'pour', on); }
+  /** Hold / release W: take Amber from the Treasury (at the hollow). */
+  setTake(on: boolean) { setVerb(this, 'take', on); }
+  /** Hold / release X: sell the focused nest after `INWORLD.sellHold` s. */
+  setSell(on: boolean) { setVerb(this, 'sell', on); }
+  /** Q/E: choose another option of the focused object (the pledge is kept). */
+  cycleOption(step: number) { cycleFocusOption(this, step); }
+  /** The interactable the Keeper stands at (nearest within reach), or null. */
+  focus(): Focus | null { return focusOf(this); }
+  /** Cast a rune ahead of the Keeper (no mouse): `INWORLD.castAhead` px along his facing. */
+  castAhead(id: AbilityId): boolean {
+    const k = this.state.keeper;
+    return this.cast(id, k.x + k.dir * INWORLD.castAhead);
+  }
+
+  /** Add poured Amber to the Tree's growth (the altar's pledge) and grow when it is full. */
+  pourGrowth(n: number) {
+    const s = this.state;
+    s.tree.growth += n;
+    s.stats.amberToTree += n;
+    const c = this.growCost();
+    if (c > 0 && s.tree.growth >= c) this.grow();
   }
 
   get over(): boolean { return this.state.phase === 'lost'; }
@@ -465,6 +534,11 @@ export class Game {
       this.milestoneStars = d.milestoneStars ?? 0;
       this.killsAtNight = d.killsAtNight ?? 0;
       this.honeyAcc = new Map(d.honey ?? []);
+      // older saves: in-world fields
+      this.state.keeper.purse ??= 0;
+      this.state.pledges ??= {};
+      this.state.unlockedFamilies ??= [];
+      this.state.interact ??= { pour: false, take: false, sell: false, holdT: 0, acc: 0, sellT: 0, focusId: null, opt: {}, pledgeX: {}, told: false };
       this.recalc();
       this.refreshNestHp();
       return true;
@@ -505,7 +579,9 @@ export class Game {
     if (!slot || !this.slotUnlocked(slot) || this.structureAt(slotId)) return this.deny('Руна недоступна');
     const def = NESTS[family];
     if (def.underground !== slot.underground) return this.deny('Не тот слой');
-    if (!!slot.crown !== CROWN_FAMILIES.has(family) && !(slot.crown && family === 'hive')) return this.deny(slot.crown ? 'В крону — только утилитарные гнёзда' : 'Это гнездо живёт в кроне Древа');
+    if (this.world.features.inWorld && !this.familyOpen(family)) return this.deny('Это гнездо здесь ещё не открыто');
+    // without a crown (in-world worlds) the crown families — the cocoon — live on the surface
+    if (this.world.features.crown && !!slot.crown !== CROWN_FAMILIES.has(family) && !(slot.crown && family === 'hive')) return this.deny(slot.crown ? 'В крону — только утилитарные гнёзда' : 'Это гнездо живёт в кроне Древа');
     const price = this.buildPrice(family);
     if (!this.canPay(price)) return this.deny('Не хватает Янтаря');
     this.pay(price);
@@ -612,8 +688,8 @@ export class Game {
     if (!st || this.over) return false;
     if (st.tier < MAX_TIER - 1) return this.deny('Сначала мастерство специализации');
     const c = this.ascendCost(st);
-    if (s.amber < c) return this.deny('Не хватает Янтаря');
-    s.amber -= c;
+    if (!this.canPay({ amber: c, star: 0 })) return this.deny('Не хватает Янтаря');
+    this.pay({ amber: c, star: 0 });
     st.spentAmber += c;
     st.ascend++;
     const hp = this.nestStats(st).hp;
@@ -633,8 +709,14 @@ export class Game {
     if (i < 0 || this.over) return false;
     const st = s.structures[i];
     const v = this.sellValue(st);
-    s.amber += v.amber;
-    s.star += v.star;
+    if (this.world.features.inWorld) {
+      // in the world the refund falls out of the nest as drops to pick up (spec §3)
+      spillAmber(this, st.x, v.amber, 'amber', 0);
+      spillAmber(this, st.x, v.star, 'star', 0);
+    } else {
+      s.amber += v.amber;
+      s.star += v.star;
+    }
     s.structures.splice(i, 1);
     this.emit({ type: 'sold', x: st.x });
     return true;
@@ -653,7 +735,7 @@ export class Game {
     s.amber -= give;
     s.tree.growth += give;
     s.stats.amberToTree += give;
-    if (s.tree.growth >= this.stageDef.growCost) this.grow();
+    if (s.tree.growth >= this.growCost()) this.grow();
     return give;
   }
 
@@ -673,6 +755,7 @@ export class Game {
    */
   sacrificeKeeper(): boolean {
     const s = this.state, k = s.keeper;
+    if (this.world.features.inWorld) return false;
     if (this.over || !k.alive || s.phase !== 'night') return this.deny('Жертва Света — только ночью и живым');
     this.src = 'keeper';
     const mult = this.abilityMult('hammer');
@@ -693,6 +776,7 @@ export class Game {
   /** The Observer's exchange: buy Star Blood for Amber, or sell it back. */
   exchange(dir: 'buyStar' | 'sellStar', n = 1): boolean {
     const s = this.state;
+    if (!this.world.features.exchange) return false;
     if (dir === 'buyStar') {
       const cost = EXCHANGE.amberPerStar * n;
       if (s.amber < cost) return this.deny('Не хватает Янтаря');
@@ -718,7 +802,8 @@ export class Game {
   revive(mode: 'amber' | 'sacrifice'): boolean {
     const s = this.state;
     const k = s.keeper;
-    if (k.alive) return false;
+    // in the world the Keeper simply rises at the Tree after a while (no modal, spec §3)
+    if (k.alive || this.world.features.inWorld) return false;
     if (mode === 'amber') {
       const c = this.reviveCost();
       if (s.amber < c) return this.deny('Не хватает Янтаря на воскрешение');
@@ -1495,6 +1580,7 @@ export class Game {
       this.nightDeadline += dt;
     }
     this.updateKeeper(dt);
+    if (this.world.features.inWorld) updateInteract(this, dt);
     this.updateEnemies(dt);
     this.updateTunnels(dt);
     this.updateStructures(dt);
@@ -1590,7 +1676,10 @@ export class Game {
       this.milestoneStars = this.computeStars();
       this.emit({ type: 'milestone', stars: this.milestoneStars });
     }
-    let gift = Math.round((ECONOMY.dawnBase + ECONOMY.dawnPerNight * (finished + 1)) * (1 + this.mods.dawnGift));
+    const inc = this.world.features.inWorld ? this.world.dawnIncome : undefined;
+    // in-world: the Tree's own income into the Treasury instead of the Observer's gift
+    let gift = inc ? Math.round((inc.base + inc.perStage * s.tree.stage) * (1 + this.mods.dawnGift))
+      : Math.round((ECONOMY.dawnBase + ECONOMY.dawnPerNight * (finished + 1)) * (1 + this.mods.dawnGift));
     // dawns skipped by «Натиск» arrive now: their gifts (the half not paid up front) and roulettes
     for (let i = 1; i <= s.rushedDawns; i++) {
       gift += Math.round((ECONOMY.dawnBase + ECONOMY.dawnPerNight * (finished + 1 - i)) * (1 + this.mods.dawnGift) * (1 - ECONOMY.rushGiftShare));
@@ -1616,7 +1705,7 @@ export class Game {
     s.tunnels = [];
     s.keeper.timeStopNights = Math.max(0, s.keeper.timeStopNights - 1);
     s.keeper.sacrificed = false;
-    if (!s.keeper.alive) s.keeper.respawn = 0.5;
+    if (!s.keeper.alive && !this.world.features.inWorld) s.keeper.respawn = 0.5;
     this.adaptWrath(finished);
     this.emit({ type: 'dawn', night: finished, gift });
     this.offerDawn(false);
@@ -1856,6 +1945,32 @@ export class Game {
     k.hp -= amount * (1 - this.keeperGuard()) * shield;
     k.hitFlash = 0.15;
     this.emit({ type: 'keeperHit' });
+    const inWorld = this.world.features.inWorld;
+    if (inWorld && k.hp > 0 && k.purse > 0) {
+      // every hit knocks a little Amber out of the purse — it can be picked up again
+      const n = Math.min(INWORLD.dropsPerHit, k.purse);
+      k.purse -= n;
+      spillAmber(this, k.x, n, 'amber', INWORLD.knockLock);
+      this.emit({ type: 'knock', x: k.x, amount: n, death: false });
+    }
+    if (k.hp <= 0 && inWorld) {
+      k.hp = 0;
+      k.alive = false;
+      k.channel = 0;
+      k.charge = 0;
+      k.move = 0;
+      s0.stats.keeperDeaths++;
+      // the whole purse spills on the spot; the Keeper rises at the Tree after a while, day or night
+      k.respawn = INWORLD.respawn;
+      const n = k.purse;
+      k.purse = 0;
+      if (n > 0) {
+        spillAmber(this, k.x, n, 'amber', INWORLD.knockLock);
+        this.emit({ type: 'knock', x: k.x, amount: n, death: true });
+      }
+      this.emit({ type: 'keeperDown' });
+      return;
+    }
     if (k.hp <= 0) {
       k.hp = 0;
       k.alive = false;
@@ -2697,7 +2812,7 @@ export class Game {
     const s = this.state;
     const t = s.tree;
     const prevR = s.tree.radius;
-    t.growth -= this.stageDef.growCost;
+    t.growth -= this.growCost();
     t.stage++;
     const prevMax = Math.round(TREE_STAGES[t.stage - 1].maxHp * (1 + this.mods.treeHp));
     t.hp = Math.min(this.treeMaxHp(), t.hp + (this.treeMaxHp() - prevMax) + this.treeMaxHp() * TREE.growHeal);
@@ -2955,13 +3070,29 @@ export class Game {
     const s = this.state;
     const k = s.keeper;
     const magnet = KEEPER.magnetRadius * (1 + this.mods.magnet);
+    const inWorld = this.world.features.inWorld;
+    const autoLoot = this.world.features.autoLoot;
+    const cap = this.purseCap();
     const bank = (d: Drop) => {
+      if (d.kind === 'amber' && inWorld) {
+        // in the world Amber goes into the purse, as much as fits; the rest stays lying
+        const n = Math.min(d.value, Math.max(0, cap - k.purse));
+        if (n <= 0) { d.pulled = false; return; }
+        k.purse += n;
+        s.stats.amberCollected += n;
+        this.emit({ type: 'pickup', kind: d.kind, x: d.x, y: d.y, value: n });
+        d.value -= n;
+        if (d.value > 0) { d.pulled = false; return; }
+        d.life = 0;
+        return;
+      }
       if (d.kind === 'amber') { s.amber += d.value; s.stats.amberCollected += d.value; } else { s.star += d.value; s.stats.starCollected += d.value; }
       d.life = 0;
       this.emit({ type: 'pickup', kind: d.kind, x: d.x, y: d.y, value: d.value });
     };
     for (const d of s.drops) {
       d.age += dt;
+      if (d.lock) d.lock = Math.max(0, d.lock - dt);
       if (d.mode === 3) {
         // drifting away to the sky
         d.y -= (40 + d.age * 10) * dt;
@@ -2969,7 +3100,10 @@ export class Game {
         continue;
       }
       const dist = Math.abs(d.x - k.x) + Math.abs(d.y - (WORLD.groundY - 10)) * 0.4;
-      if (k.alive && dist <= magnet && d.mode !== 2) d.pulled = true;
+      // a full purse leaves Amber lying (in the world); knocked-out drops wait a moment
+      const full = inWorld && d.kind === 'amber' && k.purse >= cap;
+      if (full) d.pulled = false;
+      if (k.alive && dist <= magnet && d.mode !== 2 && !full && !(d.lock && d.lock > 0)) d.pulled = true;
       if (d.pulled && k.alive) {
         const dx = k.x - d.x;
         const dy = WORLD.groundY - 10 - d.y;
@@ -3011,7 +3145,7 @@ export class Game {
       const hy = WORLD.groundY - 12 - Math.sin(d.age * 3 + d.id) * 2;
       if (d.hover > 0.6) d.y += (hy - d.y) * Math.min(1, dt * 4);
       const lit = Math.abs(d.x - WORLD.treeX) <= s.tree.radius;
-      if (lit && d.hover > 1.6 && d.claimed === 0) { d.mode = 2; d.age = 0; continue; }
+      if (autoLoot && lit && d.hover > 1.6 && d.claimed === 0) { d.mode = 2; d.age = 0; continue; }
       if (!lit) {
         d.life -= dt;
         if (d.life <= 0) { d.mode = 3; d.age = 0; d.life = 9; this.emit({ type: 'lostLoot', x: d.x, y: d.y }); }
@@ -3180,7 +3314,8 @@ export class Game {
     }
   }
 
-  private dropAt(x: number, kind: DropKind, value: number) {
+  /** Put a drop lying on the ground at `x` (internal; used by the in-world verbs too). */
+  dropAt(x: number, kind: DropKind, value: number) {
     const s = this.state;
     s.drops.push({
       id: s.nextId++, kind, x, y: WORLD.groundY - 3, vx: 0, vy: 0, value, life: 20, grounded: true, pulled: false,
@@ -3217,14 +3352,18 @@ export class Game {
 
   // ───────────────────────────── util ────────────────────────────────
 
+  /** Pay a price: Amber from the prepaid pledge when one is active (`withPrepaid`), else the Treasury. */
   private pay(p: Price) {
-    this.state.amber -= p.amber;
+    if (this.prepaid !== null) this.prepaid -= p.amber;
+    else this.state.amber -= p.amber;
     this.state.star -= p.star;
   }
 
-  private emit(e: GameEvent) { this.state.events.push(e); }
+  /** Queue an event for the UI (internal; used by `interact.ts`). */
+  emit(e: GameEvent) { this.state.events.push(e); }
 
-  private deny(reason: string): false {
+  /** Refuse a command with a reason the UI shows (internal; used by `interact.ts`). */
+  deny(reason: string): false {
     this.emit({ type: 'denied', reason });
     return false;
   }

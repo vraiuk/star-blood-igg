@@ -120,6 +120,10 @@ export interface WorldDef {
   win: WinDef;
   /** highest game speed offered (×5 only where `rush`) */
   maxSpeed: number;
+  /** in-world: Tree stage (0-based) from which nests can take «Возвышение»; undefined = never */
+  ascendStage?: number;
+  /** in-world dawn income into the Treasury: `base + perStage × stage` (spec §3) */
+  dawnIncome?: { base: number; perStage: number };
   features: WorldFeatures;
 }
 
@@ -163,6 +167,7 @@ export const WORLDS: Record<WorldId, WorldDef> = {
     prices: { nest: 1, grow: 1, rune: 1 },
     win: { kind: 'seed', night: 4, stage: 2 },
     maxSpeed: 2,
+    dawnIncome: { base: 25, perStage: 15 },
     features: { ...IGG2_FEATURES },
   },
   medium: {
@@ -180,8 +185,30 @@ export const WORLDS: Record<WorldId, WorldDef> = {
     prices: { nest: 1, grow: 1, rune: 1 },
     win: { kind: 'rifts', count: 2 },
     maxSpeed: 5,
+    ascendStage: 3,
+    dawnIncome: { base: 30, perStage: 20 },
     features: { ...IGG2_FEATURES, rush: true, tablet: true },
   },
 };
+
+/** In-world verbs and trunk objects (spec §3). Distances in world px, times in seconds. */
+export const INWORLD = {
+  /** focus reach around the Keeper */
+  reach: 14,
+  /** pour / take rate: starts at `rate0` Amber/s and ramps linearly to `rate1` over `rampT` */
+  rate0: 8, rate1: 60, rampT: 2,
+  /** hold X this long on a nest to sell it */
+  sellHold: 1.5,
+  /** hold S this long to crack a geode (phase 5) */
+  geodeHold: 1.2,
+  /** Amber knocked out of the purse per hit; seconds the knocked drops can't be re-picked */
+  dropsPerHit: 2, knockLock: 1.2,
+  /** seconds until the fallen Keeper rises at the Tree (day or night) */
+  respawn: 8,
+  /** trunk objects: offsets from treeX */
+  treasury: -22, altar: 0, stone: 22,
+  /** runes cast ahead of the Keeper without the mouse (hammer / starfall; phase 4 refines) */
+  castAhead: 80,
+} as const;
 
 export const isWorldId = (x: unknown): x is WorldId => x === 'legacy' || x === 'micro' || x === 'medium';

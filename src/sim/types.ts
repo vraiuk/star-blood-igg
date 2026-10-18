@@ -180,6 +180,8 @@ export interface Drop {
   /** seconds spent hovering */
   hover: number;
   age: number;
+  /** in-world: seconds before the Keeper's magnet may take it again (knocked out of the purse) */
+  lock?: number;
 }
 
 export interface TempLight {
@@ -199,6 +201,8 @@ export interface GroundBurn { x: number; halfWidth: number; dps: number; life: n
 
 export interface Keeper {
   x: number;
+  /** in-world worlds: Amber carried by the Keeper (cap: `Game.purseCap()`); 0 in legacy */
+  purse: number;
   dir: 1 | -1;
   hp: number;
   alive: boolean;
@@ -384,7 +388,36 @@ export type GameEvent =
   | { type: 'brood'; x: number }
   | { type: 'milestone'; stars: number }
   | { type: 'lost' }
+  /** in-world: Amber flowed from the purse (or the Treasury) into an object; `progress` 0..1 of its price */
+  | { type: 'pour'; x: number; target: string; amount: number; progress: number }
+  /** in-world: Amber taken from the Treasury into the purse */
+  | { type: 'take'; x: number; amount: number }
+  /** in-world: a pledge was fulfilled and its action ran */
+  | { type: 'pledgeDone'; x: number; target: string }
+  /** in-world: Amber knocked out of the purse by a hit / spilled on death */
+  | { type: 'knock'; x: number; amount: number; death: boolean }
   | { type: 'denied'; reason: string };
+
+/** In-world input and verb timers (spec §3). Held flags are set by `Game.setPour/setTake/setSell`. */
+export interface InteractState {
+  pour: boolean;
+  take: boolean;
+  sell: boolean;
+  /** seconds the current verb has been held on the current focus (rate ramp) */
+  holdT: number;
+  /** fractional Amber accumulated by the rate */
+  acc: number;
+  /** seconds X has been held on the current nest */
+  sellT: number;
+  /** focus id the timers belong to */
+  focusId: string | null;
+  /** chosen option index per object id (Q/E) */
+  opt: Record<string, number>;
+  /** world x of each pledged object (to return the pledge when the object vanishes) */
+  pledgeX: Record<string, number>;
+  /** a refusal was already told for this press */
+  told: boolean;
+}
 
 export interface PendingSpawn {
   at: number;
@@ -444,4 +477,9 @@ export interface GameState {
   stats: Stats;
   nextId: number;
   time: number;
+  /** in-world: Amber poured toward an object's price, by object id (partial payment) */
+  pledges: Record<string, number>;
+  /** in-world: families opened by waking their Sleeping Creature (phase 6) */
+  unlockedFamilies: Family[];
+  interact: InteractState;
 }
