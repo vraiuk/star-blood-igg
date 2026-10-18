@@ -3,6 +3,7 @@ import { beamFalloff, type Game } from '../sim/game';
 import type { GameEvent } from '../sim/types';
 import { type Backdrop, buildBackdrop } from './background';
 import { Camera } from './camera';
+import { CAMERA, PARALLAX } from '../data/camera';
 import { Lighting } from './lighting';
 import { Particles } from './particles';
 import { type Ctx, PAL, line, makeCanvas, rect } from './pixel';
@@ -50,7 +51,10 @@ export class Renderer {
   private lighting!: Lighting;
   /** world geometry the canvases were built for (rebuilt by `setWorld` when it changes) */
   private builtFor = '';
+  /** legacy screen shake, px (inWorld worlds use the camera's trauma instead) */
   private shake = 0;
+  /** the current world uses the follow camera (`features.inWorld`) */
+  private follow = false;
   private treeHurt = 0;
   private growPulse = 0;
   /** full-screen impact flash (Starfall) */
@@ -81,23 +85,37 @@ export class Renderer {
   }
 
   /** Snap the camera (e.g. on a new run). */
-  resetCamera(radius: number) { this.camera.update(radius, 0, true); }
+  resetCamera(radius: number) {
+    this.camera.update(radius, 0, true);
+    this.camera.snap();
+    this.shake = 0;
+  }
+
+  /**
+   * A shake of legacy strength `n` px: the old max-shake in the legacy world, camera trauma
+   * (n × CAMERA.shakeToTrauma, amplitude ∝ trauma²) in inWorld worlds. `set` overrides (legacy).
+   */
+  private bump(n: number, set = false) {
+    if (this.follow) this.camera.addTrauma(n * CAMERA.shakeToTrauma);
+    else this.shake = set ? n : Math.max(this.shake, n);
+  }
 
   /** Feed sim events to visual effects. */
   onEvents(events: GameEvent[], game: Game) {
     const p = this.particles;
     for (const e of events) {
       switch (e.type) {
+        case 'nightStart': this.camera.nightStarted(); break;
         case 'hit': p.hit(e.x, e.y, e.crit); break;
         case 'enemyDied': {
           const big = !!ENEMIES[e.kind].boss || e.kind === 'stalker' || e.kind === 'guard' || e.kind === 'tyrant' || e.kind === 'devourer';
           const y = ENEMIES[e.kind].underground ? e.y : e.y - ENEMIES[e.kind].height * 0.5;
           p.death(e.x, y, !!ENEMIES[e.kind].boss);
-          if (big) this.shake = Math.max(this.shake, ENEMIES[e.kind].boss ? 12 : 2);
+          if (big) this.bump(ENEMIES[e.kind].boss ? 12 : 2);
           break;
         }
         case 'acidSplash': p.acid(e.x, e.y); break;
-        case 'structureLost': p.dust(e.x, e.underground ? e.y : WORLD.groundY - 6); this.shake = Math.max(this.shake, 3); break;
+        case 'structureLost': p.dust(e.x, e.underground ? e.y : WORLD.groundY - 6); this.bump(3); break;
         case 'beam': p.addFx('beam', e.x, e.y, 0.25, 0, e.tx, e.ty); break;
         case 'polaria': p.chain([[e.x, e.y], [e.tx, e.ty]]); break;
         case 'heal': p.heal(e.x, e.y, e.amount); break;
@@ -107,7 +125,7 @@ export class Renderer {
           break;
         case 'devour':
           p.emit(24, e.x, WORLD.groundY - 12, { speed: 70, max: 0.8, colors: ['#c23a5a', '#5a1020', PAL.gold3], gravity: 120 });
-          this.shake = Math.max(this.shake, 6);
+          this.bump(6);
           break;
         case 'sacrifice':
           p.goldBurst(e.x, WORLD.groundY - 14, 220);
@@ -115,26 +133,26 @@ export class Renderer {
           p.addFx('ring', e.x, WORLD.groundY - 10, 0.9, 170);
           p.addFx('growWave', e.x, WORLD.groundY, 0.9, 170);
           this.flash = Math.max(this.flash, 0.8);
-          this.shake = Math.max(this.shake, 18);
+          this.bump(18);
           break;
         case 'plateBreak':
           p.emit(18, e.x, e.y, { speed: 90, max: 0.7, colors: ['#b8c4d8', '#7a7a96', '#e8e8ff'], gravity: 160 });
           p.addFx('ring', e.x, e.y, 0.35, 26);
-          this.shake = Math.max(this.shake, 4);
+          this.bump(4);
           break;
         case 'slam':
           p.addFx('ring', e.x, WORLD.groundY - 10, 0.45, 92 * (1 + game.mods.hammerRadius) * game.runeArea('hammer'));
           p.goldBurst(e.x, WORLD.groundY - 10, 40);
           p.dust(e.x - 10, WORLD.groundY - 2); p.dust(e.x + 10, WORLD.groundY - 2);
-          this.shake = Math.max(this.shake, 5);
+          this.bump(5);
           break;
-        case 'tunnelOpen': p.dust(e.x, WORLD.groundY - 2); p.dust(e.x - 6, WORLD.groundY - 2); this.shake = Math.max(this.shake, 2); break;
+        case 'tunnelOpen': p.dust(e.x, WORLD.groundY - 2); p.dust(e.x - 6, WORLD.groundY - 2); this.bump(2); break;
         case 'tunnelSealed':
           p.dust(e.x, WORLD.groundY - 2); p.dust(e.x + 8, WORLD.groundY - 2); p.dust(e.x - 8, WORLD.groundY - 2);
           p.goldBurst(e.x, WORLD.groundY - 6, 18);
           break;
-        case 'emerge': p.dust(e.x, WORLD.groundY - 2); p.dust(e.x + 6, WORLD.groundY - 2); this.shake = Math.max(this.shake, 3); break;
-        case 'blast': p.addFx('ring', e.x, e.y, 0.4, 34); p.emit(14, e.x, e.y, { speed: 70, max: 0.5, colors: ['#ffd0a0', '#ff8a4a', '#8a3a1a'], glow: true }); this.shake = Math.max(this.shake, 3); break;
+        case 'emerge': p.dust(e.x, WORLD.groundY - 2); p.dust(e.x + 6, WORLD.groundY - 2); this.bump(3); break;
+        case 'blast': p.addFx('ring', e.x, e.y, 0.4, 34); p.emit(14, e.x, e.y, { speed: 70, max: 0.5, colors: ['#ffd0a0', '#ff8a4a', '#8a3a1a'], glow: true }); this.bump(3); break;
         case 'intercept': p.chain([[e.fx, e.fy], [e.x, e.y]]); p.acid(e.x, e.y); break;
         case 'jump': p.dust(e.x, WORLD.groundY - 2); break;
         case 'mend': p.mend(e.x, e.y, e.tx, e.ty); break;
@@ -142,13 +160,13 @@ export class Renderer {
           for (const [fx, fy] of e.from) p.mend(fx, fy, e.x, e.y);
           p.goldBurst(e.x, e.y, 60);
           p.addFx('ring', e.x, e.y, 0.6, 30);
-          this.shake = Math.max(this.shake, 3);
+          this.bump(3);
           break;
         case 'shoot': if (e.kind === 'arrow') p.emit(3, e.x, e.y, { speed: 30, max: 0.25, colors: [PAL.white, PAL.gold4], glow: true }); break;
         case 'lostLoot': p.emit(4, e.x, e.y, { speed: 20, max: 0.8, colors: ['#8a8aa8', '#5a5a78'], glow: true, gravity: -30 }); break;
         case 'devRune': p.goldBurst(e.x, WORLD.groundY - 20, 40); p.addFx('ring', e.x, WORLD.groundY - 20, 0.8, 30); break;
         case 'chain': p.chain(e.points); break;
-        case 'ram': p.addFx('ram', e.x, WORLD.groundY - 6, 0.35, 0, e.dir); p.dust(e.x + e.dir * 12, WORLD.groundY - 2); this.shake = Math.max(this.shake, 2); break;
+        case 'ram': p.addFx('ram', e.x, WORLD.groundY - 6, 0.35, 0, e.dir); p.dust(e.x + e.dir * 12, WORLD.groundY - 2); this.bump(2); break;
         case 'meteor':
           if (e.shard) { p.emit(5, e.x, WORLD.groundY - 3, { speed: 40, max: 0.4, colors: ['#ff9a4a', PAL.gold4], glow: true }); p.dust(e.x, WORLD.groundY - 2); break; }
           if (e.giant) {
@@ -159,7 +177,7 @@ export class Renderer {
             for (let i = -3; i <= 3; i++) p.dust(e.x + i * 9, WORLD.groundY - 2);
             p.emit(40, e.x, WORLD.groundY + 10, { speed: 80, max: 0.9, colors: ['#5a3a2a', '#8a6040', '#ff7a3a'], gravity: 120 });
             this.flash = Math.max(this.flash, 0.6);
-            this.shake = Math.max(this.shake, 16);
+            this.bump(16);
             break;
           }
           p.goldBurst(e.x, WORLD.groundY - 4, 60);
@@ -167,10 +185,10 @@ export class Renderer {
           p.addFx('ring', e.x, WORLD.groundY - 4, 0.5, 40);
           p.addFx('ring', e.x, WORLD.groundY - 4, 0.8, 70);
           this.flash = Math.max(this.flash, 0.35);
-          this.shake = Math.max(this.shake, 9);
+          this.bump(9);
           break;
         case 'shield': p.addFx('ring', WORLD.treeX, WORLD.groundY - 50, 0.9, 60); p.goldBurst(WORLD.treeX, WORLD.groundY - 50, 50); break;
-        case 'secondWind': p.goldBurst(WORLD.treeX, WORLD.groundY - 60, 120); this.shake = 8; break;
+        case 'secondWind': p.goldBurst(WORLD.treeX, WORLD.groundY - 60, 120); this.bump(8, true); break;
         case 'rankUp': p.goldBurst(game.state.keeper.x, WORLD.groundY - 12, 50); p.addFx('ring', game.state.keeper.x, WORLD.groundY - 10, 0.6, 40); break;
         case 'built': {
           const high = !e.underground && e.y < WORLD.groundY - 20; // a crown nest
@@ -180,10 +198,10 @@ export class Renderer {
         }
         case 'sold': p.dust(e.x, WORLD.groundY - 4); break;
         case 'pickup': p.pickup(e.x, e.y, e.kind === 'star'); break;
-        case 'treeHit': this.treeHurt = 0.12; if (e.amount >= 20) this.shake = Math.max(this.shake, 2); break;
+        case 'treeHit': this.treeHurt = 0.12; if (e.amount >= 20) this.bump(2); break;
         case 'treeGrew':
           this.growPulse = 1;
-          this.shake = Math.max(this.shake, 4);
+          this.bump(4);
           p.goldBurst(WORLD.treeX, WORLD.groundY - 60, 90);
           p.addFx('growWave', WORLD.treeX, WORLD.groundY, 1.4, game.stageDef.radius);
           break;
@@ -192,7 +210,7 @@ export class Renderer {
             if (game.leapProgress() >= 0) { p.dust(e.x, WORLD.groundY - 2); break; } // the slam comes on landing
             p.addFx('ring', e.x, WORLD.groundY - 10, 0.45, 92 * (1 + game.mods.hammerRadius));
             p.goldBurst(e.x, WORLD.groundY - 10, 30);
-            this.shake = Math.max(this.shake, 3);
+            this.bump(3);
           } else if (e.ability === 'radiance') {
             p.goldBurst(WORLD.treeX, WORLD.groundY - 80, 120);
             p.addFx('growWave', WORLD.treeX, WORLD.groundY, 1, game.state.tree.radius);
@@ -228,19 +246,35 @@ export class Renderer {
     this.flash = Math.max(0, this.flash - dt * 1.6);
     this.particles.ambient(s.tree.radius, dt, s.phase === 'night');
     this.particles.update(dt);
-    this.camera.update(s.tree.radius, dt);
+    this.follow = game.world.features.inWorld;
+    if (this.follow) {
+      this.camera.follow({
+        keeperX: s.keeper.x, worldW: WORLD.width, worldH: WORLD.height, groundY: WORLD.groundY, treeX: WORLD.treeX,
+        day: s.phase !== 'night', threatX: s.phase === 'night' ? this.nearestThreat(game) : null,
+      }, dt);
+    } else this.camera.update(s.tree.radius, dt);
     this.lighting.update(game, time, dt, this.camera.x - 48, this.camera.x + this.camera.w + 48);
 
     c.save();
     c.clearRect(0, 0, WORLD.width, WORLD.height);
     c.fillStyle = PAL.void;
     c.fillRect(0, 0, WORLD.width, WORLD.height);
-    // ── backdrop with subtle parallax following the keeper
-    const par = (s.keeper.x - WORLD.treeX) / WORLD.treeX;
-    c.drawImage(this.bg.sky, 0, 0);
-    this.drawVortex(c, time);
-    c.drawImage(this.bg.far, Math.round(-12 - par * 6), 0);
-    c.drawImage(this.bg.mid, Math.round(-20 - par * 12), 0);
+    if (this.follow) {
+      // ── backdrop parallax relative to the camera: farther layers follow the view more
+      const off = this.camera.x + this.camera.w / 2 - WORLD.treeX;
+      const sky = Math.round(off * PARALLAX.sky);
+      c.drawImage(this.bg.sky, sky, 0);
+      this.drawVortex(c, time, sky);
+      c.drawImage(this.bg.far, Math.round(-12 + off * PARALLAX.far), 0);
+      c.drawImage(this.bg.mid, Math.round(-20 + off * PARALLAX.mid), 0);
+    } else {
+      // ── backdrop with subtle parallax following the keeper
+      const par = (s.keeper.x - WORLD.treeX) / WORLD.treeX;
+      c.drawImage(this.bg.sky, 0, 0);
+      this.drawVortex(c, time);
+      c.drawImage(this.bg.far, Math.round(-12 - par * 6), 0);
+      c.drawImage(this.bg.mid, Math.round(-20 - par * 12), 0);
+    }
     c.drawImage(this.bg.ground, 0, 0);
 
     // ── world
@@ -265,7 +299,7 @@ export class Renderer {
     this.lighting.treeFade = this.fallT < 0 ? 0 : Math.min(1, this.fallT / 3.2);
     if (fall >= 1 && !this.fellDown) {
       this.fellDown = true;
-      this.shake = Math.max(this.shake, 14);
+      this.bump(14);
       const len = 150 * tsc * (0.4 + 0.12 * s.tree.stage);
       for (let i = 0; i < 12; i++) this.particles.dust(WORLD.treeX + this.fallDir * (i / 12) * len, WORLD.groundY - 2);
       this.particles.emit(60, WORLD.treeX + this.fallDir * len * 0.7, WORLD.groundY - 10, { speed: 90, max: 1.4, colors: [PAL.gold3, PAL.gold2, '#6a4a2a'], gravity: 90 });
@@ -430,8 +464,9 @@ export class Renderer {
     const W = sc.canvas.width, H = sc.canvas.height;
     const cam = this.camera;
     const k = W / cam.w;
-    const sx = this.shake > 0 ? (Math.random() - 0.5) * this.shake * k : 0;
-    const sy = this.shake > 0 ? (Math.random() - 0.5) * this.shake * k : 0;
+    // inWorld: smooth trauma noise, snapped to whole world pixels; legacy: random jitter
+    const sx = this.follow ? -Math.round(cam.shakeX) * k : this.shake > 0 ? (Math.random() - 0.5) * this.shake * k : 0;
+    const sy = this.follow ? -Math.round(cam.shakeY) * k : this.shake > 0 ? (Math.random() - 0.5) * this.shake * k : 0;
     sc.imageSmoothingEnabled = false;
     sc.fillStyle = PAL.void;
     sc.fillRect(0, 0, W, H);
@@ -501,6 +536,22 @@ export class Renderer {
         c.fillRect(cam.x, cam.y + cam.h - i - 2, cam.w, 2);
       }
     }
+  }
+
+  /**
+   * x of the nearest active night threat to the keeper (for the camera's threat bias):
+   * a living surface/air creature within reach of the view, or null.
+   */
+  private nearestThreat(game: Game): number | null {
+    const s = game.state;
+    const reach = this.camera.w * CAMERA.threatRange;
+    let best: number | null = null, bd = Infinity;
+    for (const e of s.enemies) {
+      if (e.dead || e.layer === 'under') continue;
+      const d = Math.abs(e.x - s.keeper.x);
+      if (d < reach && d < bd) { bd = d; best = e.x; }
+    }
+    return best;
   }
 
   /**
@@ -629,8 +680,9 @@ export class Renderer {
   }
 
   /** The void vortex around the eclipse: dark shards spiralling in. */
-  private drawVortex(c: Ctx, time: number) {
-    const { x, y, r } = this.bg.eclipse;
+  private drawVortex(c: Ctx, time: number, dx = 0) {
+    const { y, r } = this.bg.eclipse;
+    const x = this.bg.eclipse.x + dx;
     for (let i = 0; i < 70; i++) {
       const k = ((i * 0.618 + time * 0.03) % 1);
       const ang = i * 2.399 + time * 0.25 + k * 4;

@@ -189,7 +189,11 @@ const held = new Set<string>();
 function updateMove() {
   const l = held.has('a') || held.has('arrowleft') || held.has('ф');
   const r = held.has('d') || held.has('arrowright') || held.has('в');
-  game.setMove(l === r ? 0 : l ? -1 : 1);
+  const dir = l === r ? 0 : l ? -1 : 1;
+  // Shift + A/D (follow-camera worlds): free look — the camera pans, the keeper stands still
+  const look = game.world.features.inWorld && held.has('shift');
+  renderer?.camera.setFreeLook(look, look ? dir : 0);
+  game.setMove(look ? 0 : dir);
 }
 
 function setPaused(p: boolean) {
@@ -461,6 +465,7 @@ requestAnimationFrame(frame);
 // debug hooks for automated playtests
 (window as unknown as Record<string, unknown>).__igg = {
   get game() { return game; },
+  get camera() { return renderer!.camera; },
   save,
   start: () => { if (!started) hud.hideTitle(); started = true; },
   startWorld: (w: WorldId) => startRun(w),
