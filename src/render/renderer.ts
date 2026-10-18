@@ -39,15 +39,17 @@ const OUTLINE_NESTS = false;
 export class Renderer {
   readonly particles = new Particles();
   readonly camera = new Camera();
-  private worldCv: HTMLCanvasElement;
-  private c: Ctx;
+  private worldCv!: HTMLCanvasElement;
+  private c!: Ctx;
   /** nest layer + its tinted copy, used to draw a glowing outline around nests */
-  private nestCv: HTMLCanvasElement;
-  private nestCtx: Ctx;
-  private rimCv: HTMLCanvasElement;
-  private rimCtx: Ctx;
-  private bg: Backdrop;
-  private lighting = new Lighting();
+  private nestCv!: HTMLCanvasElement;
+  private nestCtx!: Ctx;
+  private rimCv!: HTMLCanvasElement;
+  private rimCtx!: Ctx;
+  private bg!: Backdrop;
+  private lighting!: Lighting;
+  /** world geometry the canvases were built for (rebuilt by `setWorld` when it changes) */
+  private builtFor = '';
   private shake = 0;
   private treeHurt = 0;
   private growPulse = 0;
@@ -59,10 +61,23 @@ export class Renderer {
   private fellDown = false;
 
   constructor(private screen: Ctx) {
+    this.setWorld();
+  }
+
+  /**
+   * (Re)build everything sized by the world — the world canvases, the backdrop and the
+   * lighting buffers — for the current WORLD (see `applyWorld`). Cheap no-op if nothing changed;
+   * `render` also calls it, so a Game of another world never draws into stale canvases.
+   */
+  setWorld() {
+    const key = `${WORLD.width}:${WORLD.treeX}`;
+    if (key === this.builtFor) return;
+    this.builtFor = key;
     this.bg = buildBackdrop();
     [this.worldCv, this.c] = makeCanvas(WORLD.width, WORLD.height);
     [this.nestCv, this.nestCtx] = makeCanvas(WORLD.width, WORLD.height);
     [this.rimCv, this.rimCtx] = makeCanvas(WORLD.width, WORLD.height);
+    this.lighting = new Lighting(WORLD.width);
   }
 
   /** Snap the camera (e.g. on a new run). */
@@ -204,6 +219,7 @@ export class Renderer {
   }
 
   render(game: Game, view: ViewState, time: number, dt: number) {
+    this.setWorld();
     const c = this.c;
     const s = game.state;
     this.shake = Math.max(0, this.shake - dt * 18);
@@ -212,8 +228,8 @@ export class Renderer {
     this.flash = Math.max(0, this.flash - dt * 1.6);
     this.particles.ambient(s.tree.radius, dt, s.phase === 'night');
     this.particles.update(dt);
-    this.lighting.update(game, time, dt);
     this.camera.update(s.tree.radius, dt);
+    this.lighting.update(game, time, dt, this.camera.x - 48, this.camera.x + this.camera.w + 48);
 
     c.save();
     c.clearRect(0, 0, WORLD.width, WORLD.height);

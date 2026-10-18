@@ -4,7 +4,7 @@ import { TREE_STAGES, branchById } from '../data/tree';
 import type { Game } from '../sim/game';
 import { VERSION, VERSION_LABEL } from '../version';
 
-const KEY = 'igg-tree-runlogs-v1';
+const KEY = 'igg2-runlogs-v1';
 const KEEP = 100;
 
 /** One finished (or abandoned) run, kept locally for balance statistics. */

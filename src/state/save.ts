@@ -1,7 +1,7 @@
 import { META_INFINITE, META_NODES, infiniteCost, type MetaNode } from '../data/meta';
 import type { ModPatch } from '../data/mods';
 
-const KEY = 'igg-tree-save-v1';
+const KEY = 'igg2-save-v1';
 
 /** Persistent meta-progression (localStorage). */
 export interface MetaSave {
@@ -22,10 +22,12 @@ export interface MetaSave {
   bestNight: number[];
   /** levels of the endless «Кольца памяти» */
   rings: Record<string, number>;
+  /** IGG2: the micro world «Росток» has been won — opens «Поляна» on the title */
+  microDone: boolean;
 }
 
 export function emptySave(): MetaSave {
-  return { coins: 0, earned: 0, nodes: [], bestStars: [0, 0, 0], pathUnlocked: 0, path: 0, runs: 0, bestNight: [0, 0, 0], rings: {} };
+  return { coins: 0, earned: 0, nodes: [], bestStars: [0, 0, 0], pathUnlocked: 0, path: 0, runs: 0, bestNight: [0, 0, 0], rings: {}, microDone: false };
 }
 
 export function loadSave(): MetaSave {

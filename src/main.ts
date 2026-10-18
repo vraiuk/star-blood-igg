@@ -11,6 +11,7 @@ import { buildRunLog, saveRunLog } from './state/runlog';
 import { openStats } from './ui/stats';
 import { hideWorldTip, showWorldTip } from './ui/glossary';
 import { VERSION_LABEL } from './version';
+import { WORLDS, isWorldId, type WorldId } from './data/worlds';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -18,13 +19,28 @@ const ctx = canvas.getContext('2d')!;
 ctx.imageSmoothingEnabled = false;
 
 const save = loadSave();
-const newGame = () => new Game({
-  seed: (Math.random() * 1e9) | 0,
-  meta: metaPatches(save),
-  startRune: hasStartRune(save),
-  path: Math.min(save.path, save.pathUnlocked),
-});
+/** `?world=micro|medium|legacy` starts that world straight away (dev/tests); medium also opens on the title */
+const urlWorld: WorldId | null = (() => {
+  const w = new URLSearchParams(location.search).get('world');
+  return isWorldId(w) ? w : null;
+})();
+/** the world of the current (or next) run */
+let world: WorldId = urlWorld ?? 'micro';
+const newGame = () => {
+  // the meta tree and difficulty paths belong to the legacy game only
+  const legacy = WORLDS[world].features.meta;
+  const g = new Game({
+    seed: (Math.random() * 1e9) | 0,
+    world,
+    meta: legacy ? metaPatches(save) : [],
+    startRune: legacy && hasStartRune(save),
+    path: legacy ? Math.min(save.path, save.pathUnlocked) : 0,
+  });
+  renderer?.setWorld();
+  return g;
+};
 
+let renderer: Renderer | undefined;
 let game = newGame();
 let started = false;
 let paused = false;
@@ -32,7 +48,7 @@ let metaOpen = false;
 let speed = 1;
 let scale = 2;
 const audio = new Audio();
-const renderer = new Renderer(ctx);
+renderer = new Renderer(ctx);
 const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null };
 let endShown = false;
 const SPEEDS = [1, 1.25, 1.5, 2, 5];
@@ -43,32 +59,49 @@ const stepSpeed = (d: 1 | -1) => SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, 
 let lastRecord = false;
 
 /** A run in progress is saved at every dawn and can be continued from the title. */
-const RUN_KEY = 'igg-tree-run-v1';
-const savedRun = (): { night: number; json: string } | null => {
+const RUN_KEY = 'igg2-run-v1';
+const savedRun = (): { night: number; world: WorldId; json: string } | null => {
   try {
     const json = localStorage.getItem(RUN_KEY);
     if (!json) return null;
-    const night = (JSON.parse(json) as { state?: { night?: number } }).state?.night ?? 0;
-    return { night, json };
+    const d = JSON.parse(json) as { world?: string; state?: { night?: number } };
+    return { night: d.state?.night ?? 0, world: isWorldId(d.world) ? d.world : 'legacy', json };
   } catch { return null; }
 };
 const storeRun = () => { try { localStorage.setItem(RUN_KEY, game.snapshot()); } catch { /* storage full */ } };
 const dropRun = () => { try { localStorage.removeItem(RUN_KEY); } catch { /* ignore */ } };
 
 const titleInfo = () => {
-  const p = Math.min(save.path, save.pathUnlocked);
   const run = savedRun();
-  hud.renderTitle(`${PATHS[p].name} · рекорд: ${save.bestNight[p] ?? 0} ноч. · Монеты Наблюдателя: ${save.coins}`, save.coins, run ? `ночь ${run.night + 1}` : '');
+  const runWorld = run ? WORLDS[run.world].name : '';
+  hud.renderTitle(save.runs ? `Забегов: ${save.runs}${save.microDone ? ' · Росток пройден' : ''}` : '', run ? `${runWorld} · ночь ${run.night + 1}` : '',
+    { mediumOpen: save.microDone || urlWorld === 'medium', legacy: urlWorld === 'legacy' });
 };
+
+/** Start a fresh run in world `w`. */
+function startRun(w: WorldId) {
+  dropRun();
+  world = w;
+  game = newGame();
+  logged = false;
+  hud.resetQuests();
+  renderer!.resetCamera(game.state.tree.radius);
+  started = true;
+  endShown = false;
+  audio.start();
+  hud.hideTitle();
+}
 
 const hud: Hud = new Hud(uiRoot, () => game, {
   onContinue() {
     const run = savedRun();
+    if (run) world = run.world;
     game = newGame();
     if (!run || !game.restore(run.json)) { dropRun(); titleInfo(); return; }
+    renderer!.setWorld();
     logged = false;
     hud.resetQuests();
-    renderer.resetCamera(game.state.tree.radius);
+    renderer!.resetCamera(game.state.tree.radius);
     started = true;
     endShown = false;
     audio.start();
@@ -77,20 +110,10 @@ const hud: Hud = new Hud(uiRoot, () => game, {
   onFeedback() {
     // a prefilled GitHub issue: the author sees the version and this run's numbers
     const s = game.state;
-    const body = `Версия: ${VERSION_LABEL}\nТропа: ${PATHS[game.path].name}\nНочей: ${s.night}\nДрево: ${s.tree.stage + 1}/6, колец ${s.tree.rings}\n\n**Что понравилось:**\n\n**Что сломано / непонятно:**\n\n**Чего хочется дальше:**\n`;
+    const body = `Версия: ${VERSION_LABEL}\nМир: ${game.world.name}\nТропа: ${PATHS[game.path].name}\nНочей: ${s.night}\nДрево: ${s.tree.stage + 1}/6, колец ${s.tree.rings}\n\n**Что понравилось:**\n\n**Что сломано / непонятно:**\n\n**Чего хочется дальше:**\n`;
     window.open(`https://github.com/vraiuk/star-blood-igg/issues/new?title=${encodeURIComponent('Отзыв: ')}&body=${encodeURIComponent(body)}`, '_blank');
   },
-  onStart() {
-    dropRun();
-    game = newGame();
-    logged = false;
-    hud.resetQuests();
-    renderer.resetCamera(game.state.tree.radius);
-    started = true;
-    endShown = false;
-    audio.start();
-    hud.hideTitle();
-  },
+  onStart(w) { startRun(w); },
   onRestart() {
     logQuit();
     hud.hideEnd();
@@ -98,7 +121,7 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     game = newGame();
     logged = false;
     hud.resetQuests();
-    renderer.resetCamera(game.state.tree.radius);
+    renderer!.resetCamera(game.state.tree.radius);
     endShown = false;
   },
   onGiveUp() {
@@ -125,11 +148,12 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     logQuit();
     setPaused(false);
     hud.closeMenu();
+    hud.hideEnd();
     started = false;
     game = newGame();
     logged = false;
     hud.resetQuests();
-    renderer.resetCamera(game.state.tree.radius);
+    renderer!.resetCamera(game.state.tree.radius);
     hud.showTitle();
     titleInfo();
   },
@@ -197,7 +221,7 @@ window.addEventListener('keydown', (e) => {
   if (metaOpen) return;
   const k = ALIAS[e.key.toLowerCase()] ?? e.key.toLowerCase();
   if (!started) {
-    if (k === 'enter') { e.preventDefault(); (uiRoot.querySelector('.screen [data-a=start]') as HTMLButtonElement)?.click(); }
+    if (k === 'enter') { e.preventDefault(); (uiRoot.querySelector<HTMLButtonElement>('.screen [data-a=continue]') ?? uiRoot.querySelector<HTMLButtonElement>('.screen [data-a=micro]'))?.click(); }
     return;
   }
   if (hud.choiceOpen) { hud.choiceKey(k); return; }
@@ -254,9 +278,9 @@ document.addEventListener('visibilitychange', () => {
 
 function toWorld(ev: MouseEvent): [number, number] {
   const r = canvas.getBoundingClientRect();
-  return renderer.camera.toWorld(ev.clientX - r.left, ev.clientY - r.top, r.width, r.height);
+  return renderer!.camera.toWorld(ev.clientX - r.left, ev.clientY - r.top, r.width, r.height);
 }
-hud.setProjector((x, y) => renderer.camera.toScreen(x, y, cssW, cssH));
+hud.setProjector((x, y) => renderer!.camera.toScreen(x, y, cssW, cssH));
 
 /** Clickable height of surface nests (matches their sprites). */
 const PICK_H: Record<string, number> = { hive: 42, beetle: 20, dragonfly: 36, termite: 22, spider: 12 };
@@ -415,7 +439,7 @@ function frame(now: number) {
   if (events.some((e) => e.type === 'dawn')) storeRun();
   if (events.some((e) => e.type === 'lost')) dropRun();
   if (events.length) {
-    renderer.onEvents(events, game);
+    renderer!.onEvents(events, game);
     hud.onEvents(events);
     audio.play(events);
     audio.setPhase(game.state.phase);
@@ -428,7 +452,7 @@ function frame(now: number) {
     setTimeout(() => hud.showEnd(coins, save.bestNight[game.path] ?? 0, lastRecord), 3600);
   }
   // paused worlds drift slowly; a lost run plays the Tree's fall in real time
-  renderer.render(game, view, time, frozen && started && !game.over ? dt * 0.15 : dt);
+  renderer!.render(game, view, time, frozen && started && !game.over ? dt * 0.15 : dt);
   hud.update(dt);
   requestAnimationFrame(frame);
 }
@@ -439,5 +463,9 @@ requestAnimationFrame(frame);
   get game() { return game; },
   save,
   start: () => { if (!started) hud.hideTitle(); started = true; },
+  startWorld: (w: WorldId) => startRun(w),
   setSpeed: (x: number) => { speed = x; },
 };
+
+// `?world=…`: straight into that world (after everything above is initialised)
+if (urlWorld) startRun(urlWorld);

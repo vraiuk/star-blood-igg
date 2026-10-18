@@ -1,6 +1,6 @@
 import {
   ABILITIES, ABILITY_STAGE_SCALING, CHORD, EXCHANGE, PACE, SACRIFICE, AFFIXES, ARMOR_FLOOR, ATTR_MAX, PLATES, BROOD, ELITE, JUMP, RINGS, TUNNEL_SURFACE, TUNNELS, treeScale, attrCost, DAY, ECONOMY, ENEMIES, KEEPER, KEEPER_RANKS, RESTUN_FACTOR,
-  SLOT_MARGIN, SLOTS, crownPos, ringsForCrownSlot, WORLD, WORM_LIGHT_MULT, FOG,
+  SLOT_MARGIN, SLOTS, applyWorld, crownPos, ringsForCrownSlot, WORLD, WORM_LIGHT_MULT, FOG,
   type AbilityId, type AttrId, type EnemyKind, type SlotDef,
 } from '../data/balance';
 import { PATHS } from '../data/meta';
@@ -16,6 +16,7 @@ import {
   type FormId, type KeeperRuneId, type PropertyDef,
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
+import { WORLDS, isWorldId, type WorldDef, type WorldId } from '../data/worlds';
 import { mulberry32 } from './rng';
 import type { Choice, Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Projectile, Soldier, Structure, Tunnel } from './types';
 
@@ -68,6 +69,8 @@ export interface GameOptions {
   startRune?: boolean;
   /** difficulty path index (0..2) */
   path?: number;
+  /** which world to play (src/data/worlds.ts); default 'legacy' = the original game */
+  world?: WorldId;
 }
 
 export type Target =
@@ -92,8 +95,13 @@ export class Game {
   private metaMods: ModPatch[];
   /** beetles to revive at dawn (meta capstone) */
   private graveyard: Array<{ slotId: string; tier: number; spec: SpecId | null }> = [];
+  /** the world being played: geometry, feature flags, content (re-set by `restore`) */
+  world: WorldDef;
 
   constructor(opts: GameOptions = {}) {
+    // world geometry is module-level (WORLD, SLOTS): every Game re-applies its own world
+    this.world = WORLDS[opts.world ?? 'legacy'];
+    applyWorld(this.world);
     this.rand = mulberry32(opts.seed ?? 1337);
     this.customNights = opts.nights;
     this.path = opts.path ?? 0;
@@ -102,7 +110,7 @@ export class Game {
     const st0 = TREE_STAGES[0];
     this.state = {
       phase: 'day', night: 0, phaseTime: 0, dayLeft: DAY.firstLength,
-      amber: ECONOMY.startAmber + this.mods.startAmber, star: this.mods.startStar, devRunes: 0, wrath: 1, rushedDawns: 0,
+      amber: this.world.startTreasury + this.mods.startAmber, star: this.mods.startStar, devRunes: 0, wrath: 1, rushedDawns: 0,
       enemies: [], structures: [], projectiles: [], drops: [], workers: [], soldiers: [], tempLights: [], burns: [], tunnels: [],
       keeper: {
         x: WORLD.treeX - 28, dir: 1, hp: KEEPER.hp, alive: true, respawn: 0, light: KEEPER.startLight, move: 0,
@@ -399,7 +407,8 @@ export class Game {
     if (slot.crown) {
       return this.state.tree.stage + 1 >= (slot.unlockStage ?? 1) && this.state.tree.rings >= ringsForCrownSlot(Number(slot.id.slice(1)));
     }
-    if (slot.underground) return this.state.tree.stage + 1 >= (slot.unlockStage ?? 1);
+    // in-world root wells open with the Circle like surface slots
+    if (slot.underground && !slot.well) return this.state.tree.stage + 1 >= (slot.unlockStage ?? 1);
     return slot.offset <= r - SLOT_MARGIN;
   }
   structureAt(slotId: string): Structure | undefined { return this.state.structures.find((s) => s.slotId === slotId); }
@@ -407,6 +416,7 @@ export class Game {
   /** Amber still needed for the next stage (0 at max stage). */
   growNeed(): number {
     const def = this.stageDef;
+    if (this.state.tree.stage >= this.world.maxStage) return 0;
     return def.growCost === 0 ? 0 : def.growCost - this.state.tree.growth;
   }
 
@@ -415,11 +425,14 @@ export class Game {
   /** Night definition by index (campaign, then endless generator). */
   night(n: number): NightDef {
     if (this.customNights) return this.customNights[Math.min(n, this.customNights.length - 1)];
-    return nightDef(n);
+    const list = this.world.nights;
+    if (list === 'campaign') return nightDef(n);
+    if (n < list.length) return list[n];
+    return this.world.endless ? nightDef(n) : list[list.length - 1];
   }
 
   /** Number of hand-made campaign nights (the milestone). */
-  get campaignNights() { return this.customNights?.length ?? ENDLESS.campaignNights; }
+  get campaignNights() { return this.customNights?.length ?? (this.world.nights === 'campaign' ? ENDLESS.campaignNights : this.world.nights.length); }
   get choice() { return this.state.choices[0] ?? null; }
 
   /** Stars earned at the campaign milestone (night 10). */
@@ -431,7 +444,7 @@ export class Game {
    */
   snapshot(): string {
     return JSON.stringify({
-      v: 1, state: this.state, graveyard: this.graveyard, rerolls: this.rerolls,
+      v: 1, world: this.world.id, state: this.state, graveyard: this.graveyard, rerolls: this.rerolls,
       milestoneStars: this.milestoneStars, killsAtNight: this.killsAtNight,
       honey: [...this.honeyAcc.entries()],
     });
@@ -440,8 +453,11 @@ export class Game {
   /** Load a run saved by `snapshot` (returns false if it doesn't fit this build). */
   restore(json: string): boolean {
     try {
-      const d = JSON.parse(json) as { v: number; state: GameState; graveyard: Game['graveyard']; rerolls: number; milestoneStars: number; killsAtNight: number; honey: Array<[number, { a: number; s: number }]> };
+      const d = JSON.parse(json) as { v: number; world?: string; state: GameState; graveyard: Game['graveyard']; rerolls: number; milestoneStars: number; killsAtNight: number; honey: Array<[number, { a: number; s: number }]> };
       if (d.v !== 1 || !d.state?.keeper) return false;
+      // the snapshot carries its world (older saves: legacy)
+      this.world = WORLDS[isWorldId(d.world) ? d.world : 'legacy'];
+      applyWorld(this.world);
       // the state object keeps its identity (the renderer and HUD hold on to it)
       Object.assign(this.state, d.state, { events: [] });
       this.graveyard = d.graveyard ?? [];

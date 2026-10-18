@@ -1,14 +1,20 @@
 import { WORLD } from '../data/balance';
 import { BAYER4, type Ctx, PAL, disc, ellipse, line, makeCanvas, rect, seeded } from './pixel';
 
-const W = WORLD.width;
 const H = WORLD.height;
 const GY = WORLD.groundY;
 /** vertical offset of the old 640×360 layout (ground was at 236) */
 const OY = GY - 236;
-const ECLIPSE = { x: Math.round(492 * W / 640), y: 96, r: 26 };
+/** the art was laid out for the 1440-wide world; wider worlds extend it around the Tree */
+const BASE_W = 1440;
 /** horizontal stretch of the old layout */
-const SX = W / 640;
+const SX = BASE_W / 640;
+/** layers are built for this world (set by `buildBackdrop`) */
+let W = BASE_W;
+/** x shift of the 1440-wide layout so it stays centred on the Tree */
+let OX = 0;
+/** density scale: wider worlds get proportionally more stars, trees and rocks */
+const n = (count: number, w = W, base = BASE_W) => Math.round((count * w) / base);
 
 function hex(c: string): [number, number, number] {
   const n = parseInt(c.slice(1), 16);
@@ -40,10 +46,15 @@ export interface Backdrop {
   eclipse: { x: number; y: number; r: number };
 }
 
-/** Pre-renders the static parallax layers once. */
+/**
+ * Pre-renders the static parallax layers for the current world (WORLD.width / treeX).
+ * The 1440-wide layout is kept around the Tree; wider worlds get more of the same around it.
+ */
 export function buildBackdrop(): Backdrop {
-  const eclipse = ECLIPSE;
-  return { sky: buildSky(eclipse), far: buildFar(), mid: buildMid(), ground: buildGround(), eclipse };
+  W = WORLD.width;
+  OX = WORLD.treeX - BASE_W / 2;
+  const eclipse = { x: OX + Math.round((492 * BASE_W) / 640), y: 96, r: 26 };
+  return { sky: buildSky(eclipse), far: buildFar(eclipse), mid: buildMid(), ground: buildGround(), eclipse };
 }
 
 function buildSky(ec: { x: number; y: number; r: number }) {
@@ -51,7 +62,7 @@ function buildSky(ec: { x: number; y: number; r: number }) {
   ditherGradient(c, 0, 0, W, GY, [PAL.sky0, PAL.sky1, PAL.sky2, PAL.sky3, PAL.sky4, '#311f4a']);
   const r = seeded(7);
   // stars
-  for (let i = 0; i < 700; i++) {
+  for (let i = 0; i < n(700); i++) {
     const x = r() * W, y = r() * GY * 0.7;
     const b = r();
     rect(c, x, y, 1, 1, b > 0.92 ? '#d9d4ff' : b > 0.6 ? '#7c79b8' : '#3d3b6e');
@@ -64,7 +75,7 @@ function buildSky(ec: { x: number; y: number; r: number }) {
   // faint nebula streaks
   for (let i = 0; i < 2600; i++) {
     const t = r();
-    const x = (280 + t * 340 + (r() - 0.5) * 40) * SX;
+    const x = OX + (280 + t * 340 + (r() - 0.5) * 40) * SX;
     const y = 60 + Math.sin(t * 5) * 18 + t * 40 + (r() - 0.5) * 30;
     rect(c, x, y, 1, 1, r() > 0.5 ? '#2c2050' : '#241a44');
   }
@@ -87,7 +98,7 @@ function buildSky(ec: { x: number; y: number; r: number }) {
 }
 
 /** Ruined aqueducts and cathedral spires (wider than the screen for parallax). */
-function buildFar() {
+function buildFar(ECLIPSE: { x: number; y: number; r: number }) {
   const FW = W + 24;
   const [cv, c] = makeCanvas(FW, GY);
   const r = seeded(11);
@@ -109,7 +120,11 @@ function buildFar() {
       }
     }
   };
-  for (const [x0, x1, top] of [[18 * SX, 170 * SX, 40], [470 * SX, 650 * SX, 52]] as const) {
+  const clusters: Array<readonly [number, number, number]> = [[OX + 18 * SX, OX + 170 * SX, 40], [OX + 470 * SX, OX + 650 * SX, 52]];
+  // wider worlds: more cathedral clusters every ~720 px beyond the original layout
+  for (let x = OX - 720; x > -400; x -= 720) clusters.push([x + 40, x + 380, 46]);
+  for (let x = OX + BASE_W + 60; x < FW; x += 720) clusters.push([x + 40, x + 380, 46]);
+  for (const [x0, x1, top] of clusters) {
     for (let i = 0; i < 12; i++) {
       const cx = x0 + r() * (x1 - x0);
       const h = 40 + r() * (150 - top) * (1 - Math.abs((cx - (x0 + x1) / 2) / (x1 - x0)));
@@ -139,7 +154,7 @@ function buildFar() {
   aq(112 + OY, 5, 30, 62, '#17183e', '#2a2b62');
   aq(150 + OY, 4, 20, 30, PAL.far0, '#232456');
   // broken gaps in the aqueduct
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < n(4, FW, BASE_W + 24); i++) {
     const gx = 60 + r() * (FW - 120);
     c.clearRect(gx, 108 + OY, 8 + r() * 10, 12);
   }
@@ -160,13 +175,13 @@ function buildMid() {
       if (r() > 0.5) line(c, x, y + 1, x - dir * len * 0.7, y - len * 0.3, col);
     }
   };
-  for (let i = 0; i < 160; i++) tree(r() * MW, 214 + OY, 26 + r() * 40, '#0e1028');
+  for (let i = 0; i < n(160, MW, BASE_W + 40); i++) tree(r() * MW, 214 + OY, 26 + r() * 40, '#0e1028');
   // rolling hill band
   for (let x = 0; x < MW; x++) {
     const h = 18 + Math.sin(x * 0.03) * 6 + Math.sin(x * 0.11) * 3;
     rect(c, x, 214 + OY - h, 1, h + 30, PAL.mid1);
   }
-  for (let i = 0; i < 135; i++) tree(r() * MW, 226 + OY, 20 + r() * 34, PAL.mid0);
+  for (let i = 0; i < n(135, MW, BASE_W + 40); i++) tree(r() * MW, 226 + OY, 20 + r() * 34, PAL.mid0);
   for (let x = 0; x < MW; x++) {
     const h = 6 + Math.sin(x * 0.05 + 2) * 3 + Math.sin(x * 0.17) * 2;
     rect(c, x, 230 + OY - h, 1, h + 10, PAL.mid0);
@@ -202,14 +217,14 @@ function buildGround() {
     }
   }
   // rocks
-  for (let i = 0; i < 230; i++) {
+  for (let i = 0; i < n(230); i++) {
     const x = r() * W, y = GY + 8 + r() * (H - GY - 10);
     const s = 2 + r() * 6;
     ellipse(c, x, y, s, s * 0.6, PAL.rock);
     rect(c, x - s * 0.5, y - s * 0.5, s * 0.6, 1, PAL.rockHi);
   }
   // small buried crystals that catch the root glow
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < n(26); i++) {
     const x = r() * W, y = GY + 20 + r() * (H - GY - 30);
     rect(c, x, y, 1, 2, '#3a2c55');
     rect(c, x, y, 1, 1, '#6d55a0');

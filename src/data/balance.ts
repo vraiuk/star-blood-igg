@@ -1,21 +1,34 @@
 import { SHAPES } from './treeShape';
+import type { WorldDef } from './worlds';
 
 /**
  * Core gameplay numbers. Rationale: design/game-brief.md, design/progression.md, design/v3-plan.md.
  * World units are art pixels of the 960×540 world; the camera shows 640×360 → 960×540.
  */
 
-export const WORLD = {
+/**
+ * World geometry. `width` and `treeX` change per world (`applyWorld`, see src/data/worlds.ts);
+ * everything reads them live, so never copy them into module-level constants.
+ */
+export const WORLD: {
+  width: number;
+  readonly height: number;
+  readonly groundY: number;
+  /** y of the underground worm lane */
+  readonly wormLaneY: number;
+  treeX: number;
+  /** half-width of the tree trunk zone that enemies must reach to attack it */
+  readonly treeReach: number;
+  readonly spawnMargin: number;
+} = {
   width: 1440,
   height: 720,
   groundY: 560,
-  /** y of the underground worm lane */
   wormLaneY: 628,
   treeX: 720,
-  /** half-width of the tree trunk zone that enemies must reach to attack it */
   treeReach: 16,
   spawnMargin: 14,
-} as const;
+};
 
 /**
  * Enemies use canon names from the books: shadow beasts of the Lands of Shadow
@@ -206,6 +219,8 @@ export interface SlotDef {
   unlockStage?: number;
   /** utility slot in the Igg-Tree's crown (not reachable by creatures) */
   crown?: boolean;
+  /** in-world root well: a surface mark with a weaver under it, unlocks by Circle radius */
+  well?: boolean;
 }
 
 /** Crown slots: the Tree as a tower. Index i opens at stage 2 + i. Positions are drawn by the renderer. */
@@ -270,23 +285,56 @@ const ROOT_ARC: Array<[number, number, number]> = [
   [118, 72, 3], [118, 108, 4], [118, 40, 4], [118, 140, 5], [118, 14, 5], [118, 166, 6],
 ];
 
-export const SLOTS: SlotDef[] = [
-  ...SURFACE_OFFSETS.flatMap((o, i) => [
-    { id: `L${i}`, x: WORLD.treeX - o, y: WORLD.groundY, underground: false, offset: o },
-    { id: `R${i}`, x: WORLD.treeX + o, y: WORLD.groundY, underground: false, offset: o },
-  ]),
-  ...CROWN_X_LIST().map((dx, i) => ({
-    id: `C${i}`, x: WORLD.treeX + dx, y: WORLD.groundY - 90, underground: false, offset: 0, unlockStage: Math.min(6, 2 + i), crown: true,
-  })),
-  ...ROOT_ARC.map(([r, deg, st], i) => {
-    const a = (deg * Math.PI) / 180;
-    const x = Math.round(WORLD.treeX + Math.cos(a) * r * 1.25);
-    return {
-      id: `U${i}`, x, y: Math.round(WORLD.groundY + 16 + Math.sin(a) * r * 0.62), underground: true,
-      offset: Math.abs(x - WORLD.treeX), unlockStage: st,
-    };
-  }),
-];
+/** Root wells of the in-world worlds: surface points this far from the trunk (spec §3). */
+export const WELL_OFFSETS = [60, 96, 138, 178] as const;
+/** y of a well's weaver on the root lane, below the surface mark */
+export const WELL_DEPTH = 30;
+
+function buildSlots(inWorld: boolean): SlotDef[] {
+  const tx = WORLD.treeX, gy = WORLD.groundY;
+  const surface: SlotDef[] = SURFACE_OFFSETS.flatMap((o, i) => [
+    { id: `L${i}`, x: tx - o, y: gy, underground: false, offset: o },
+    { id: `R${i}`, x: tx + o, y: gy, underground: false, offset: o },
+  ]);
+  if (inWorld) {
+    // 8 wells U0..U7: U0 = left 60, U1 = right 60, U2 = left 96, … (open by Circle radius)
+    const wells: SlotDef[] = WELL_OFFSETS.flatMap((o, i) => [
+      { id: `U${2 * i}`, x: tx - o, y: gy + WELL_DEPTH, underground: true, offset: o, well: true },
+      { id: `U${2 * i + 1}`, x: tx + o, y: gy + WELL_DEPTH, underground: true, offset: o, well: true },
+    ]);
+    return [...surface, ...wells];
+  }
+  return [
+    ...surface,
+    ...CROWN_X_LIST().map((dx, i) => ({
+      id: `C${i}`, x: tx + dx, y: gy - 90, underground: false, offset: 0, unlockStage: Math.min(6, 2 + i), crown: true,
+    })),
+    ...ROOT_ARC.map(([r, deg, st], i) => {
+      const a = (deg * Math.PI) / 180;
+      const x = Math.round(tx + Math.cos(a) * r * 1.25);
+      return {
+        id: `U${i}`, x, y: Math.round(gy + 16 + Math.sin(a) * r * 0.62), underground: true,
+        offset: Math.abs(x - tx), unlockStage: st,
+      };
+    }),
+  ];
+}
+
+/** Build slots of the current world. Rebuilt in place by `applyWorld` (importers hold this array). */
+export const SLOTS: SlotDef[] = buildSlots(false);
+
+/**
+ * Switch the module-level world geometry to `def`: WORLD.width / treeX, the SLOTS layout
+ * (in place) and the crown-anchor cache. Called by every `Game` constructor and `restore`.
+ */
+export function applyWorld(def: Pick<WorldDef, 'width' | 'treeX' | 'features'>) {
+  WORLD.width = def.width;
+  WORLD.treeX = def.treeX;
+  crownCache.clear();
+  const next = buildSlots(def.features.inWorld);
+  SLOTS.length = 0;
+  SLOTS.push(...next);
+}
 /** A slot opens when the Circle reaches it (surface: offset ≤ radius − margin; roots: offset ≤ radius × reach). */
 export const SLOT_MARGIN = 14;
 export const ROOT_SLOT_REACH = 0.85;

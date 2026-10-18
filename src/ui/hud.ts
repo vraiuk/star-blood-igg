@@ -6,6 +6,7 @@ import {
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
 import type { Game } from '../sim/game';
+import type { WorldId } from '../data/worlds';
 import { VERSION_LABEL } from '../version';
 import { gloss, installGlossary } from './glossary';
 import type { GameEvent } from '../sim/types';
@@ -25,8 +26,17 @@ export type MenuTarget =
 /** Range preview the renderer draws while hovering a ring option. */
 export interface RangePreview { x: number; r: number; underground: boolean; y?: number; merge?: { to: number; from: number[] } }
 
+/** IGG2 title-screen options: which worlds can be started. */
+export interface TitleWorlds {
+  /** «Поляна» is open (micro won, or `?world=medium`) */
+  mediumOpen: boolean;
+  /** show the dev «Классика» button (`?world=legacy`) */
+  legacy: boolean;
+}
+
 export interface HudCallbacks {
-  onStart(): void;
+  /** start a new run in this world */
+  onStart(world: WorldId): void;
   onRestart(): void;
   onOpenMeta(): void;
   onOpenStats(): void;
@@ -308,9 +318,12 @@ export class Hud {
 
   // ───────────────────────────── screens ─────────────────────────────
 
-  renderTitle(pathName = 'Тропа Ростка', coins = 0, cont = '') {
+  renderTitle(pathName = '', cont = '', worlds: TitleWorlds = { mediumOpen: false, legacy: false }) {
+    const medTip = worlds.mediumOpen ? 'Средний мир: Разломы Пустоты, Мёртвые Древа, Спящие Существа'
+      : 'Откроется после победы в Ростке';
     this.title.innerHTML = `
       <div class="box">
+        <div class="kicker igg2">IGG2 · эксперимент · ${VERSION_LABEL}</div>
         <div class="kicker">Земли Теней</div>
         <h1>Звёздная Кровь</h1>
         <h2>ДРЕВО ИГГ</h2>
@@ -324,18 +337,20 @@ export class Hud {
         </div>
         <div class="row">
           ${cont ? `<button class="btn gold" data-a="continue">Продолжить · ${cont}</button>` : ''}
-          <button class="btn ${cont ? '' : 'gold'}" data-a="start">${cont ? 'Новый забег' : 'Хранить Древо'}</button>
-          <button class="btn" data-a="meta"><img class="icon" src="${icon('tree')}"> Древо Игг · ${coins} Монет</button>
+          <button class="btn ${cont ? '' : 'gold'}" data-a="micro" data-tip="Малый мир: вырасти Росток и вынеси Семя за Круг">Росток</button>
+          <button class="btn" data-a="medium" ${worlds.mediumOpen ? '' : 'disabled'} data-tip="${medTip}">Поляна${worlds.mediumOpen ? '' : ' · закрыто'}</button>
+          ${worlds.legacy ? '<button class="btn" data-a="legacy" data-tip="Исходная игра (dev)">Классика</button>' : ''}
           <button class="btn" data-a="stats">Статистика</button>
           <button class="btn" data-a="feedback" data-tip="Написать автору: что понравилось, что сломано, чего хочется дальше">Отзыв · что дальше?</button>
         </div>
-        <div class="stat">${pathName}</div>
+        ${pathName ? `<div class="stat">${pathName}</div>` : ''}
         <div class="ver">${VERSION_LABEL}</div>
       </div>`;
-    this.title.querySelector('[data-a=start]')!.addEventListener('click', () => this.cb.onStart());
+    this.title.querySelector('[data-a=micro]')!.addEventListener('click', () => this.cb.onStart('micro'));
+    this.title.querySelector('[data-a=medium]')!.addEventListener('click', () => { if (worlds.mediumOpen) this.cb.onStart('medium'); });
+    this.title.querySelector('[data-a=legacy]')?.addEventListener('click', () => this.cb.onStart('legacy'));
     this.title.querySelector('[data-a=continue]')?.addEventListener('click', () => this.cb.onContinue());
     this.title.querySelector('[data-a=feedback]')?.addEventListener('click', () => this.cb.onFeedback());
-    this.title.querySelector('[data-a=meta]')!.addEventListener('click', () => this.cb.onOpenMeta());
     this.title.querySelector('[data-a=stats]')!.addEventListener('click', () => this.cb.onOpenStats());
   }
 
@@ -363,11 +378,12 @@ export class Hud {
         <div class="tablet inline">Восходящий! Тот-Кто-Наблюдает награждает тебя: <b>+${coins} Монет</b>.</div>
         <div class="stat">Древо: <b>${TREE_STAGES[s.tree.stage].name}</b> · Тварей: <b>${s.stats.kills}</b> · Янтарь: <b>${s.stats.amberCollected}</b> · Звёздная Кровь: <b>${s.stats.starCollected}</b></div>
         <p class="stat">★ дожить до 10-й ночи · ★★ с Игг-Древом · ★★★ с Великим Игг-Древом и здоровьем > 50%. Дальше — бесконечная ночь за рекордом.</p>
-        <div class="row"><button class="btn gold" data-a="again">Ещё раз</button><button class="btn" data-a="meta"><img class="icon" src="${icon('tree')}"> Древо Игг</button>
+        <div class="row"><button class="btn gold" data-a="again">Ещё раз</button>${g.world.features.meta ? `<button class="btn" data-a="meta"><img class="icon" src="${icon('tree')}"> Древо Игг</button>` : '<button class="btn" data-a="menu">В меню</button>'}
           <button class="btn" data-a="feedback" data-tip="Отзыв автору с данными этого забега: что было интересно, где застрял, чего не хватило">Оставить отзыв</button></div>
       </div>`;
     this.end.querySelector('[data-a=again]')!.addEventListener('click', () => this.cb.onRestart());
-    this.end.querySelector('[data-a=meta]')!.addEventListener('click', () => this.cb.onOpenMeta());
+    this.end.querySelector('[data-a=meta]')?.addEventListener('click', () => this.cb.onOpenMeta());
+    this.end.querySelector('[data-a=menu]')?.addEventListener('click', () => this.cb.onQuitToMenu());
     this.end.querySelector('[data-a=feedback]')!.addEventListener('click', () => this.cb.onFeedback());
     this.end.classList.remove('hidden');
   }

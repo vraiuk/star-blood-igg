@@ -442,6 +442,7 @@ body { display: grid; place-items: center; }
 .st-box { width: calc(560 * var(--u) / 2); max-width: 96%; max-height: 92%; overflow-y: auto; text-align: left; }
 .st-box h1 { text-align: center; }
 .st-box .kicker { text-align: center; }
+.screen .kicker.igg2 { color: #8fd0ff; letter-spacing: 0.15em; text-transform: none; }
 .st-box h3 { font-family: Philosopher, serif; color: #ffe58a; font-size: calc(8 * var(--u)); margin: calc(6 * var(--u)) 0 calc(3 * var(--u)); }
 .st-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(4 * var(--u)); margin: calc(4 * var(--u)) 0; }
 .st-cards div { border: var(--u) solid #3a3060; background: rgba(255,255,255,0.03); padding: calc(4 * var(--u)); text-align: center; }

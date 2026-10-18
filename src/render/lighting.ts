@@ -5,7 +5,6 @@ import { BAYER4, makeCanvas } from './pixel';
 
 /** Darkness/glow buffers are computed at half resolution, then upscaled pixel-perfect. */
 const CELL = 3;
-const LW = WORLD.width / CELL;
 const LH = WORLD.height / CELL;
 const GY = WORLD.groundY;
 
@@ -49,8 +48,11 @@ export class Lighting {
 
   /** 0..1: the Tree's light fading after it fell */
   treeFade = 0;
+  /** buffer width in cells — sized for the world this Lighting was built for */
+  private readonly LW: number;
 
-  constructor() {
+  constructor(worldWidth = WORLD.width) {
+    const LW = (this.LW = Math.ceil(worldWidth / CELL));
     [this.dark, this.darkCtx] = makeCanvas(LW, LH);
     this.darkImg = this.darkCtx.createImageData(LW, LH);
     [this.glowCv, this.glowCtx] = makeCanvas(LW, LH);
@@ -97,8 +99,13 @@ export class Lighting {
     return out;
   }
 
-  /** Recomputes the darkness and glow buffers for this frame. */
-  update(game: Game, time: number, dt: number) {
+  /**
+   * Recomputes the darkness and glow buffers for this frame. Only the columns in
+   * [x0, x1) (world px, the camera view) are recomputed; the rest is never on screen.
+   */
+  update(game: Game, time: number, dt: number, x0 = 0, x1 = WORLD.width) {
+    const LW = this.LW;
+    const c0 = Math.max(0, Math.floor(x0 / CELL)), c1 = Math.min(LW, Math.ceil(x1 / CELL));
     const s = game.state;
     const targetNight = s.phase === 'day' ? 0.72 : 1;
     this.night += (targetNight - this.night) * Math.min(1, dt * 1.5);
@@ -110,7 +117,7 @@ export class Lighting {
       const under = y >= GY;
       // base darkness by height: sky is a bit lighter, underground darkest
       const base = under ? 0.88 : 0.3 + 0.52 * Math.pow(Math.min(1, y / GY), 2.2);
-      for (let cx = 0; cx < LW; cx++) {
+      for (let cx = c0; cx < c1; cx++) {
         const x = cx * CELL + 1;
         let light = 0;
         let glow = 0;
@@ -145,14 +152,14 @@ export class Lighting {
   }
 
   drawDarkness(c: CanvasRenderingContext2D) {
-    c.drawImage(this.dark, 0, 0, WORLD.width, WORLD.height);
+    c.drawImage(this.dark, 0, 0, this.LW * CELL, WORLD.height);
   }
 
   drawGlow(c: CanvasRenderingContext2D, strength = 0.38) {
     c.save();
     c.globalCompositeOperation = 'lighter';
     c.globalAlpha = strength;
-    c.drawImage(this.glowCv, 0, 0, WORLD.width, WORLD.height);
+    c.drawImage(this.glowCv, 0, 0, this.LW * CELL, WORLD.height);
     c.restore();
   }
 }
