@@ -9,8 +9,12 @@ import { Particles } from './particles';
 import { type Ctx, PAL, line, makeCanvas, rect } from './pixel';
 import {
   ROOT_SLOT_Y, drawTunnel, drawTunnelMouths, drawFog, drawFogEdge, drawDragonfly, dragonflyHome, drawAffix, drawWeb, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
-  drawCrownNest, drawCrownSlot, drawSoldier, drawStructure, drawWorker,
+  drawCrownNest, drawCrownSlot, drawSoldier, drawStructure, drawWorker, drawAltar, drawHollow, drawTabletStone, drawWellMouth,
 } from './sprites';
+import { INWORLD } from '../data/worlds';
+import { SLOT_MARGIN } from '../data/balance';
+import { TREE_STAGES } from '../data/tree';
+import type { Focus } from '../sim/interact';
 import { drawGrass, drawRoots, drawTree, treeLook } from './tree';
 import { TREE } from '../data/tree';
 import { runeColor } from '../data/runes';
@@ -106,6 +110,23 @@ export class Renderer {
     for (const e of events) {
       switch (e.type) {
         case 'nightStart': this.camera.nightStarted(); break;
+        case 'pour': case 'take': {
+          // amber drops arc from the purse to the object (or from the hollow to the purse)
+          const kx = game.state.keeper.x, ky = WORLD.groundY - 14;
+          const from = e.type === 'pour' ? [kx, ky] : [e.x, WORLD.groundY - 6];
+          const to = e.type === 'pour' ? [e.x, WORLD.groundY - (e.target.startsWith('nest') ? 10 : 4)] : [kx, ky];
+          const T = 0.32, g = 260;
+          for (let i = 0; i < Math.min(4, e.amount); i++) {
+            const t = T * (0.85 + 0.1 * i);
+            p.emit(1, from[0], from[1], {
+              speed: 0.01, spread: 0, vx: (to[0] - from[0]) / t, vy: (to[1] - from[1]) / t - 0.5 * g * t,
+              gravity: g, drag: 0, max: t, glow: true, colors: [PAL.gold5, PAL.gold3, PAL.amber],
+            });
+          }
+          break;
+        }
+        case 'pledgeDone': p.goldBurst(e.x, WORLD.groundY - 10, 40); break;
+        case 'knock': p.emit(e.death ? 14 : 5, e.x, WORLD.groundY - 12, { speed: 60, max: 0.5, colors: [PAL.gold3, PAL.amber], gravity: 160 }); break;
         case 'hit': p.hit(e.x, e.y, e.crit); break;
         case 'enemyDied': {
           const big = !!ENEMIES[e.kind].boss || e.kind === 'stalker' || e.kind === 'guard' || e.kind === 'tyrant' || e.kind === 'devourer';
@@ -286,6 +307,13 @@ export class Renderer {
       this.drawBurn(c, b.x, b.halfWidth, time);
     }
     drawGrass(c, s.tree.radius, time, lanterns);
+    const focus = this.follow && !game.over ? game.focus() : null;
+    if (this.follow) {
+      for (const sl of SLOTS) {
+        if (!sl.well || !game.slotUnlocked(sl)) continue;
+        drawWellMouth(c, sl.x, time, focus?.x === sl.x && (focus.kind === 'well' || (focus.kind === 'nest' && focus.underground)), !!game.structureAt(sl.id));
+      }
+    }
 
     this.drawNestsOutlined(c, s.structures.filter((x) => x.underground), time);
     for (const tn of s.tunnels) drawTunnel(c, tn, time);
@@ -329,6 +357,12 @@ export class Renderer {
       rect(c, WORLD.treeX - 6, y, 11, 1, pulse ? PAL.gold5 : PAL.gold3);
     }
     c.restore();
+    if (this.follow && this.fallT < 0) {
+      // the trunk objects: hollow (Treasury), growth altar, Tablet stone
+      drawHollow(c, WORLD.treeX + INWORLD.treasury, time, s.amber, focus?.kind === 'treasury');
+      drawAltar(c, WORLD.treeX + INWORLD.altar, time, focus?.kind === 'altar', s.tree.stage >= game.world.maxStage);
+      if (game.world.features.tablet) drawTabletStone(c, WORLD.treeX + INWORLD.stone, time, focus?.kind === 'stone');
+    }
     if (s.tree.stage + 1 >= TREE.polariaStage) this.drawPolaria(c, game, time);
     if (this.fallT < 0) for (const st of s.structures) if (st.crown) drawCrownNest(c, st, time);
     for (const st of s.structures) {
@@ -428,9 +462,10 @@ export class Renderer {
           drawCrownSlot(c, p.x, p.y, time, view.hoverSlot === sl.id || view.selectedSlot === sl.id);
           continue;
         }
-        drawSlotMarker(c, sl.x, sl.underground, time, view.hoverSlot === sl.id || view.selectedSlot === sl.id, sl.y);
+        drawSlotMarker(c, sl.x, sl.underground, time, view.hoverSlot === sl.id || view.selectedSlot === sl.id || focus?.id === `slot:${sl.id}`, sl.y);
       }
     }
+    if (focus) this.drawFocus(c, game, focus, time);
     for (const d of s.drops) drawDrop(c, d, time);
     const spearTint = s.keeper.runeRank.spear > 0 ? runeColor(s.keeper.runeRank.spear) : undefined;
     const starTint = s.keeper.runeRank.starfall > 0 ? runeColor(s.keeper.runeRank.starfall) : undefined;
@@ -456,6 +491,47 @@ export class Renderer {
     }
     c.restore();
     this.blit(s.phase === 'night');
+  }
+
+  /**
+   * In-world focus: a soft bracket on the ground under the focused object; at the altar, the
+   * ghost of the next stage's Circle and the outlines of the slots it would open (spec §3).
+   */
+  private drawFocus(c: Ctx, game: Game, f: Focus, time: number) {
+    const gy = WORLD.groundY;
+    const blink = Math.sin(time * 5) > 0;
+    const col = f.canAct ? PAL.gold4 : '#8a8098';
+    rect(c, f.x - 7, gy + 3, 3, 1, col);
+    rect(c, f.x + 5, gy + 3, 3, 1, col);
+    if (blink) rect(c, f.x, gy + 4, 1, 1, col);
+    if (f.kind !== 'altar' || !f.canAct) return;
+    const s = game.state;
+    const next = TREE_STAGES[s.tree.stage + 1];
+    if (!next) return;
+    const R = Math.round(game.treeRadius() * (next.radius / TREE_STAGES[s.tree.stage].radius));
+    const r = s.tree.radius;
+    // the future Circle: a dotted ground line out to its edge and a pale pillar at each end
+    for (const side of [-1, 1]) {
+      for (let d = Math.round(r); d <= R; d += 3) if (((d + Math.floor(time * 12)) % 6) < 3) rect(c, WORLD.treeX + side * d, gy + 1, 1, 1, 'rgba(255,230,150,0.75)');
+      const ex = WORLD.treeX + side * R;
+      for (let i = 0; i < 26; i += 2) rect(c, ex, gy - i, 1, 1, `rgba(255,230,150,${0.6 - i * 0.02})`);
+      rect(c, ex - 1, gy, 3, 1, PAL.gold4);
+    }
+    // slots the new Circle would open: ghost outlines
+    for (const sl of SLOTS) {
+      if (sl.crown || game.slotUnlocked(sl) || sl.offset > R - SLOT_MARGIN) continue;
+      const a = blink ? 0.85 : 0.5;
+      const gc = `rgba(255,230,150,${a})`;
+      if (sl.well) {
+        for (let i = -6; i <= 6; i += 2) rect(c, sl.x + i, gy, 1, 1, gc);
+        rect(c, sl.x, gy - 9, 1, 3, gc);
+      } else {
+        const y = gy + 3;
+        rect(c, sl.x, y - 4, 1, 1, gc); rect(c, sl.x - 2, y - 2, 1, 1, gc); rect(c, sl.x + 2, y - 2, 1, 1, gc); rect(c, sl.x, y, 1, 1, gc);
+        rect(c, sl.x - 1, y - 3, 1, 1, gc); rect(c, sl.x + 1, y - 3, 1, 1, gc); rect(c, sl.x - 1, y - 1, 1, 1, gc); rect(c, sl.x + 1, y - 1, 1, 1, gc);
+        for (let i = 0; i < 10; i += 2) rect(c, sl.x, y - 7 - i, 1, 1, `rgba(255,230,150,${0.4 - i * 0.03})`);
+      }
+    }
   }
 
   /** Copy the camera view to the screen canvas, with shake and a vignette. */

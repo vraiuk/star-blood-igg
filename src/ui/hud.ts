@@ -12,6 +12,7 @@ import { gloss, installGlossary } from './glossary';
 import type { GameEvent } from '../sim/types';
 import { icon } from './icons';
 import { QUESTS } from './quests';
+import { FocusPlate } from './focusPlate';
 
 /** Roman numerals for facet levels */
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
@@ -89,6 +90,9 @@ interface RingOpt {
 export class Hud {
   private root: HTMLElement;
   private amberNum!: HTMLElement;
+  private purseNum!: HTMLElement;
+  private plate!: FocusPlate;
+  private lastPurse = '';
   private starNum!: HTMLElement;
   private devNum!: HTMLElement;
   private khpFill!: HTMLElement;
@@ -158,7 +162,7 @@ export class Hud {
     const res = el('div', 'panel');
     res.id = 'res';
     res.innerHTML = `
-      <div class="item" data-tip-title="Янтарь" data-tip="Смола Игг: падает с тварей, гусеницы и соты приносят её сами.<br><b>Тратится на:</b> новые гнёзда и их уровни, рост Древа (клик по Древу), годичные кольца, Возвышение гнёзд, воскрешение Хранителя."><img class="icon" src="${icon('amber')}"><span class="num" id="amber">0</span></div>
+      <div class="item" data-tip-title="Янтарь" data-tip="Смола Игг: падает с тварей, гусеницы и соты приносят её сами.<br><b>Тратится на:</b> новые гнёзда и их уровни, рост Древа (клик по Древу), годичные кольца, Возвышение гнёзд, воскрешение Хранителя."><img class="icon" src="${icon('amber')}"><span class="num" id="amber">0</span><span class="purse" id="purse"></span></div>
       <div class="item" data-tip-title="Звёздная Кровь" data-tip="Роняют Черви (крупные — больше).<br><b>Тратится на:</b> изучение и Повышение рун, Свойства у Наблюдателя (Скрижаль, R), специализации гнёзд, ранги и атрибуты Хранителя."><img class="icon" src="${icon('star')}"><span class="num star" id="star">0</span></div>
       <div class="item dev" data-tip-title="Малая Руна Развития" data-tip="Редкий дар с Червей. Открывает 4-й слот Свойства у любой руны или поднимает атрибут Хранителя (Скрижаль, R)."><img class="icon" src="${icon('rune')}"><span class="num" id="dev">0</span></div>
       <div class="item bars" data-tip-title="Здоровье и Свет" data-tip="Верхняя полоса — здоровье Хранителя, нижняя — <b>Свет</b>: его тратят руны. Свет восполняется сам и <b>быстрее всего у ствола Древа</b> — вернись к Древу, если Света мало.">
@@ -166,6 +170,7 @@ export class Hud {
         <div class="lightbar"><i></i></div></div>`;
     r.appendChild(res);
     this.amberNum = res.querySelector('#amber')!;
+    this.purseNum = res.querySelector('#purse')!;
     this.starNum = res.querySelector('#star')!;
     this.devNum = res.querySelector('#dev')!;
     this.lightFill = res.querySelector('.lightbar > i')!;
@@ -180,7 +185,7 @@ export class Hud {
       <div class="bar hp"><i></i><s></s><b></b></div>
       <div class="bar thin grow"><i></i></div>
       <div class="caption"></div>`;
-    tb.addEventListener('mousedown', (e) => { e.stopPropagation(); this.togglePanel('tree'); });
+    tb.addEventListener('mousedown', (e) => { e.stopPropagation(); if (!this.game().world.features.inWorld) this.togglePanel('tree'); });
     r.appendChild(tb);
     this.hpBar = tb.querySelector('.bar.hp')!;
     this.hpFill = tb.querySelector('.bar.hp > i')!;
@@ -278,6 +283,8 @@ export class Hud {
     this.reviveBox.id = 'revive';
     this.reviveBox.addEventListener('mousedown', (e) => e.stopPropagation());
     r.appendChild(this.reviveBox);
+
+    this.plate = new FocusPlate(r, () => this.project);
 
     this.modal = el('div', 'screen modal hidden');
     installGlossary(r);
@@ -611,6 +618,8 @@ export class Hud {
   get target() { return this.menuTarget; }
 
   openMenu(t: MenuTarget) {
+    // in-world worlds: no ring menu, no Tree panel (everything is done at the object)
+    if (!this.game().world.features.ringMenu) return;
     if (t.kind === 'tree') { this.closeMenu(); this.togglePanel('tree', true); return; }
     this.panelKind = null;
     this.panel.classList.remove('show');
@@ -938,6 +947,8 @@ export class Hud {
   // ───────────────────────────── side panels ─────────────────────────
 
   togglePanel(kind: 'tree' | 'keeper', force = false) {
+    const w = this.game().world.features;
+    if (w.inWorld && (kind === 'tree' || !w.tablet)) return;
     if (this.panelKind === kind && !force) { this.closeMenu(); return; }
     this.menuTarget = null;
     this.ring.classList.remove('show');
@@ -981,7 +992,7 @@ export class Hud {
           <div class="row">${btn(`Годичное кольцо №${s.tree.rings + 1} (<img class="icon" src="${icon('amber')}"> ${rc})`, s.amber >= rc, () => { g.addRing(); })}</div></div>`;
       }
       // ── the Observer's exchange: Amber ↔ Star Blood
-      html += `<div class="sub">Обмен у Наблюдателя:</div><div class="row left exch">
+      if (g.world.features.exchange) html += `<div class="sub">Обмен у Наблюдателя:</div><div class="row left exch">
         ${btn(`${EXCHANGE.amberPerStar} <img class="icon" src="${icon('amber')}"> → 1 <img class="icon" src="${icon('star')}">`, s.amber >= EXCHANGE.amberPerStar, () => { g.exchange('buyStar', 1); }, 'tiny')}
         ${btn('×10', s.amber >= EXCHANGE.amberPerStar * 10, () => { g.exchange('buyStar', 10); }, 'tiny')}
         ${btn(`1 <img class="icon" src="${icon('star')}"> → ${EXCHANGE.starToAmber} <img class="icon" src="${icon('amber')}">`, s.star >= 1, () => { g.exchange('sellStar', 1); }, 'tiny')}
@@ -1251,10 +1262,18 @@ export class Hud {
     const s = g.state;
     const stage = TREE_STAGES[s.tree.stage];
 
+    const inWorld = g.world.features.inWorld;
     if (s.amber !== this.lastAmber) {
       if (s.amber > this.lastAmber && this.lastAmber >= 0) this.bump(this.amberNum);
-      this.amberNum.textContent = String(s.amber);
+      // in-world: «Казна 120 · Кошель 18/30» (spec §3)
+      this.amberNum.textContent = inWorld ? `Казна ${s.amber}` : String(s.amber);
       this.lastAmber = s.amber;
+    }
+    const purse = inWorld ? `· Кошель ${s.keeper.purse}<span class="cap">/${g.purseCap()}</span>` : '';
+    if (purse !== this.lastPurse) {
+      this.lastPurse = purse;
+      this.purseNum.innerHTML = purse;
+      this.amberNum.textContent = inWorld ? `Казна ${s.amber}` : String(s.amber);
     }
     if (s.star !== this.lastStar) {
       if (s.star > this.lastStar && this.lastStar >= 0) this.bump(this.starNum);
@@ -1272,7 +1291,7 @@ export class Hud {
     const maxHp = g.treeMaxHp();
     this.hpFill.style.width = `${(Math.max(0, s.tree.hp) / maxHp) * 100}%`;
     this.shieldFill.style.width = `${Math.min(100, (s.tree.shield / maxHp) * 100)}%`;
-    const need = stage.growCost;
+    const need = g.growCost();
     this.growFill.style.width = need ? `${(s.tree.growth / need) * 100}%` : '100%';
     const pct = Math.round((Math.max(0, s.tree.hp) / maxHp) * 100);
     const canGrow = need > 0 && s.amber >= g.growNeed();
@@ -1323,6 +1342,9 @@ export class Hud {
       const el = this.abEls[id];
       const { box, cd, lock, charge, cdt } = el;
       const unlocked = g.abilityUnlocked(id);
+      // in-world: only the learned runes of this world are on the bar
+      const shown = !inWorld || (unlocked && g.world.runes.includes(id));
+      if (box.classList.contains('hidden') === shown) box.classList.toggle('hidden', !shown);
       lock.style.display = unlocked ? 'none' : 'grid';
       if (!unlocked) {
         const lk = lock.querySelector('.lk')!;
@@ -1371,9 +1393,20 @@ export class Hud {
     const badge = buyable > 0 ? String(buyable) : '';
     if (this.keeperBtn.dataset.badge !== badge) this.keeperBtn.dataset.badge = badge;
     this.keeperBtn.title = `Ранг ${KEEPER_RANKS[s.keeper.rank].name}${slotsFree ? ' · можно купить Свойство' : ''}`;
+    const tabletShown = !inWorld || g.world.features.tablet;
+    if (this.keeperBtn.classList.contains('hidden') === tabletShown) this.keeperBtn.classList.toggle('hidden', !tabletShown);
 
-    this.renderRevive(g);
-    this.updateQuest(g);
+    if (inWorld) {
+      // no revive modal (the Keeper rises at the Tree by himself), no quests; the focus plate instead
+      this.reviveBox.classList.remove('show');
+      this.deathHold = false;
+      this.plate.update(g);
+    } else {
+      this.plate.hide();
+      this.renderRevive(g);
+    }
+    if (g.world.features.quests) this.updateQuest(g);
+    else if (this.questBox.classList.contains('show')) { this.questBox.classList.remove('show'); document.querySelectorAll('.hl').forEach((n) => n.classList.remove('hl')); }
     if (this.menuTarget) this.renderRing();
     if (this.panelKind) this.renderPanel();
     this.renderChoice();
@@ -1455,6 +1488,16 @@ export class Hud {
     if (s.structures.some((x) => x.family === 'spider')) mark('spider');
     if (Object.values(s.keeper.props).some((a) => a.length > 0)) mark('shop');
     let text = '';
+    if (g.world.features.inWorld) {
+      // in-world: the verbs (the guide firefly of phase 5 will take over)
+      const f = g.focus();
+      if (g.over || this.choiceOpen) text = '';
+      else if (!s.keeper.alive) text = `Хранитель пал — поднимется у Древа через ${Math.ceil(Math.max(0, s.keeper.respawn))} с`;
+      else if (!f) text = '<kbd>A</kbd>/<kbd>D</kbd> — ходить · подойди к дуплу, гнезду или алтарю';
+      else text = '';
+      if (this.tip.innerHTML !== text) this.tip.innerHTML = text;
+      return;
+    }
     if (this.questIdx < QUESTS.length) { const q = QUESTS[this.questIdx]; if (this.tip.innerHTML !== (q.hint ?? '')) this.tip.innerHTML = q.hint ?? ''; return; }
     const nestT2 = s.structures.find((x) => x.tier === 1);
     if (g.over || this.bannerTimer > 0.5 || this.choiceOpen) text = '';

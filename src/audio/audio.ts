@@ -249,6 +249,22 @@ export class Audio {
         case 'sold':
           this.tone(300, 0.2, 'triangle', 0.15, 150);
           break;
+        // in-world pour: a chime whose pitch rises as the pledge fills (pentatonic steps)
+        case 'pour':
+          if (this.ok('pour', 0.05)) {
+            const step = Math.min(PENTA.length * 2 - 1, Math.floor(e.progress * PENTA.length * 2));
+            this.tone(PENTA[step % PENTA.length] * (step >= PENTA.length ? 2 : 1), 0.12, 'sine', 0.09);
+          }
+          break;
+        case 'take':
+          if (this.ok('take', 0.06)) this.tone(PENTA[Math.floor(Math.random() * 3)], 0.1, 'triangle', 0.08);
+          break;
+        case 'pledgeDone':
+          [784, 1047, 1319].forEach((f, i) => this.tone(f, 0.35, 'sine', 0.1, undefined, i * 0.06));
+          break;
+        case 'knock':
+          this.tone(e.death ? 220 : 440, 0.18, 'triangle', 0.12, e.death ? 110 : 260);
+          break;
         case 'structureLost':
           this.hiss(0.4, 500, 0.4, 0.7, 'lowpass');
           this.tone(90, 0.35, 'sine', 0.3, 50);

@@ -51,11 +51,15 @@ const audio = new Audio();
 renderer = new Renderer(ctx);
 const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null };
 let endShown = false;
-const SPEEDS = [1, 1.25, 1.5, 2, 5];
+const ALL_SPEEDS = [1, 1.25, 1.5, 2, 5];
+/** speeds this world offers (×5 only where `maxSpeed` allows) */
+const speeds = () => ALL_SPEEDS.filter((x) => x <= game.world.maxSpeed);
 let sacrificeArmed = 0;
-const nextSpeed = () => SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+const nextSpeed = () => { const l = speeds(); return l[(l.indexOf(speed) + 1) % l.length]; };
 /** − / + step through the speeds without wrapping around */
-const stepSpeed = (d: 1 | -1) => SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, SPEEDS.indexOf(speed) + d))];
+const stepSpeed = (d: 1 | -1) => { const l = speeds(); return l[Math.max(0, Math.min(l.length - 1, l.indexOf(speed) + d))]; };
+/** the in-world control scheme (spec §3): walk up and hold S / W / X; no mouse on the world */
+const inWorld = () => game.world.features.inWorld;
 let lastRecord = false;
 
 /** A run in progress is saved at every dawn and can be continued from the title. */
@@ -88,6 +92,7 @@ function startRun(w: WorldId) {
   renderer!.resetCamera(game.state.tree.radius);
   started = true;
   endShown = false;
+  if (!speeds().includes(speed)) { speed = 1; hud.setSpeed(1); }
   audio.start();
   hud.hideTitle();
 }
@@ -204,6 +209,8 @@ function setPaused(p: boolean) {
 /** Abilities that need a target point enter aim mode on click; the hammer casts at once. */
 function beginAim(id: AbilityId) {
   hud.closeMenu();
+  // in the world there is no aiming: runes go ahead of the Keeper
+  if (inWorld()) { game.castAhead(id); return; }
   // the Starfall and the Hammer's leap are aimed with the next click
   if (id !== 'starfall' && id !== 'hammer') { game.cast(id, game.state.keeper.x); return; }
   hud.aiming = id;
@@ -219,7 +226,31 @@ const ABILITY_KEYS: Record<string, AbilityId> = Object.fromEntries(
   (Object.keys(ABILITIES) as AbilityId[]).map((id) => [ABILITIES[id].key, id]),
 );
 // Cyrillic layout aliases for letter hotkeys
-const ALIAS: Record<string, string> = { г: 'u', ы: 's', й: 'q', ц: 'w', у: 'e', к: 'r', е: 't', а: 'f', ь: 'm', ф: 'a', в: 'd', и: 'b', м: 'v', п: 'g' };
+const ALIAS: Record<string, string> = { г: 'u', ы: 's', й: 'q', ц: 'w', у: 'e', к: 'r', е: 't', а: 'f', ь: 'm', ф: 'a', в: 'd', и: 'b', м: 'v', п: 'g', ч: 'x' };
+
+/** Release every held in-world verb (key up, window blur, a window opening). */
+function releaseVerbs() {
+  game.setPour(false);
+  game.setTake(false);
+  game.setSell(false);
+}
+
+/** In-world key presses (spec §3): S pour, W take, Q/E option, X sell, 1/2/3 runes ahead. */
+function inWorldKey(k: string, e: KeyboardEvent) {
+  if (e.repeat) return;
+  if (k === 's' || k === 'arrowdown') game.setPour(true);
+  else if (k === 'w' || k === 'arrowup') game.setTake(true);
+  else if (k === 'x') game.setSell(true);
+  else if (k === 'q') game.cycleOption(-1);
+  else if (k === 'e') game.cycleOption(1);
+  else if (ABILITY_KEYS[k] && game.world.runes.includes(ABILITY_KEYS[k])) game.castAhead(ABILITY_KEYS[k]);
+  else if (k === ' ') { e.preventDefault(); game.callNight(); }
+  else if (k === 'f') { speed = nextSpeed(); hud.setSpeed(speed); }
+  else if (k === '-' || k === '_') { speed = stepSpeed(-1); hud.setSpeed(speed); }
+  else if (k === '=' || k === '+') { speed = stepSpeed(1); hud.setSpeed(speed); }
+  else if (k === 'm') hud.setSound(audio.toggle());
+  else if ((k === 'r' || k === 'b') && game.world.features.tablet) hud.togglePanel('keeper');
+}
 
 window.addEventListener('keydown', (e) => {
   if (metaOpen) return;
@@ -228,8 +259,9 @@ window.addEventListener('keydown', (e) => {
     if (k === 'enter') { e.preventDefault(); (uiRoot.querySelector<HTMLButtonElement>('.screen [data-a=continue]') ?? uiRoot.querySelector<HTMLButtonElement>('.screen [data-a=micro]'))?.click(); }
     return;
   }
-  if (hud.choiceOpen) { hud.choiceKey(k); return; }
+  if (hud.choiceOpen) { releaseVerbs(); hud.choiceKey(k); return; }
   if (k === 'escape') {
+    releaseVerbs();
     if (view.aiming) cancelAim();
     else if (hud.menuOpen) hud.closeMenu();
     else if (!game.over) setPaused(!paused);
@@ -238,6 +270,12 @@ window.addEventListener('keydown', (e) => {
   if (paused || game.over) return;
   held.add(k);
   updateMove();
+  if (inWorld()) {
+    if (hud.panelOpen) { if (k === 'r' || k === 'b') hud.togglePanel('keeper'); return; }
+    inWorldKey(k, e);
+    if (k === ' ' || k.startsWith('arrow')) e.preventDefault();
+    return;
+  }
   if (hud.target && hud.ringKey(k)) return;
   if (ABILITY_KEYS[k] && !e.repeat) {
     game.cast(ABILITY_KEYS[k], view.mouseX, view.mouseY);
@@ -268,11 +306,16 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
   const k = ALIAS[e.key.toLowerCase()] ?? e.key.toLowerCase();
   held.delete(k);
+  if (inWorld()) {
+    if (k === 's' || k === 'arrowdown') game.setPour(false);
+    if (k === 'w' || k === 'arrowup') game.setTake(false);
+    if (k === 'x') game.setSell(false);
+  }
   // releasing the spear key lets go of the Piercing Beam
   if (ABILITY_KEYS[k] === 'spear') game.releaseBeam();
   updateMove();
 });
-window.addEventListener('blur', () => { held.clear(); updateMove(); audio.setBackground(true); });
+window.addEventListener('blur', () => { held.clear(); updateMove(); releaseVerbs(); audio.setBackground(true); });
 window.addEventListener('focus', () => { if (!document.hidden) audio.setBackground(false); });
 // a hidden tab goes silent and, mid-run, pauses
 document.addEventListener('visibilitychange', () => {
@@ -323,6 +366,8 @@ canvas.addEventListener('mousemove', (ev) => {
   const [mx, my] = toWorld(ev);
   view.mouseX = mx;
   view.mouseY = my;
+  // in the world the mouse doesn't touch the world (spec §3)
+  if (inWorld()) { view.hoverSlot = null; view.hoverTree = false; canvas.style.cursor = 'default'; hideWorldTip(); return; }
   const t = started && !game.over && !hud.choiceOpen ? pick(mx, my) : null;
   view.hoverSlot = t?.kind === 'slot' ? t.slotId : null;
   view.hoverTree = t?.kind === 'tree';
@@ -338,7 +383,7 @@ canvas.addEventListener('mousemove', (ev) => {
 });
 
 canvas.addEventListener('mousedown', (ev) => {
-  if (!started || paused || game.over || hud.choiceOpen) return;
+  if (!started || paused || game.over || hud.choiceOpen || inWorld()) return;
   const [mx, my] = toWorld(ev);
   if (ev.button === 2) { cancelAim(); hud.closeMenu(); return; }
   if (view.aiming) {
@@ -421,8 +466,17 @@ function frame(now: number) {
     for (const [key, id] of Object.entries(ABILITY_KEYS)) {
       if (!held.has(key)) continue;
       if (id === 'spear' && game.state.keeper.forms.spear === 'B') continue;
-      if (game.abilityReady(id)) game.cast(id, view.mouseX, view.mouseY);
+      if (inWorld() && !game.world.runes.includes(id)) continue;
+      if (game.abilityReady(id)) { if (inWorld()) game.castAhead(id); else game.cast(id, view.mouseX, view.mouseY); }
     }
+  }
+  // in the world: the camera leans toward the object being poured into / taken from
+  if (inWorld()) {
+    const it = game.state.interact;
+    const f = started && !game.over ? game.focus() : null;
+    renderer!.camera.setFocus(f && (it.pour || it.take || it.sell) ? f.x : null);
+    // a window that freezes time also lets go of the held verbs
+    if (paused || game.choice) releaseVerbs();
   }
   const frozen = !started || paused || game.over || !!game.choice || metaOpen || hud.panelOpen || hud.ringOpen || hud.deathPause;
   if (!frozen) {

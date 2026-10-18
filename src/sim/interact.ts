@@ -353,7 +353,9 @@ export function updateInteract(g: Game, dt: number) {
   }
 
   if (it.take && t.take) {
-    const n = Math.min(flow(g, dt), s.amber, Math.max(0, g.purseCap() - k.purse));
+    const units = flow(g, dt);
+    if (units <= 0) return;
+    const n = Math.min(units, s.amber, Math.max(0, g.purseCap() - k.purse));
     if (n > 0) {
       s.amber -= n;
       k.purse += n;
@@ -367,7 +369,9 @@ export function updateInteract(g: Game, dt: number) {
 
   if (!it.pour || !t.pour) return;
   if (t.pour === 'deposit') {
-    const n = Math.min(flow(g, dt), k.purse);
+    const units = flow(g, dt);
+    if (units <= 0) return;
+    const n = Math.min(units, k.purse);
     if (n > 0) {
       k.purse -= n;
       s.amber += n;
@@ -383,7 +387,9 @@ export function updateInteract(g: Game, dt: number) {
   const price = priceOf(g, t);
   let pledged = pledgeOf(g, t);
   if (pledged < price) {
-    const want = Math.min(flow(g, dt), price - pledged);
+    const units = flow(g, dt);
+    if (units <= 0) return;
+    const want = Math.min(units, price - pledged);
     const fromPurse = Math.min(want, k.purse);
     const fromTreasury = t.useTreasury ? Math.min(want - fromPurse, s.amber) : 0;
     const n = fromPurse + fromTreasury;

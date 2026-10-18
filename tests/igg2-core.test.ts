@@ -165,6 +165,21 @@ describe('pour: pledges and prepaid actions', () => {
     expect(g.focus()!.options[g.focus()!.optionIndex].id).toBe('beetle');
   });
 
+  it('a steady pour never says the purse is empty between drops (regression)', () => {
+    const g = micro();
+    at(g, -42);
+    g.state.keeper.purse = 30;
+    g.setPour(true);
+    steps(g, 1);
+    g.setPour(false);
+    at(g, INWORLD.treasury);
+    g.state.keeper.purse = 0;
+    g.setTake(true);
+    steps(g, 0.5);
+    g.setTake(false);
+    expect(g.drainEvents().filter((e) => e.type === 'denied')).toEqual([]);
+  });
+
   it('a fulfilled pledge builds the nest without touching the Treasury', () => {
     const g = micro();
     at(g, -42);

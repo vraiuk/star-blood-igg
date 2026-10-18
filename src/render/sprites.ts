@@ -1243,3 +1243,87 @@ export function drawCrownSlot(c: Ctx, x: number, y: number, time: number, hover:
   rect(c, x - 3, y, 7, 1, hover ? PAL.white : '#c8f4ff');
   rect(c, x, y - 3, 1, 7, hover ? PAL.white : '#c8f4ff');
 }
+
+// ───────────────────────────── in-world trunk objects (IGG2 §3) ─────────────────
+
+/**
+ * The hollow (дупло) — the Tree's Treasury: an old stump with a dark mouth; amber glints
+ * inside grow with the Treasury. `focus` brightens the rim.
+ */
+export function drawHollow(c: Ctx, x: number, time: number, treasury: number, focus: boolean) {
+  const y = GY;
+  // stump body
+  ellipse(c, x, y - 6, 7, 7, PAL.bark1);
+  rect(c, x - 7, y - 6, 15, 7, PAL.bark1);
+  rect(c, x - 6, y - 12, 13, 2, PAL.bark2);
+  rect(c, x - 8, y - 1, 17, 2, PAL.bark0);
+  // bark grain
+  for (let i = -5; i <= 5; i += 3) rect(c, x + i, y - 10, 1, 8, PAL.bark0);
+  // root feet
+  rect(c, x - 10, y, 4, 1, PAL.bark2);
+  rect(c, x + 7, y, 4, 1, PAL.bark2);
+  // the mouth
+  ellipse(c, x, y - 6, 3, 4, '#07050a');
+  const glints = Math.min(5, Math.ceil(treasury / 25));
+  for (let i = 0; i < glints; i++) {
+    const on = Math.sin(time * 3 + i * 1.9) > -0.2;
+    rect(c, x - 2 + ((i * 3) % 5), y - 3 - Math.floor(i / 2) * 2, 1, 1, on ? PAL.gold3 : PAL.amber);
+  }
+  const rim = focus ? PAL.gold4 : PAL.gold1;
+  rect(c, x - 3, y - 10, 7, 1, rim);
+  rect(c, x - 4, y - 9, 1, 6, rim);
+  rect(c, x + 4, y - 9, 1, 6, rim);
+}
+
+/** The growth altar: a flat root-stone at the trunk with a glowing seed rune. */
+export function drawAltar(c: Ctx, x: number, time: number, focus: boolean, full: boolean) {
+  const y = GY;
+  rect(c, x - 6, y - 3, 13, 3, PAL.rock);
+  rect(c, x - 5, y - 4, 11, 1, PAL.rockHi);
+  rect(c, x - 7, y - 1, 15, 1, PAL.dirt3);
+  const g = 0.5 + 0.5 * Math.sin(time * 2.2);
+  const col = full ? PAL.gold0 : focus ? PAL.gold5 : g > 0.5 ? PAL.gold3 : PAL.gold2;
+  // seed rune ◇ with a sprout
+  rect(c, x, y - 3, 1, 1, col);
+  rect(c, x - 1, y - 2, 1, 1, col);
+  rect(c, x + 1, y - 2, 1, 1, col);
+  rect(c, x, y - 1, 1, 1, col);
+  if (!full) for (let i = 0; i < 6; i++) if ((i + Math.floor(time * 5)) % 3 === 0) rect(c, x, y - 6 - i, 1, 1, `rgba(255,220,130,${(focus ? 0.7 : 0.4) - i * 0.05})`);
+}
+
+/** The Tablet stone (medium world): a standing stone with a carved azure glyph. */
+export function drawTabletStone(c: Ctx, x: number, time: number, focus: boolean) {
+  const y = GY;
+  rect(c, x - 3, y - 13, 7, 13, PAL.rock);
+  rect(c, x - 2, y - 14, 5, 1, PAL.rock);
+  rect(c, x - 3, y - 13, 1, 13, PAL.rockHi);
+  rect(c, x - 4, y - 1, 9, 1, PAL.dirt3);
+  const on = focus || Math.sin(time * 1.7) > 0;
+  const col = on ? '#8fd0ff' : '#4a6a9a';
+  rect(c, x, y - 11, 1, 6, col);
+  rect(c, x - 1, y - 9, 3, 1, col);
+  rect(c, x - 1, y - 5, 3, 1, col);
+}
+
+/** A root well on the surface: a dark hole with a glowing rim and a root sign above. */
+export function drawWellMouth(c: Ctx, x: number, time: number, focus: boolean, occupied: boolean) {
+  const y = GY + 1;
+  ellipse(c, x, y, 7, 2, PAL.bark0);
+  ellipse(c, x, y, 5, 1, '#030206');
+  const g = 0.5 + 0.5 * Math.sin(time * 2.6 + x * 0.1);
+  const rim = focus ? PAL.gold5 : occupied ? '#6a8ac8' : g > 0.5 ? '#8fd0ff' : '#5a7ab0';
+  for (let i = -6; i <= 6; i += 2) rect(c, x + i, y - (Math.abs(i) > 4 ? 0 : 1) - 1, 1, 1, rim);
+  if (occupied) {
+    // the weaver's silk thread goes down the well
+    for (let i = 2; i < 26; i += 3) rect(c, x, y + i, 1, 1, 'rgba(220,230,255,0.35)');
+    return;
+  }
+  // root sign: a small forked root hanging over the hole
+  const ry = y - 7 - Math.round(Math.sin(time * 2 + x) * 1);
+  const col = focus ? PAL.gold4 : '#9fc0ff';
+  rect(c, x, ry - 3, 1, 3, col);
+  rect(c, x - 1, ry, 1, 1, col);
+  rect(c, x + 1, ry, 1, 1, col);
+  rect(c, x - 2, ry + 1, 1, 1, col);
+  rect(c, x + 2, ry + 1, 1, 1, col);
+}
