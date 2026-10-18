@@ -1,8 +1,9 @@
 name: Deploy to GitHub Pages
 
-# main → the site root; the `coop` branch (online co-op) → /coop/; the `mobile` branch (phone build) → /mobile/.
+# main → the site root; the `coop` branch (online co-op) → /coop/; the `mobile` branch (phone build) → /mobile/;
+# the `igg2` branch (Two Crowns-style rework experiment) → /igg2/.
 # Pages deploys only from main, so a push to `coop` / `mobile` re-runs this workflow on main
-# (coop-pages.yml / mobile-pages.yml on those branches).
+# (coop-pages.yml / mobile-pages.yml / igg2-pages.yml on those branches).
 on:
   push:
     branches: [main]
@@ -65,6 +66,24 @@ jobs:
       - name: Put mobile under /mobile/
         if: steps.mobilebuild.outcome == 'success'
         run: cp -r mobile-src/dist dist/mobile
+      - name: Is there an igg2 branch?
+        id: igg2
+        run: echo "exists=$(git ls-remote --heads origin igg2 | grep -q . && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.igg2.outputs.exists == 'true'
+        with:
+          ref: igg2
+          path: igg2-src
+      - name: Build the igg2 branch
+        id: igg2build
+        if: steps.igg2.outputs.exists == 'true'
+        # a broken experiment build must not take the main site down
+        continue-on-error: true
+        working-directory: igg2-src
+        run: npm ci && npm test && npm run build
+      - name: Put igg2 under /igg2/
+        if: steps.igg2build.outcome == 'success'
+        run: cp -r igg2-src/dist dist/igg2
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
