@@ -458,8 +458,9 @@ describe('cards, guide, naming', () => {
     for (const k of ['rift', 'deadTree', 'sleeper', 'stela'] as const) expect(OBJECT_CARDS[k]).toBeDefined();
   });
 
-  it('Кыш has minimal medium steps: Sleeper, Dead Tree, the stone, the Rift', () => {
-    expect(GUIDE_STEPS.medium.map((s) => s.id)).toEqual(['wake', 'husk', 'stone', 'rift']);
+  // phase 7 completed the medium guide (spec §7): the four phase-6 steps keep their order
+  it('Кыш has medium steps: Sleeper, Dead Tree, the stone, …, the Rift', () => {
+    expect(GUIDE_STEPS.medium.map((s) => s.id).filter((id) => ['wake', 'husk', 'stone', 'rift'].includes(id))).toEqual(['wake', 'husk', 'stone', 'rift']);
     const g = medium();
     expect(GUIDE_STEPS.medium[0].target(g)).toBe(obj('sleeper', 0).x);
   });

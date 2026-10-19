@@ -9,8 +9,11 @@ interface Cause { label: string; answer: string; kinds: string[] }
 const CAUSES: Cause[] = [
   { label: 'Черви снизу', answer: 'Паук в корневом колодце', kinds: ['worm', 'guard', 'tunneler', 'tunnelerUp'] },
   { label: 'Гигантопитек у ствола', answer: 'Молот [2] оглушает его, ульи жалят издалека', kinds: ['ape'] },
-  { label: 'тяжёлые твари', answer: 'Светожук держит строй, Молот [2] оглушает', kinds: ['stalker', 'reaper', 'tyrant', 'executioner', 'devourer', 'mother'] },
+  // medium (spec §6): the Mother and her brood get their own answer
+  { label: 'Имаго-Матерь и её личинки', answer: 'Звездопад [3] и Молот [2] по Матери, ульи у края Круга — по личинкам', kinds: ['mother', 'larva'] },
+  { label: 'тяжёлые твари', answer: 'Светожук держит строй, Молот [2] оглушает', kinds: ['stalker', 'reaper', 'tyrant', 'executioner', 'devourer'] },
   { label: 'летуны сверху', answer: 'ульи бьют по воздуху, Копьё [1] — тоже', kinds: ['moth', 'bomber'] },
+  { label: 'Фуражиры роем', answer: 'шире Круг — в свете Древа они горят; ульи у его края', kinds: ['forager'] },
   { label: 'плевуны издалека', answer: 'Копьё [1] достаёт их и во тьме', kinds: ['spitter'] },
 ];
 const PACK: Cause = { label: 'стаи у ствола', answer: 'больше ульев у края Круга и Светожук перед ними', kinds: [] };

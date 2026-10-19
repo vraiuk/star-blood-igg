@@ -164,6 +164,13 @@ export interface WorldDef {
   winter?: { every: number; mul: number };
   /** creatures come out this far from the trunk at most (or at their side's Rift, if it is nearer) — medium 900 */
   spawnReach?: number;
+  /**
+   * seconds after nightfall the first group of a side reaches the outermost light on its side
+   * (spec §6: «ночь стартует так, чтобы первые группы подходили к краю Круга»). The whole side's
+   * schedule is shifted earlier by the lead; creatures already under way appear walked ahead.
+   * undefined = no lead-in (legacy, micro).
+   */
+  arriveIn?: number;
   /** in-world: the Observer's one line for what a Tree stage (0-based) opens in this world (spec §6) */
   stageLines?: Record<number, string>;
   features: WorldFeatures;
@@ -318,6 +325,8 @@ export const MEDIUM = {
   huskSlotGap: 24,
   /** creatures this close to a lit Dead Tree stop and gnaw it */
   huskReach: 10,
+  /** the night lead-in never puts a creature nearer than this to the light on its side (px) */
+  leadGap: 60,
 } as const;
 
 /** Observer lines for what each «Поляна» Tree stage opens (spec §6: every opening = a banner + one line). */
@@ -380,6 +389,7 @@ export const WORLDS: Record<WorldId, WorldDef> = {
     tunnelsFrom: MEDIUM_TUNNELS_FROM,
     winter: { every: 8, mul: 0.5 },
     spawnReach: 900,
+    arriveIn: 9,
     families: [
       start('hive'), start('beetle'), start('spider'),
       { family: 'caterpillar', unlock: { kind: 'sleeper' } }, { family: 'dragonfly', unlock: { kind: 'sleeper' } },

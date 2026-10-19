@@ -20,6 +20,7 @@ import { stelaName } from '../sim/medium';
 import { ENEMIES } from '../data/balance';
 import { markSeen, seen } from '../state/seen';
 import { stageNews } from './stageNews';
+import { ClarityLayer, MOOD_WORD, dayMood, speedsFor, type View } from './clarity';
 
 /** Roman numerals for facet levels */
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
@@ -103,6 +104,10 @@ export class Hud {
   private plate!: FocusPlate;
   /** the guide Кыш (spec §7) */
   readonly guide = new Guide();
+  /** offscreen threat arrows and the strip map (spec §7) */
+  private clarity!: ClarityLayer;
+  /** the camera's view in world px (set by main) */
+  private viewport: () => View | null = () => null;
   /** first-encounter creature card */
   private ccard!: HTMLElement;
   private ccardTimer = 0;
@@ -172,6 +177,10 @@ export class Hud {
   private project: (x: number, y: number) => [number, number] = (x, y) => [x * this.scale, y * this.scale];
   /** World → stage CSS px (provided by the camera). */
   setProjector(fn: (x: number, y: number) => [number, number]) { this.project = fn; }
+  /** The camera's view in world px (for the edge arrows and the strip map's window). */
+  setViewport(fn: () => View | null) { this.viewport = fn; }
+  /** A new run: forget the offscreen hits. */
+  resetClarity() { this.clarity.reset(); }
 
   private build() {
     const r = this.root;
@@ -306,6 +315,7 @@ export class Hud {
     r.appendChild(this.reviveBox);
 
     this.plate = new FocusPlate(r, () => this.project);
+    this.clarity = new ClarityLayer(r);
     this.ccard = el('div', 'panel plain');
     this.ccard.id = 'ccard';
     r.appendChild(this.ccard);
@@ -401,7 +411,11 @@ export class Hud {
     const gb = this.pause.querySelector<HTMLElement>('[data-a=guide]');
     if (gb) { gb.style.display = this.game().world.features.inWorld ? '' : 'none'; gb.textContent = `Подсказки Кыша: ${this.guide.enabled ? 'вкл' : 'выкл'}`; }
   }
-  setSpeed(x: number) { this.speedBtn.textContent = `×${x}`; }
+  setSpeed(x: number) {
+    this.speedBtn.textContent = `×${x}`;
+    // the speeds this world offers (spec §7: ×5 only in the medium world)
+    this.speedBtn.dataset.tip = `Кнопки − и + (или клавиши − и +) меняют скорость: ${speedsFor(this.game().world.maxSpeed).join(' · ')}.`;
+  }
   setSound(on: boolean) { this.soundBtn.textContent = on ? '♪' : '♪̸'; this.soundBtn.style.opacity = on ? '1' : '0.5'; }
 
   showEnd(coins: number, best: number, record: boolean) {
@@ -488,6 +502,9 @@ export class Hud {
   onEvents(events: GameEvent[]) {
     const g = this.game();
     for (const e of events) {
+      // hits on nests / the Tree / a Dead Tree feed the edge arrows (they show only when offscreen)
+      if (e.type === 'structureHit' || e.type === 'huskHit') this.clarity.hitAt(e.x);
+      else if (e.type === 'treeHit') this.clarity.hitAt(WORLD.treeX);
       switch (e.type) {
         case 'nightStart': {
           const def = g.night(e.night);
@@ -1517,15 +1534,19 @@ export class Hud {
     } else if (s.phase === 'day') {
       // medium: the Rifts left, and what tonight is (a truce, «winter», the retaliation wave)
       const rifts = g.world.win.kind === 'rifts' ? ` · Разломы ${s.mw.silent.length}/${g.world.win.count}` : '';
-      const mark = s.mw.wave ? ' · <span style="color:#ff8a8a">ответная волна</span>' : g.night(s.night).truce ? ' · <span style="color:#8fd0ff">перемирие</span>'
-        : g.isWinter(s.night) ? ' · <span style="color:#8fd0ff">зима</span>' : '';
-      this.nightInfo.innerHTML = `День · до ночи <span class="t">${Math.ceil(s.dayLeft)}с</span> · ночь ${s.night + 1}${of(s.night)}${mark}${rifts}`;
+      // in-world: the night number itself carries the colour (spec §7), one dim word names it
+      const mood = inWorld ? dayMood(g) : 'safe';
+      const word = MOOD_WORD[mood] ? ` <span class="mw">${MOOD_WORD[mood]}</span>` : '';
+      const num = inWorld ? `<b class="dn m-${mood}">${s.night + 1}</b>` : String(s.night + 1);
+      this.nightInfo.innerHTML = `День · до ночи <span class="t">${Math.ceil(s.dayLeft)}с</span> · ночь ${num}${of(s.night)}${word}${rifts}`;
       this.callBtn.classList.remove('hidden', 'rush', 'wait');
       this.callBtn.title = '';
       this.callBtn.innerHTML = `Призвать ночь <span style="opacity:.75">[Пробел] +${Math.floor(s.dayLeft)}</span>`;
     } else {
       const left = s.enemies.length + s.pending.length;
-      this.nightInfo.innerHTML = s.phase === 'night' ? `${g.night(s.night).title}${s.night < total ? ` · ${s.night + 1}/${total}` : seedWorld ? ` · ночь ${s.night + 1}` : ' · ∞'} · тварей: <span class="t">${left}</span>${s.rushedDawns ? ` · <span style="color:#ffb070">Натиск ×${s.rushedDawns}</span>` : ''}${s.wrath > 1.01 ? ` · <span style="color:#ff8a8a">Гнев ×${s.wrath.toFixed(1)}</span>` : ''}` : '';
+      const nm = inWorld ? dayMood(g) : 'night';
+      const nn = inWorld ? `<b class="dn m-${nm}">${s.night + 1}</b>` : String(s.night + 1);
+      this.nightInfo.innerHTML = s.phase === 'night' ? `${g.night(s.night).title}${s.night < total ? ` · ${nn}/${total}` : seedWorld ? ` · ночь ${nn}` : ' · ∞'} · тварей: <span class="t">${left}</span>${s.rushedDawns ? ` · <span style="color:#ffb070">Натиск ×${s.rushedDawns}</span>` : ''}${s.wrath > 1.01 ? ` · <span style="color:#ff8a8a">Гнев ×${s.wrath.toFixed(1)}</span>` : ''}` : '';
       if (g.canRush()) {
         const r = g.rushReward();
         this.callBtn.classList.remove('hidden', 'wait');
@@ -1641,6 +1662,9 @@ export class Hud {
     if (this.noticeTimer <= 0) this.notice.classList.remove('show');
     this.updateCard(g, dt);
     this.updateTips(g);
+    // edge arrows and the strip map (in-world, during a run)
+    const vp = this.root.classList.contains('title-mode') ? null : this.viewport();
+    this.clarity.update(g, vp, dt, this.project(0, WORLD.groundY - 16)[1]);
   }
 
   /**

@@ -460,6 +460,8 @@ export interface PendingSpawn {
   at: number;
   kind: EnemyKind;
   side: 'L' | 'R';
+  /** medium: seconds this creature has already walked from its Rift when it appears (night lead-in) */
+  ahead?: number;
 }
 
 export interface Stats {

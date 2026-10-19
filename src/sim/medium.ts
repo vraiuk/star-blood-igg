@@ -1,4 +1,4 @@
-import { WORLD } from '../data/balance';
+import { ENEMIES, WORLD, type EnemyKind } from '../data/balance';
 import { NESTS } from '../data/nests';
 import type { NightDef, SpawnGroup } from '../data/nights';
 import { MEDIUM, STAGE_INSTR, type WorldObjectDef } from '../data/worlds';
@@ -64,6 +64,39 @@ export function spawnX(g: Game, side: Side): number {
   }
   const edge = rift ? rift.o.x : WORLD.width + WORLD.spawnMargin;
   return reach === undefined ? edge : Math.min(edge, WORLD.treeX + reach);
+}
+
+/**
+ * The outermost lit x on a side: the Circle's edge, or the far edge of a burning Dead Tree's small
+ * Circle beyond it — where a side's creatures first meet the light.
+ */
+export function lightFront(g: Game, side: Side): number {
+  const r = g.state.tree.radius;
+  let front = side === 'L' ? WORLD.treeX - r : WORLD.treeX + r;
+  for (const h of litHusks(g)) {
+    if (side === 'L' && h.x < WORLD.treeX) front = Math.min(front, h.x - h.radius);
+    if (side === 'R' && h.x > WORLD.treeX) front = Math.max(front, h.x + h.radius);
+  }
+  return front;
+}
+
+/**
+ * Night lead-in (spec §6, `world.arriveIn`): how many seconds earlier a side's schedule starts so
+ * that its first creature (`kind`, due `firstAt` s after nightfall) reaches the light on its side
+ * `arriveIn` s after nightfall. 0 = no lead (the walk is already short enough, or no lead-in here).
+ */
+export function nightLead(g: Game, side: Side, kind: EnemyKind, firstAt: number): number {
+  const arrive = g.world.arriveIn;
+  if (arrive === undefined) return 0;
+  const dist = Math.abs(spawnX(g, side) - lightFront(g, side));
+  const v = Math.max(1, ENEMIES[kind].speed);
+  return Math.max(0, firstAt + dist / v - arrive);
+}
+
+/** How far (px) from its Rift a creature that has walked `ahead` s appears — never into the light. */
+export function aheadDistance(g: Game, side: Side, kind: EnemyKind, ahead: number): number {
+  const dist = Math.abs(spawnX(g, side) - lightFront(g, side));
+  return Math.max(0, Math.min(ENEMIES[kind].speed * ahead, dist - MEDIUM.leadGap));
 }
 
 /** Summed power of the bought stela blessings of one kind (0 = none). */

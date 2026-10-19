@@ -19,7 +19,7 @@ import { PATH_CAPSTONE, TREE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById
 import { INWORLD, INWORLD_RUNE_KEYS, MEDIUM, STAGE_INSTR, WORLDS, isWorldId, type RuneUnlock, type WorldDef, type WorldId } from '../data/worlds';
 import { focusOf, setVerb, spillAmber, updateInteract, cycleFocusOption, type Focus } from './interact';
 import { crackGeode, geodeVisible, hurtGrazer, maybeDropSeed, objectsOf, regrowHerds, updateWorldObjects } from './objects';
-import { blessing, damageHusk, huskLit, litHusks, riftsDawn, shapeNight, spawnX, updateMedium } from './medium';
+import { aheadDistance, blessing, damageHusk, huskLit, litHusks, nightLead, riftsDawn, shapeNight, spawnX, updateMedium } from './medium';
 import { mulberry32 } from './rng';
 import { emptyMedium, type Choice, type Drop, type DropKind, type Enemy, type GameEvent, type GameState, type PendingSpawn, type Projectile, type Soldier, type Structure, type Tunnel } from './types';
 
@@ -739,6 +739,10 @@ export class Game {
       this.state.wobj ??= { cracked: [], burnt: [] };
       this.state.seed ??= null;
       this.state.mw ??= emptyMedium();
+      // held input is not part of a saved run: a dawn snapshot taken mid-walk (or mid-pour) must not
+      // make the Keeper walk on by himself after «Продолжить» / «С рассвета» (phase 7 fix)
+      this.state.keeper.move = 0;
+      Object.assign(this.state.interact, { pour: false, take: false, sell: false, holdT: 0, sellT: 0 });
       this.recalc();
       this.refreshNestHp();
       return true;
@@ -1208,7 +1212,11 @@ export class Game {
   /** «Натиск» is possible: every creature of this night is out and the next night isn't the last one. */
   canRush(): boolean {
     const s = this.state;
-    // no gate: call as many nights on top of each other as you dare
+    // only where the world allows it (micro: never — spec §5)
+    if (!this.world.features.rush) return false;
+    // a truce is never skipped (spec §6/§7): not during one, not into one (a wave breaks the next truce)
+    if (this.world.features.inWorld && (this.nightQuiet > 0 || (this.night(s.night + 1).truce && !s.mw.wave))) return false;
+    // no other gate: call as many nights on top of each other as you dare
     return s.phase === 'night' && s.choices.length === 0;
   }
 
@@ -1238,7 +1246,7 @@ export class Game {
    */
   private rushNight(): boolean {
     const s = this.state;
-    if (!this.canRush()) return this.deny('Натиск — только ночью');
+    if (!this.canRush()) return this.deny(this.state.phase === 'night' && this.world.features.rush ? 'Перемирие не торопят — дождись рассвета' : 'Натиск — только ночью');
     const r = this.rushReward();
     s.amber += r.amber;
     s.star += r.star;
@@ -1906,6 +1914,22 @@ export class Game {
       }
     }
     pending.sort((a, b) => a.at - b.at);
+    // medium (spec §6): the night falls as the first groups come near the light — every creature of a
+    // side left its Rift `lead` seconds earlier; those already on the way are spawned walked ahead
+    if (this.world.arriveIn !== undefined) {
+      for (const side of ['L', 'R'] as const) {
+        const first = pending.find((p) => p.side === side);
+        if (!first) continue;
+        const lead = nightLead(this, side, first.kind, first.at - t0);
+        if (lead <= 0) continue;
+        for (const p of pending) {
+          if (p.side !== side) continue;
+          p.at -= lead;
+          if (p.at < t0) { p.ahead = t0 - p.at; p.at = t0; }
+        }
+      }
+      pending.sort((a, b) => a.at - b.at);
+    }
     s.pending = [...s.pending, ...pending].sort((a, b) => a.at - b.at);
     this.nightSpawns = s.pending.length;
     this.nightDeadline = (pending[pending.length - 1]?.at ?? 0) + NIGHT_GRACE;
@@ -2037,7 +2061,9 @@ export class Game {
     while (s.pending.length && s.pending[0].at <= s.phaseTime) {
       const p = s.pending.shift()!;
       // medium: out of the side's Rift (never farther than `spawnReach` from the trunk)
-      const x = this.world.features.inWorld ? spawnX(this, p.side) : p.side === 'L' ? -WORLD.spawnMargin : WORLD.width + WORLD.spawnMargin;
+      let x = this.world.features.inWorld ? spawnX(this, p.side) : p.side === 'L' ? -WORLD.spawnMargin : WORLD.width + WORLD.spawnMargin;
+      // left the Rift before nightfall: already that far along the way (never into the light)
+      if (p.ahead) x += (p.side === 'L' ? 1 : -1) * aheadDistance(this, p.side, p.kind, p.ahead);
       this.spawnEnemy(p.kind, x, p.side === 'L' ? 1 : -1);
     }
   }

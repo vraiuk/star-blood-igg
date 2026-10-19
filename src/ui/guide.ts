@@ -91,37 +91,70 @@ const MICRO: GuideStep[] = [
 ];
 
 /** x of the world objects of one kind (medium). */
-const objXs = (g: Game, kind: 'sleeper' | 'deadTree', keep: (id: string) => boolean) =>
+const objXs = (g: Game, kind: 'sleeper' | 'deadTree' | 'stela', keep: (id: string) => boolean) =>
   g.world.objects.flatMap((o, i) => (o.kind === kind && keep(`${o.kind}:${i}`) ? [o.x] : []));
+/** x of the Rifts not sealed yet. */
+const openRifts = (g: Game) => g.world.objects.flatMap((o) => (o.kind === 'rift' && !g.state.mw.sealed.includes(o.side) ? [o.x] : []));
+/** the cheapest stela price (Star Blood) still to buy, Infinity if none */
+const stelaPrice = (g: Game) => Math.min(Infinity, ...g.world.objects.flatMap((o, i) => (o.kind === 'stela' && !g.state.mw.blessed.includes(`stela:${i}`) ? [o.star] : [])));
+const rankedAny = (g: Game) => (['spear', 'hammer', 'starfall'] as const).some((r) => g.state.keeper.runeRank[r] > 0);
+/** Stage at which Rifts can be sealed (spec §6: 3). */
+const riftStage = (g: Game) => Math.min(Infinity, ...g.world.objects.flatMap((o) => (o.kind === 'rift' ? [o.minStage] : [])));
+const day = (g: Game) => g.state.phase === 'day';
 
 /**
- * Minimal medium steps (spec §7; the full medium guide is phase 7): wake a Sleeper → light a
- * Dead Tree → Star Blood to the stone → seal a Rift.
+ * The medium steps (spec §7, «Поляна»): wake a Sleeper → light a Dead Tree → Star Blood to the
+ * Tablet stone → a stela's blessing → grow the Tree to stage 3 → seal a Rift → survive its wave →
+ * seal the second Rift. The narrator speaks; Кыш himself only ever says «Юрр!».
  */
 const MEDIUM: GuideStep[] = [
   {
-    id: 'wake', text: 'Кыш убежал к краю Поляны: там спит Существо-отшельник. Влей 30 Янтаря <kbd>S</kbd> — разбуди его, и его гнездо откроется.',
-    need: (g) => g.state.phase === 'day' && g.state.night >= 1,
-    done: (g) => g.state.unlockedFamilies.length > 0,
+    id: 'wake', text: 'Кыш убежал к краю Поляны и свистит над спящим Существом-отшельником. Влей 30 Янтаря <kbd>S</kbd> — разбуди его, и его гнездо откроется у Круга.',
+    need: (g) => day(g) && g.state.night >= 1,
+    done: (g) => g.state.mw.woken.length > 0,
     target: (g) => nearestX(g, objXs(g, 'sleeper', (id) => !g.state.mw.woken.includes(id))),
   },
   {
-    id: 'husk', text: 'Кыш обнюхивает Мёртвое Древо. Влей 60 Янтаря <kbd>S</kbd> — оно загорится: малый Круг и два места для гнёзд.',
-    need: (g) => g.state.phase === 'day' && g.state.night >= 2,
+    id: 'husk', text: 'Кыш обнюхивает Мёртвое Древо и тихо: «Юрр…». Влей 60 Янтаря <kbd>S</kbd> — оно загорится: малый Круг, свет для гнёзд и два места при нём.',
+    need: (g) => day(g) && g.state.night >= 2,
     done: (g) => Object.keys(g.state.mw.husks).length > 0,
     target: (g) => nearestX(g, objXs(g, 'deadTree', (id) => g.state.mw.husks[id] === undefined)),
   },
   {
-    id: 'stone', text: 'У тебя Звёздная Кровь — Кыш сидит у камня Скрижали. Встань у камня и держи <kbd>S</kbd>: повысь руну.',
-    need: (g) => g.state.phase === 'day' && g.state.tree.stage >= (g.world.tabletStage ?? 0) && g.state.star >= g.runeRankPrice('spear'),
-    done: (g) => (['spear', 'hammer', 'starfall'] as const).some((r) => g.state.keeper.runeRank[r] > 0),
+    id: 'stone', text: 'У тебя Звёздная Кровь — Кыш уселся на камень Скрижали у Древа. Встань у камня и нажми <kbd>S</kbd>: повысь руну.',
+    need: (g) => day(g) && g.state.tree.stage >= (g.world.tabletStage ?? 0) && g.state.star >= g.runeRankPrice('spear'),
+    done: rankedAny,
     target: () => WORLD.treeX + INWORLD.stone,
   },
   {
-    id: 'rift', text: 'Древо окрепло. Кыш бежит к Разлому: днём влей Янтарь и 3 Звёздной Крови — запечатай. Будет Затмение и ответная волна.',
-    need: (g) => g.state.phase === 'day' && g.state.tree.stage >= 3 && !g.state.mw.wave,
+    id: 'stela', text: 'Кыш привёл тебя к Стеле Наблюдателя. Плашка скажет, что она даёт; влей Звёздную Кровь <kbd>S</kbd> — благословение на весь забег.',
+    need: (g) => day(g) && rankedAny(g) && g.state.star >= stelaPrice(g),
+    done: (g) => g.state.mw.blessed.length > 0,
+    target: (g) => nearestX(g, objXs(g, 'stela', (id) => !g.state.mw.blessed.includes(id))),
+  },
+  {
+    id: 'grow3', text: 'Кыш свистит у алтаря: Разлом не запечатать слабым Древом. Держи <kbd>S</kbd> — расти Древо до третьей стадии, проснётся Звездопад [3].',
+    need: (g) => day(g) && g.state.night >= 3 && g.state.tree.stage < riftStage(g) && g.growNeed() > 0 && g.state.keeper.purse + g.state.amber >= g.growNeed(),
+    done: (g) => g.state.tree.stage >= riftStage(g),
+    target: () => WORLD.treeX + INWORLD.altar,
+  },
+  {
+    id: 'rift', text: 'Древо окрепло. Кыш бежит к Разлому Пустоты, оглядываясь: «Юрр!». Днём влей 120 Янтаря и 3 Звёздной Крови — запечатай. Придёт Затмение и ответная волна.',
+    need: (g) => day(g) && g.state.tree.stage >= riftStage(g) && g.state.mw.sealed.length === 0,
     done: (g) => g.state.mw.sealed.length > 0,
-    target: (g) => nearestX(g, g.world.objects.flatMap((o) => (o.kind === 'rift' && !g.state.mw.sealed.includes(o.side) ? [o.x] : []))),
+    target: (g) => nearestX(g, openRifts(g)),
+  },
+  {
+    id: 'wave', text: 'Затмение! Кыш жмётся к стволу: этой ночью запечатанный Разлом выплюнет всё, что в нём осталось. Гнёзда — к той стороне, Молот [2] наготове. Переживи ночь — и сторона затихнет.',
+    need: (g) => !!g.state.mw.wave,
+    done: (g) => g.state.mw.silent.length > 0,
+    target: () => WORLD.treeX - GUIDE.beside,
+  },
+  {
+    id: 'rift2', text: 'С одной стороны тьма молчит. Кыш уже у второго Разлома — печать теперь дороже: 240 Янтаря и 3 Звёздной Крови. Запечатай и переживи последнюю волну.',
+    need: (g) => day(g) && g.state.mw.silent.length > 0 && g.state.mw.sealed.length < 2 && !g.state.mw.wave,
+    done: (g) => g.state.mw.sealed.length >= 2,
+    target: (g) => nearestX(g, openRifts(g)),
   },
 ];
 

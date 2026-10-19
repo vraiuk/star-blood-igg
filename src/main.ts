@@ -12,6 +12,8 @@ import { openStats } from './ui/stats';
 import { hideWorldTip, showWorldTip } from './ui/glossary';
 import { VERSION_LABEL } from './version';
 import { WORLDS, isWorldId, type WorldId } from './data/worlds';
+import { speedsFor, stepSpeedIn } from './ui/clarity';
+import { HeldKeys } from './ui/input';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui') as HTMLElement;
@@ -51,13 +53,12 @@ const audio = new Audio();
 renderer = new Renderer(ctx);
 const view: ViewState = { hoverSlot: null, selectedSlot: null, hoverTree: false, mouseX: 320, mouseY: 200, aiming: null, preview: null };
 let endShown = false;
-const ALL_SPEEDS = [1, 1.25, 1.5, 2, 5];
-/** speeds this world offers (×5 only where `maxSpeed` allows) */
-const speeds = () => ALL_SPEEDS.filter((x) => x <= game.world.maxSpeed);
+/** speeds this world offers (spec §7: ×2 at once everywhere, ×5 only where `maxSpeed` allows — medium) */
+const speeds = () => speedsFor(game.world.maxSpeed);
 let sacrificeArmed = 0;
 const nextSpeed = () => { const l = speeds(); return l[(l.indexOf(speed) + 1) % l.length]; };
 /** − / + step through the speeds without wrapping around */
-const stepSpeed = (d: 1 | -1) => { const l = speeds(); return l[Math.max(0, Math.min(l.length - 1, l.indexOf(speed) + d))]; };
+const stepSpeed = (d: 1 | -1) => stepSpeedIn(speeds(), speed, d);
 /** the in-world control scheme (spec §3): walk up and hold S / W / X; no mouse on the world */
 const inWorld = () => game.world.features.inWorld;
 let lastRecord = false;
@@ -96,7 +97,10 @@ function startRun(w: WorldId) {
   renderer!.resetCamera(game.state.tree.radius);
   started = true;
   endShown = false;
-  if (!speeds().includes(speed)) { speed = 1; hud.setSpeed(1); }
+  if (!speeds().includes(speed)) speed = 1;
+  hud.setSpeed(speed);
+  hud.resetClarity();
+  updateMove();
   audio.start();
   hud.hideTitle();
 }
@@ -115,6 +119,11 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     renderer!.resetCamera(game.state.tree.radius);
     started = true;
     endShown = false;
+    if (!speeds().includes(speed)) speed = 1;
+    hud.setSpeed(speed);
+    hud.resetClarity();
+    // the restored Keeper stands still; he walks again only for a key that is really held
+    updateMove();
     audio.start();
     hud.hideTitle();
   },
@@ -134,8 +143,10 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     renderer!.setWorld();
     renderer!.resetCamera(game.state.tree.radius);
     hud.guide.reset();
+    hud.resetClarity();
     logged = false;
     endShown = false;
+    updateMove();
     storeRun();
   },
   onRestart() {
@@ -210,12 +221,11 @@ fit();
 
 // ───────────────────────────── input ───────────────────────────────
 
-const held = new Set<string>();
+/** held keys, by name and by physical key (phase 7: no stuck key keeps the Keeper walking) */
+const held = new HeldKeys();
 
 function updateMove() {
-  const l = held.has('a') || held.has('arrowleft') || held.has('ф');
-  const r = held.has('d') || held.has('arrowright') || held.has('в');
-  const dir = l === r ? 0 : l ? -1 : 1;
+  const dir = held.moveDir();
   // Shift + A/D (follow-camera worlds): free look — the camera pans, the keeper stands still
   const look = game.world.features.inWorld && held.has('shift');
   renderer?.camera.setFreeLook(look, look ? dir : 0);
@@ -225,6 +235,15 @@ function updateMove() {
 function setPaused(p: boolean) {
   paused = p;
   hud.setPaused(p);
+  // a pause lets go of every key: what is still held after it is pressed again
+  if (p) releaseAll();
+}
+
+/** Let go of every held key and verb (blur, hidden tab, pause). */
+function releaseAll() {
+  held.clear();
+  updateMove();
+  releaseVerbs();
 }
 
 /** Abilities that need a target point enter aim mode on click; the hammer casts at once. */
@@ -291,7 +310,9 @@ window.addEventListener('keydown', (e) => {
     return;
   }
   if (paused || game.over) return;
-  held.add(k);
+  // ⌘ / Ctrl chords are the browser's (and macOS drops their keyups): never a held game key
+  if ((e.metaKey || e.ctrlKey) && k !== 'meta' && k !== 'control') return;
+  held.down(k, e.code);
   updateMove();
   if (inWorld()) {
     // the open Tablet closes with R / B, or S / W again at the stone
@@ -329,7 +350,7 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => {
   const k = ALIAS[e.key.toLowerCase()] ?? e.key.toLowerCase();
-  held.delete(k);
+  held.up(k, e.code);
   if (inWorld()) {
     if (k === 's' || k === 'arrowdown') game.setPour(false);
     if (k === 'w' || k === 'arrowup') game.setTake(false);
@@ -339,11 +360,12 @@ window.addEventListener('keyup', (e) => {
   if (ABILITY_KEYS[k] === 'spear') game.releaseBeam();
   updateMove();
 });
-window.addEventListener('blur', () => { held.clear(); updateMove(); releaseVerbs(); audio.setBackground(true); });
+window.addEventListener('blur', () => { releaseAll(); audio.setBackground(true); });
 window.addEventListener('focus', () => { if (!document.hidden) audio.setBackground(false); });
 // a hidden tab goes silent and, mid-run, pauses
 document.addEventListener('visibilitychange', () => {
   audio.setBackground(document.hidden);
+  if (document.hidden) releaseAll();
   if (document.hidden && started && !game.over && !paused) setPaused(true);
 });
 
@@ -352,6 +374,7 @@ function toWorld(ev: MouseEvent): [number, number] {
   return renderer!.camera.toWorld(ev.clientX - r.left, ev.clientY - r.top, r.width, r.height);
 }
 hud.setProjector((x, y) => renderer!.camera.toScreen(x, y, cssW, cssH));
+hud.setViewport(() => (started && renderer ? { x: renderer.camera.x, w: renderer.camera.w } : null));
 
 /** Clickable height of surface nests (matches their sprites). */
 const PICK_H: Record<string, number> = { hive: 42, beetle: 20, dragonfly: 36, termite: 22, spider: 12 };
