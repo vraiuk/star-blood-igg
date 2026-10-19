@@ -38,7 +38,9 @@ export type EnemyKind =
   | 'hound' | 'stalker' | 'spitter'
   | 'forager' | 'worm' | 'guard' | 'larva' | 'reaper' | 'jumper' | 'tunneler' | 'tunnelerUp'
   | 'moth' | 'bomber' | 'tyrant' | 'devourer'
-  | 'mother' | 'executioner';
+  | 'mother' | 'executioner'
+  /** IGG2 micro: the neutral grazing firefly (herd) and the night-4 mini-boss */
+  | 'grazer' | 'ape';
 export type AbilityId = 'spear' | 'hammer' | 'starfall' | 'radiance' | 'swarm' | 'timestop';
 
 export interface EnemyDef {
@@ -143,6 +145,13 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   executioner: E({
     name: 'Имаго-Палач', hp: 11000, armor: 14, speed: 10, damage: 120, attackRate: 1.6, structureMult: 1.5, amber: 158, star: 60,
     devRune: 1, charge: 60, worm: true, smashesStructures: true, ccMult: 0.2, radius: 22, height: 52, boss: true,
+  }),
+  /** IGG2: a neutral grazing firefly of the herds (never attacks; runes and nests leave it be) */
+  grazer: E({ name: 'Пасущийся светляк', hp: 30, speed: 10, damage: 0, amber: 4, charge: 0, radius: 4, height: 6 }),
+  /** IGG2 micro night 4: «Гигантопитек» — a hulking shadow ape that smashes nests */
+  ape: E({
+    name: 'Гигантопитек', hp: 640, armor: 4, speed: 22, damage: 24, attackRate: 1.4, structureMult: 1.4, amber: 30, charge: 10,
+    smashesStructures: true, ccMult: 0.6, radius: 11, height: 30,
   }),
 };
 

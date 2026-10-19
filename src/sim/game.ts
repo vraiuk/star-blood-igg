@@ -18,6 +18,7 @@ import {
 import { PATH_CAPSTONE, TREE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
 import { INWORLD, INWORLD_RUNE_KEYS, STAGE_INSTR, WORLDS, isWorldId, type RuneUnlock, type WorldDef, type WorldId } from '../data/worlds';
 import { focusOf, setVerb, spillAmber, updateInteract, cycleFocusOption, type Focus } from './interact';
+import { crackGeode, geodeVisible, hurtGrazer, maybeDropSeed, objectsOf, regrowHerds, updateWorldObjects } from './objects';
 import { mulberry32 } from './rng';
 import type { Choice, Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Projectile, Soldier, Structure, Tunnel } from './types';
 
@@ -138,11 +139,15 @@ export class Game {
       nextId: 1, time: 0,
       pledges: {}, unlockedFamilies: [],
       interact: { pour: false, take: false, sell: false, holdT: 0, acc: 0, sellT: 0, focusId: null, opt: {}, pledgeX: {}, told: false },
+      herd: [], wobj: { cracked: [], burnt: [] }, seed: null,
     };
     this.recalc();
     this.state.tree.hp = this.treeMaxHp();
     this.state.keeper.hp = this.keeperMaxHp();
-    if (this.world.features.inWorld) this.applyRuneUnlocks();
+    if (this.world.features.inWorld) {
+      this.applyRuneUnlocks();
+      regrowHerds(this, this.rand);
+    }
     if (opts.startRune && this.world.features.roulette) this.offerDawn(true);
   }
 
@@ -436,6 +441,9 @@ export class Game {
     if (slot.crown) {
       return this.state.tree.stage + 1 >= (slot.unlockStage ?? 1) && this.state.tree.rings >= ringsForCrownSlot(Number(slot.id.slice(1)));
     }
+    // micro: only the first wells, shown from a night on (whatever the Circle)
+    const wells = this.world.wells;
+    if (slot.well && wells) return Number(slot.id.slice(1)) < wells.count && this.state.night >= wells.fromNight;
     // in-world root wells open with the Circle like surface slots
     if (slot.underground && !slot.well) return this.state.tree.stage + 1 >= (slot.unlockStage ?? 1);
     return slot.offset <= r - SLOT_MARGIN;
@@ -643,7 +651,12 @@ export class Game {
     if (c > 0 && s.tree.growth >= c) this.grow();
   }
 
-  get over(): boolean { return this.state.phase === 'lost'; }
+  /** The run is over: the Tree fell (`lost`) or the world's goal is reached (`won`). */
+  get over(): boolean { return this.state.phase === 'lost' || this.state.phase === 'won'; }
+  /** The world's goal is reached (micro: the Seed carried out of the Circle). */
+  get won(): boolean { return this.state.phase === 'won'; }
+  /** A world with its own scripted night list (no legacy growth by night index, no elites, no wrath). */
+  private get scripted(): boolean { return !this.customNights && this.world.nights !== 'campaign'; }
 
   /** Night definition by index (campaign, then endless generator). */
   night(n: number): NightDef {
@@ -651,7 +664,11 @@ export class Game {
     const list = this.world.nights;
     if (list === 'campaign') return nightDef(n);
     if (n < list.length) return list[n];
-    return this.world.endless ? nightDef(n) : list[list.length - 1];
+    if (this.world.endless) return nightDef(n);
+    // the list ran out: its last night again, a little tougher each time (micro: spec §5)
+    const last = list[list.length - 1];
+    const k = n - list.length + 1;
+    return { ...last, title: `${last.title} · ещё раз`, hpMul: last.hpMul * Math.pow(this.world.repeatMul ?? 1, k) };
   }
 
   /** Number of hand-made campaign nights (the milestone). */
@@ -693,6 +710,9 @@ export class Game {
       this.state.pledges ??= {};
       this.state.unlockedFamilies ??= [];
       this.state.interact ??= { pour: false, take: false, sell: false, holdT: 0, acc: 0, sellT: 0, focusId: null, opt: {}, pledgeX: {}, told: false };
+      this.state.herd ??= [];
+      this.state.wobj ??= { cracked: [], burnt: [] };
+      this.state.seed ??= null;
       this.recalc();
       this.refreshNestHp();
       return true;
@@ -1526,6 +1546,12 @@ export class Game {
       const lv = this.facetLv('hm-pull');
       this.later(0.6, () => this.meteor(x, 0.35, def.damage * (1.5 + 0.4 * (lv - 1)) * mult, radius * 0.7, { stun: 0.8 }));
     }
+    // in-world: the slam cracks geodes and hits grazers in its radius
+    if (this.world.features.inWorld) {
+      const hr = Math.max(radius, form === 'B' || form === 'A' ? Math.min(reach, radius * 1.5) : 0);
+      for (const { o, id } of objectsOf(this, 'geode')) if (Math.abs(o.x - k.x) <= hr && geodeVisible(this, o, id)) crackGeode(this, id);
+      for (const e of s.herd) if (Math.abs(e.x - k.x) <= hr) { hurtGrazer(this, this.rand, e, def.damage * mult); e.stun = Math.max(e.stun, 0.8); }
+    }
     // common to every Form: caving tunnels, the sun refund, the eclipse field and the light
     const caveR = Math.max(radius, form === 'B' ? reach : 0) * this.fx('hm-deep', 2, 0.3, 1);
     for (const tn of [...s.tunnels]) {
@@ -1760,7 +1786,11 @@ export class Game {
       this.nightDeadline += dt;
     }
     this.updateKeeper(dt);
-    if (this.world.features.inWorld) updateInteract(this, dt);
+    if (this.world.features.inWorld) {
+      updateInteract(this, dt);
+      updateWorldObjects(this, this.rand, dt);
+      if (this.won) return;
+    }
     this.updateEnemies(dt);
     this.updateTunnels(dt);
     this.updateStructures(dt);
@@ -1797,7 +1827,8 @@ export class Game {
 
   private updateDay(dt: number) {
     const s = this.state;
-    if (s.choices.length === 0) s.dayLeft -= dt;
+    // the Seed lying out (or carried) holds the day: no night falls on the last walk
+    if (s.choices.length === 0 && !s.seed) s.dayLeft -= dt;
     const tear = s.tree.stage + 1 >= TREE.tearStage ? 2 : 1;
     if (s.tree.hp < this.treeMaxHp()) {
       const h = (TREE.dayRegen * tear + this.mods.treeRegen) * dt;
@@ -1830,8 +1861,8 @@ export class Game {
       for (const side of sides) {
         const boss = ENEMIES[g.kind].boss;
         // worms dig in ever larger numbers
-        const wormGrow = ENEMIES[g.kind].underground ? 1 + ENDLESS.wormCount * s.night : 1;
-        const grow = (handMade ? ENDLESS.count(s.night) : 1) * wormGrow;
+        const wormGrow = ENEMIES[g.kind].underground && !this.scripted ? 1 + ENDLESS.wormCount * s.night : 1;
+        const grow = (handMade && !this.scripted ? ENDLESS.count(s.night) : 1) * wormGrow;
         const count = boss ? g.count : Math.round(g.count * grow);
         const every = boss ? g.every : g.every / Math.sqrt(grow);
         for (let i = 0; i < count; i++) {
@@ -1888,6 +1919,11 @@ export class Game {
     if (!s.keeper.alive && !this.world.features.inWorld) s.keeper.respawn = 0.5;
     this.adaptWrath(finished);
     this.emit({ type: 'dawn', night: finished, gift });
+    if (this.world.features.inWorld) {
+      // the herds regrow; the grown Tree may drop the Seed (micro)
+      regrowHerds(this, this.rand);
+      maybeDropSeed(this);
+    }
     // in-world: the Observer's gifts are fixed by the world's script (no roulette, spec §4)
     for (const u of this.world.runeUnlocks ?? []) {
       if (u.when.kind === 'gift' && finished + 1 >= u.when.night && !s.keeper.learned[u.rune]) this.giftRune(u, 'gift');
@@ -1975,7 +2011,7 @@ export class Game {
     let hp = Math.round(def.hp * (def.boss ? ENDLESS.bossHp(s.night) : nightMul) * pathMul * s.wrath
       * (HEAVY.has(kind) ? ENDLESS.heavyHp(s.night) : 1) * (def.worm && !def.boss ? ENDLESS.wormHp(s.night) : 1));
     let affix: Enemy['affix'] = null;
-    if (!def.boss && kind !== 'larva' && s.night >= ELITE.fromNight && this.rand() < ELITE.chance(s.night)) {
+    if (!def.boss && kind !== 'larva' && !this.scripted && s.night >= ELITE.fromNight && this.rand() < ELITE.chance(s.night)) {
       const list = Object.keys(AFFIXES) as Array<NonNullable<Enemy['affix']>>;
       affix = list[Math.floor(this.rand() * list.length)];
       hp = Math.round(hp * ELITE.hp);
@@ -2593,7 +2629,7 @@ export class Game {
    */
   private adaptWrath(finished: number) {
     const s = this.state;
-    if (finished < this.campaignNights - 1) return;
+    if (finished < this.campaignNights - 1 || this.scripted) return;
     const max = this.treeMaxHp();
     const before = s.wrath;
     const unharmed = this.nightTreeDmg <= max * 0.02;
@@ -3009,7 +3045,10 @@ export class Game {
     this.refreshNestHp();
     if (this.world.features.branches && TREE_BRANCHES[t.stage]) s.choices.push({ kind: 'branch', stage: t.stage });
     this.emit({ type: 'treeGrew', stage: t.stage });
-    if (this.world.features.inWorld) this.applyRuneUnlocks();
+    if (this.world.features.inWorld) {
+      this.applyRuneUnlocks();
+      maybeDropSeed(this);
+    }
   }
 
   private updateTreeRadius(dt: number) {
@@ -3204,6 +3243,13 @@ export class Game {
             this.damageEnemy(e, dmg);
             if (p.knock && !ENEMIES[e.kind].boss) e.kick = Math.sign(p.vx) * p.knock * ENEMIES[e.kind].ccMult;
           }
+        }
+        // the Spear hunts the grazing herds too (they are never aimed at)
+        for (const e of s.herd) {
+          if (e.dead || p.pierce <= 0 || p.hit.includes(e.id) || Math.abs(e.x - p.x) > ENEMIES.grazer.radius + 3) continue;
+          p.hit.push(e.id);
+          p.pierce--;
+          hurtGrazer(this, this.rand, e, p.damage);
         }
         if (p.pierce <= 0 && this.mods.spearRicochet && (p.bounces ?? 0) < this.fx('sp-chain', 2, 1, 1)) {
           const next = s.enemies

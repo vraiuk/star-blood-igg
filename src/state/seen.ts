@@ -34,6 +34,11 @@ export function markSeen(id: string): boolean {
   return true;
 }
 
+/** Clear one flag (e.g. switch the guide back on). */
+export function unmarkSeen(id: string) {
+  if (load().delete(id)) write();
+}
+
 /** Forget every flag (guide «reset» in the pause menu). */
 export function resetSeen() {
   cache = new Set();

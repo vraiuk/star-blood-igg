@@ -73,8 +73,8 @@ describe('Game and worlds', () => {
     expect(g.state.keeper.x).toBe(720 - 28);
   });
 
-  it('wells unlock by Circle radius, not by stage', () => {
-    const g = new Game({ seed: 1, world: 'micro' });
+  it('wells unlock by Circle radius, not by stage (medium; micro scripts its wells — phase 5)', () => {
+    const g = new Game({ seed: 1, world: 'medium' });
     const r = g.treeRadius();
     for (const s of SLOTS.filter((x) => x.well)) expect(g.slotUnlocked(s)).toBe(s.offset <= r - 14);
     expect(g.slotUnlocked(slot('U0')!)).toBe(false); // seed Circle 72: 60 > 72 − 14

@@ -626,3 +626,19 @@ body { display: grid; place-items: center; }
 .rblock.iw .nums b { color: var(--gold-hi); }
 .rblock.iw .hint { font-size: calc(5.5 * var(--u)); color: var(--ink-dim); margin-left: calc(3 * var(--u)); }
 #sidepanel .starcount .icon { width: calc(8 * var(--u)); height: calc(8 * var(--u)); vertical-align: -15%; }
+
+/* ── IGG2 phase 5: Кыш's hint line, creature cards, end screens ── */
+#tip .yurr { display: inline-block; white-space: normal; max-width: calc(300 * var(--u)); line-height: 1.35; color: #f4e6c8; opacity: 0.85; }
+#tip .yurr.alert { color: var(--gold-hi); opacity: 1; animation: yurrAlert 0.9s ease-in-out infinite alternate; }
+@keyframes yurrAlert { from { text-shadow: 0 0 calc(2 * var(--u)) #000; } to { text-shadow: 0 0 calc(6 * var(--u)) rgba(255, 200, 90, 0.9), 0 0 calc(2 * var(--u)) #000; } }
+#ccard { position: absolute; right: calc(8 * var(--u)); top: calc(70 * var(--u)); width: calc(140 * var(--u)); padding: calc(4 * var(--u)) calc(6 * var(--u)); opacity: 0; transform: translateX(calc(10 * var(--u))); transition: opacity 0.3s, transform 0.3s; pointer-events: none; }
+#ccard.show { opacity: 1; transform: none; }
+#ccard .who { font-size: calc(5 * var(--u)); color: #ff9a8a; text-transform: uppercase; letter-spacing: 0.08em; }
+#ccard .cn { font-family: var(--serif); font-weight: 700; font-size: calc(8 * var(--u)); color: #fff; margin: calc(1 * var(--u)) 0 calc(2 * var(--u)); }
+#ccard .cd, #ccard .ca { font-family: var(--text); font-size: calc(5.5 * var(--u)); line-height: 1.35; color: var(--ink); margin-top: calc(1 * var(--u)); }
+#ccard b { color: var(--gold-hi); font-weight: 400; }
+.screen .reason { max-width: calc(320 * var(--u)); }
+#fplate .fp-hold { background: #2a2010; }
+#fplate .fp-hold i { background: var(--gold-hi); }
+/* in-world: the banner sits higher, clear of the focus plate over the Keeper */
+.in-world #banner { top: 19%; }

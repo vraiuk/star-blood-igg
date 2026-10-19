@@ -72,6 +72,8 @@ const savedRun = (): { night: number; world: WorldId; json: string } | null => {
     return { night: d.state?.night ?? 0, world: isWorldId(d.world) ? d.world : 'legacy', json };
   } catch { return null; }
 };
+/** in-world: the last dawn (or the run's first morning) — «С рассвета» replays from it (spec §5) */
+let dawnSnap: string | null = null;
 const storeRun = () => { try { localStorage.setItem(RUN_KEY, game.snapshot()); } catch { /* storage full */ } };
 const dropRun = () => { try { localStorage.removeItem(RUN_KEY); } catch { /* ignore */ } };
 
@@ -87,6 +89,8 @@ function startRun(w: WorldId) {
   dropRun();
   world = w;
   game = newGame();
+  dawnSnap = game.snapshot();
+  hud.guide.reset();
   logged = false;
   hud.resetQuests();
   renderer!.resetCamera(game.state.tree.radius);
@@ -103,6 +107,8 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     if (run) world = run.world;
     game = newGame();
     if (!run || !game.restore(run.json)) { dropRun(); titleInfo(); return; }
+    dawnSnap = run.json;
+    hud.guide.reset();
     renderer!.setWorld();
     logged = false;
     hud.resetQuests();
@@ -118,12 +124,27 @@ const hud: Hud = new Hud(uiRoot, () => game, {
     const body = `Версия: ${VERSION_LABEL}\nМир: ${game.world.name}\nТропа: ${PATHS[game.path].name}\nНочей: ${s.night}\nДрево: ${s.tree.stage + 1}/6, колец ${s.tree.rings}\n\n**Что понравилось:**\n\n**Что сломано / непонятно:**\n\n**Чего хочется дальше:**\n`;
     window.open(`https://github.com/vraiuk/star-blood-igg/issues/new?title=${encodeURIComponent('Отзыв: ')}&body=${encodeURIComponent(body)}`, '_blank');
   },
-  onStart(w) { startRun(w); },
+  onStart(w) { hud.hideEnd(); startRun(w); },
+  onFromDawn() {
+    // back to the last dawn of this run: the same world, the morning state
+    const snap = dawnSnap;
+    hud.hideEnd();
+    game = newGame();
+    if (snap) game.restore(snap);
+    renderer!.setWorld();
+    renderer!.resetCamera(game.state.tree.radius);
+    hud.guide.reset();
+    logged = false;
+    endShown = false;
+    storeRun();
+  },
   onRestart() {
     logQuit();
     hud.hideEnd();
     hud.closeMenu();
     game = newGame();
+    dawnSnap = game.snapshot();
+    hud.guide.reset();
     logged = false;
     hud.resetQuests();
     renderer!.resetCamera(game.state.tree.radius);
@@ -497,7 +518,7 @@ function frame(now: number) {
   // the Ascended falls or the Tree is in danger: back to normal speed so the moment isn't missed
   if (speed !== 1 && events.some((e) => e.type === 'keeperDown' || e.type === 'treeDanger')) { speed = 1; hud.setSpeed(1); }
   // save the run at every dawn; a lost run has nothing to continue
-  if (events.some((e) => e.type === 'dawn')) storeRun();
+  if (events.some((e) => e.type === 'dawn')) { storeRun(); dawnSnap = game.snapshot(); }
   if (events.some((e) => e.type === 'lost')) dropRun();
   if (events.length) {
     renderer!.onEvents(events, game);
@@ -505,7 +526,19 @@ function frame(now: number) {
     audio.play(events);
     audio.setPhase(game.state.phase);
   }
-  if (game.over && !endShown && started) {
+  if (game.won && !endShown && started) {
+    // the world's goal: micro won → «Поляна» opens on the title
+    endShown = true;
+    hud.closeMenu();
+    if (!logged) { logged = true; saveRunLog(buildRunLog(game, 'won')); }
+    if (game.world.id === 'micro') save.microDone = true;
+    save.runs++;
+    writeSave(save);
+    dropRun();
+    titleInfo();
+    setTimeout(() => hud.showWin(), 1400);
+  }
+  if (game.over && !game.won && !endShown && started) {
     endShown = true;
     hud.closeMenu();
     const coins = finishRun();
@@ -513,6 +546,7 @@ function frame(now: number) {
     setTimeout(() => hud.showEnd(coins, save.bestNight[game.path] ?? 0, lastRecord), 3600);
   }
   // paused worlds drift slowly; a lost run plays the Tree's fall in real time
+  view.yurr = started ? hud.guide.view(game) : null;
   renderer!.render(game, view, time, frozen && started && !game.over ? dt * 0.15 : dt);
   hud.update(dt);
   requestAnimationFrame(frame);

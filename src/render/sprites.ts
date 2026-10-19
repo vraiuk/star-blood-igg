@@ -42,7 +42,129 @@ export function drawEnemy(c: Ctx, e: Enemy, time: number) {
     case 'jumper': return jumper(c, e, t, body, rim);
     case 'tunneler': return worm(c, e, t, flash);
     case 'tunnelerUp': return digger(c, e, t, moving, rim, flash);
+    case 'grazer': return grazer(c, e, t, flash);
+    case 'ape': return ape(c, e, t, moving, body, rim);
   }
+}
+
+/** A neutral grazing firefly (IGG2 herds): a round beetle nibbling the grass, its lamp glows above the dark. */
+function grazer(c: Ctx, e: Enemy, t: number, flash: boolean) {
+  const d = e.dir;
+  const x = Math.round(e.x), y = GY;
+  const nod = e.attacking ? Math.max(0, Math.sin(t * 3)) * 1 : 0;
+  // legs
+  const sw = e.attacking ? 0 : Math.sin(t * 14) > 0 ? 1 : 0;
+  rect(c, x - 2 + sw, y - 1, 1, 1, '#2a2418');
+  rect(c, x + 1 - sw, y - 1, 1, 1, '#2a2418');
+  ellipse(c, x, y - 3, 3, 2, flash ? '#fff' : '#3a3424');
+  rect(c, x - 2, y - 5, 4, 1, flash ? '#fff' : '#5a5038');
+  // head
+  rect(c, x + 3 * d, y - 3 + nod, 2, 2, flash ? '#fff' : '#2a2418');
+  rect(c, x + 4 * d, y - 5 + nod, 1, 1, '#6a5a3a');
+}
+
+/** Гигантопитек: a hulking shadow ape knuckle-walking on long arms. */
+function ape(c: Ctx, e: Enemy, t: number, moving: boolean, body: string, rim: string) {
+  const d = e.dir;
+  const x = Math.round(e.x), y = GY;
+  const ph = moving ? t * 4 : 0;
+  const swing = e.attacking ? Math.sin(t * 5) * 5 : 0;
+  // hind legs
+  line(c, x - 4 * d, y - 12, x - 6 * d + Math.sin(ph) * 2, y, PAL.shade0, 3);
+  line(c, x - 1 * d, y - 12, x + Math.sin(ph + 2) * 2, y, PAL.shade0, 3);
+  // hunched torso and back
+  ellipse(c, x, y - 18, 9, 8, body);
+  ellipse(c, x + 3 * d, y - 23, 7, 6, body);
+  rect(c, x - 6, y - 28, 9, 1, rim);
+  // head low in front
+  ellipse(c, x + 10 * d, y - 22 + Math.abs(swing) * 0.3, 4, 4, body);
+  rect(c, x + 12 * d, y - 19, 2, 1, PAL.shade0);
+  // long arms down to the knuckles
+  const ax = x + (9 + Math.sin(ph + 1) * 3) * d + swing * d;
+  line(c, x + 5 * d, y - 22, ax, y - 1, PAL.shade0, 3);
+  rect(c, ax - 1, y - 2, 3, 2, rim);
+}
+
+/** The guide Кыш as the renderer sees him (src/ui/guide.ts). */
+export interface YurrView {
+  x: number;
+  dir: 1 | -1;
+  /** running to a goal, sitting (whistling), digging a little, hiding by the Tree */
+  mode: 'run' | 'sit' | 'dig' | 'hide';
+  t: number;
+  /** a small note above him while he sits at the goal */
+  whistle: boolean;
+  /** the player has not done the step for a while: «!» blinks */
+  alert: boolean;
+  /** a purple carrot lies here (dawn after night 1), or null */
+  carrotX: number | null;
+}
+
+/**
+ * Кыш, the field yurr (books, vol. 1): a plump tricolour hamster-squirrel — ginger, white and
+ * dark brown — with a cat-like face and white ear tufts; ~9 px. Drawn above the darkness so the
+ * guide is never lost; `night` dims him a little.
+ */
+export function drawYurr(c: Ctx, v: YurrView, night: boolean) {
+  const d = v.dir;
+  const x = Math.round(v.x), y = GY;
+  const run = v.mode === 'run';
+  const hop = run ? Math.abs(Math.sin(v.t * 18)) * 2 : 0;
+  const by = Math.round(y - hop - (v.mode === 'hide' ? -1 : 0));
+  if (v.carrotX !== null) {
+    // the purple carrot with its green top
+    const cx = Math.round(v.carrotX);
+    line(c, cx - 3, y - 1, cx + 2, y - 2, '#8a4ad0', 2);
+    rect(c, cx + 3, y - 4, 1, 2, '#5ac85a');
+    rect(c, cx + 4, y - 5, 1, 2, '#3a9a3a');
+  }
+  // a dark 1-px outline keeps the little ginger body readable against the golden grass
+  const ink = '#140a06';
+  for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) yurrBody(c, v, x + ox, by + oy, ink, ink, ink, true);
+  yurrBody(c, v, x, by, night ? '#c07a3c' : '#e8903e', night ? '#d8d0c4' : '#f8f0e4', night ? '#3a2416' : '#4a2c18', false);
+  // the whistle: a small note; the alert: a blinking «!»
+  if (v.alert && Math.sin(v.t * 8) > -0.2) {
+    rect(c, x - 1, by - 16, 3, 7, ink);
+    rect(c, x, by - 15, 1, 3, '#ffe08a');
+    rect(c, x, by - 11, 1, 1, '#ffe08a');
+  } else if (v.whistle && Math.sin(v.t * 3) > 0) {
+    const ny = by - 12 - ((v.t * 6) % 3);
+    rect(c, x + 2 * d, ny, 1, 3, '#f4ece0');
+    rect(c, x + 2 * d + 1, ny, 1, 1, '#f4ece0');
+    rect(c, x + 2 * d - 1, ny + 2, 1, 1, '#f4ece0');
+  }
+}
+
+/** Кыш's body (tail, belly, feet, face, tufted ears), in his colours or as a flat outline. */
+function yurrBody(c: Ctx, v: YurrView, x: number, by: number, ginger: string, white: string, brown: string, flat: boolean) {
+  const d = v.dir;
+  const y = GY;
+  const run = v.mode === 'run';
+  const dig = v.mode === 'dig';
+  const hide = v.mode === 'hide';
+  // fluffy tail (dark brown with a ginger tip)
+  rect(c, x - 5 * d, by - 6, 2, 4, brown);
+  rect(c, x - 6 * d, by - 8, 2, 2, ginger);
+  // plump body: ginger back, white belly, brown patch
+  ellipse(c, x, by - 3, 4, hide ? 2 : 3, ginger);
+  rect(c, x - 1 * d, by - 2, 3, 2, white);
+  rect(c, x - 3 * d, by - 5, 2, 2, brown);
+  // feet (scurrying / digging)
+  const f = run ? (Math.sin(v.t * 18) > 0 ? 1 : 0) : 0;
+  rect(c, x - 2 + f, by, 1, 1, brown);
+  rect(c, x + 1 - f, by, 1, 1, brown);
+  if (!flat && dig && Math.sin(v.t * 20) > 0) { rect(c, x - 4 * d, y - 1, 1, 1, '#8a6040'); rect(c, x - 5 * d, y - 2, 1, 1, '#6a4a30'); }
+  // head: white muzzle, cat-like face
+  const hx = x + 4 * d, hy = by - 5 + (dig ? 2 : 0);
+  rect(c, hx - 1, hy - 1, 3, 3, ginger);
+  rect(c, hx + d, hy + 1, 2, 1, white);
+  rect(c, hx + d, hy, 1, 1, flat ? ginger : '#1a1008');
+  rect(c, hx + 2 * d, hy + 1, 1, 1, flat ? ginger : '#d87a8a');
+  // ears with white tufts
+  rect(c, hx - 1, hy - 2, 1, 1, brown);
+  rect(c, hx + 1, hy - 2, 1, 1, brown);
+  rect(c, hx - 1, hy - 3, 1, 1, white);
+  rect(c, hx + 1, hy - 3, 1, 1, white);
 }
 
 /** A ground creature crawling through a Лаз: a hunched shadow in the tunnel. */
@@ -593,6 +715,25 @@ export function drawEnemyEyes(c: Ctx, e: Enemy, time: number) {
       break;
     case 'tunnelerUp':
       eye(x + 9 * d, y - 7, '#ffd070');
+      break;
+    case 'grazer': {
+      // the lamp of the grazing firefly glows warm, softly pulsing
+      const glow = 0.55 + 0.45 * Math.sin(time * 2 + e.id);
+      const lx = x - 2 * d - (d > 0 ? 1 : 0);
+      // a soft halo, then the lamp, so the herd reads in the dark at the edge of the world
+      c.fillStyle = `rgba(255,220,120,${(0.18 * glow).toFixed(3)})`;
+      c.fillRect(lx - 2, y - 7, 7, 6);
+      c.fillStyle = `rgba(255,220,120,${(0.3 * glow).toFixed(3)})`;
+      c.fillRect(lx - 1, y - 6, 5, 4);
+      rect(c, lx, y - 5, 3, 2, glow > 0.5 ? '#ffe28a' : '#d8b060');
+      rect(c, lx + 1, y - 5, 1, 1, '#fff8d0');
+      // the dark body above the lamp, faintly lit by it
+      rect(c, x - 2, y - 6, 4, 1, '#4a4230');
+      rect(c, x + 3 * d, y - 4, 1, 1, '#2a2418');
+      break;
+    }
+    case 'ape':
+      eye(x + 11 * d, y - 23, '#ff9a5a'); eye(x + 12 * d, y - 23, '#ff9a5a');
       break;
     case 'moth':
       eye(e.x + 3 * d, e.y - 7, '#c8a0ff'); eye(e.x + 4 * d, e.y - 7, '#c8a0ff');

@@ -148,6 +148,14 @@ export interface WorldDef {
   ascendStage?: number;
   /** in-world dawn income into the Treasury: `base + perStage × stage` (spec §3) */
   dawnIncome?: { base: number; perStage: number };
+  /**
+   * in-world root wells shown in this world: only the first `count` (U0, U1, …), from the
+   * 0-based night index `fromNight` on (the day before it), whatever the Circle (micro: spec §5).
+   * undefined = all eight, opened by the Circle radius.
+   */
+  wells?: { fromNight: number; count: number };
+  /** a scripted night list that has run out repeats its last night, creatures ×`repeatMul` hp per repeat (micro: 1.1) */
+  repeatMul?: number;
   features: WorldFeatures;
 }
 
@@ -170,6 +178,36 @@ const RUNE_LINES = {
   starfall: 'Новая руна: Звездопад [3] — заряжается убийствами; звёзды падают на самую густую стаю впереди.',
 } as const;
 
+/** Spawn group helper for the scripted world nights (same shape as src/data/nights.ts). */
+const grp = (at: number, kind: NightDef['groups'][number]['kind'], side: 'L' | 'R' | 'B', count: number, every = 1.6) => ({ at, kind, side, count, every });
+
+/**
+ * «Росток» nights (spec §5): one new thing per night. Counts are exact (the legacy group growth
+ * by night index does not apply to scripted worlds); night 4 repeats with ×`repeatMul` hp.
+ */
+const MICRO_NIGHTS: NightDef[] = [
+  {
+    title: 'Первая ночь', hpMul: 1,
+    hint: 'Найтволки идут слева. Стой у гнезда и бей Копьём [1] — оно летит туда, куда смотришь.',
+    groups: [grp(2, 'hound', 'L', 3, 1.8), grp(14, 'hound', 'L', 3, 1.4)],
+  },
+  {
+    title: 'Вторая ночь', hpMul: 1.1,
+    hint: 'Найтволки с обеих сторон. Прыжок Молота [2] отбрасывает стаю от гнёзд.',
+    groups: [grp(2, 'hound', 'B', 3, 1.6), grp(16, 'hound', 'B', 2, 1.2)],
+  },
+  {
+    title: 'Третья ночь', hpMul: 1.2,
+    hint: 'Под землёй ползёт Червь! Корневые колодцы засветились — посади в колодец Паука.',
+    groups: [grp(2, 'hound', 'B', 3, 1.4), grp(10, 'worm', 'L', 1), grp(22, 'hound', 'R', 3, 1.2)],
+  },
+  {
+    title: 'Ночь Гигантопитека', hpMul: 1.3,
+    hint: 'Гигантопитек ломает гнёзда. Молот [2] оглушает его, ульи жалят издалека.',
+    groups: [grp(2, 'hound', 'L', 3, 1.2), grp(8, 'ape', 'R', 1), grp(18, 'hound', 'B', 3, 1)],
+  },
+];
+
 const ALL_FAMILIES: Family[] = ['hive', 'beetle', 'dragonfly', 'spider', 'caterpillar', 'termite', 'honeycomb', 'mender'];
 const start = (family: Family): FamilyRule => ({ family, unlock: { kind: 'start' } });
 
@@ -189,18 +227,26 @@ export const WORLDS: Record<WorldId, WorldDef> = {
   },
   micro: {
     id: 'micro', name: 'Росток', width: 1440, treeX: 720,
-    // placeholder until phase 5 (nights 1–4 + repeat of night 4)
-    nights: 'campaign', endless: false, maxStage: 2,
+    nights: MICRO_NIGHTS, endless: false, repeatMul: 1.1, maxStage: 2,
     families: [start('hive'), start('beetle'), start('spider'), { family: 'caterpillar', unlock: { kind: 'stage', stage: 1 } }],
     runes: ['spear', 'hammer'],
     runeUnlocks: [
       { rune: 'spear', when: { kind: 'start' } },
       { rune: 'hammer', when: { kind: 'gift', night: 1 }, line: RUNE_LINES.hammer },
     ],
-    objects: [],
+    // spec §5: the hollow-side geode at the edge of the dark, a geode in the thicket to the right
+    // (the thicket burns when the Circle reaches it), a grazing herd at the left edge
+    objects: [
+      { kind: 'geode', x: 720 - 132, amber: 20 },
+      { kind: 'thicket', x: 720 + 128, width: 56 },
+      { kind: 'geode', x: 720 + 128, amber: 30 },
+      { kind: 'herd', x: 160, count: 4, range: 100, drop: [3, 5] },
+    ],
+    wells: { fromNight: 2, count: 2 },
     startTreasury: 40,
     purseCap: (stage) => 30 + 15 * stage,
-    prices: { nest: 1, grow: 1, rune: 1 },
+    // nests ×0.75: the first Улей (30) fits the starting purse (30) and Treasury (40) — spec §5/§7
+    prices: { nest: 0.75, grow: 1, rune: 1 },
     win: { kind: 'seed', night: 4, stage: 2 },
     maxSpeed: 2,
     dawnIncome: { base: 25, perStage: 15 },
@@ -260,6 +306,16 @@ export const INWORLD = {
   hammerStop: 6,
   /** highest rune rank at the Tablet stone (Дерево → Бронза → Серебро → Золото) */
   maxRuneRank: 3,
+} as const;
+
+/** World objects (spec §5): distances in world px, speeds in px/s. */
+export const WORLD_OBJ = {
+  /** a thicket burns when the Circle passes its inner edge by this much */
+  thicketBite: 6,
+  /** the Seed falls this far right of the trunk (clear of the altar and the hollow) */
+  seedOffset: 28,
+  /** grazers: wandering pace; they bolt from a Keeper this close, at this speed */
+  grazeSpeed: 7, fleeDist: 56, fleeSpeed: 46,
 } as const;
 
 /** In-world rune descriptions (no mouse: everything goes along the Keeper's facing). */

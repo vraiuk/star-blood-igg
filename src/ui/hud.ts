@@ -13,6 +13,11 @@ import type { GameEvent } from '../sim/types';
 import { icon } from './icons';
 import { QUESTS } from './quests';
 import { FocusPlate } from './focusPlate';
+import { Guide } from './guide';
+import { defeatReason } from './defeat';
+import { CREATURE_CARDS } from '../data/cards';
+import { ENEMIES } from '../data/balance';
+import { markSeen, seen } from '../state/seen';
 
 /** Roman numerals for facet levels */
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
@@ -39,6 +44,8 @@ export interface HudCallbacks {
   /** start a new run in this world */
   onStart(world: WorldId): void;
   onRestart(): void;
+  /** in-world defeat: replay from the last dawn (spec §5) */
+  onFromDawn(): void;
   onOpenMeta(): void;
   onOpenStats(): void;
   onContinue(): void;
@@ -92,6 +99,13 @@ export class Hud {
   private amberNum!: HTMLElement;
   private purseNum!: HTMLElement;
   private plate!: FocusPlate;
+  /** the guide Кыш (spec §7) */
+  readonly guide = new Guide();
+  /** first-encounter creature card */
+  private ccard!: HTMLElement;
+  private ccardTimer = 0;
+  /** the warning on screen is «Кошель пуст…» (hidden as soon as the purse has Amber again) */
+  private noticePurse = false;
   private lastPurse = '';
   private starNum!: HTMLElement;
   private devNum!: HTMLElement;
@@ -290,6 +304,9 @@ export class Hud {
     r.appendChild(this.reviveBox);
 
     this.plate = new FocusPlate(r, () => this.project);
+    this.ccard = el('div', 'panel plain');
+    this.ccard.id = 'ccard';
+    r.appendChild(this.ccard);
 
     this.modal = el('div', 'screen modal hidden');
     installGlossary(r);
@@ -306,10 +323,14 @@ export class Hud {
     this.pause = el('div', 'screen hidden');
     this.pause.id = 'pause';
     this.pause.innerHTML = `<div class="box"><h1>Пауза</h1><p>Тьма ждёт.</p><button class="btn gold" data-a="resume">Продолжить</button>
-      <div class="row"><button class="btn" data-a="menu">Выйти в меню</button></div></div>
+      <div class="row"><button class="btn" data-a="menu">Выйти в меню</button><button class="btn" data-a="guide"></button></div></div>
       <button class="btn giveup" data-a="giveup" title="Завершить забег: Древо падёт, Монеты Наблюдателя начислятся как обычно">Уйти в Вечность</button>`;
     this.pause.querySelector('[data-a=resume]')!.addEventListener('click', () => this.cb.onResume());
     this.pause.querySelector('[data-a=menu]')!.addEventListener('click', () => this.cb.onQuitToMenu());
+    const gb = this.pause.querySelector<HTMLButtonElement>('[data-a=guide]')!;
+    const gLabel = () => { gb.textContent = `Подсказки Кыша: ${this.guide.enabled ? 'вкл' : 'выкл'}`; };
+    gLabel();
+    gb.addEventListener('click', () => { this.guide.toggle(); gLabel(); });
     // tucked into a corner and needs a second click — never pressed by accident
     const give = this.pause.querySelector<HTMLButtonElement>('[data-a=giveup]')!;
     let armed = 0;
@@ -372,13 +393,19 @@ export class Hud {
   showTitle() { this.title.classList.remove('hidden'); this.root.classList.add('title-mode'); this.inRun = false; this.modal.classList.add('hidden'); this.modalSig = ''; }
   /** a run is under way (the title is gone): only then may choices pop up */
   inRun = false;
-  setPaused(p: boolean) { this.pause.classList.toggle('hidden', !p); }
+  setPaused(p: boolean) {
+    this.pause.classList.toggle('hidden', !p);
+    // the guide switch belongs to the in-world worlds
+    const gb = this.pause.querySelector<HTMLElement>('[data-a=guide]');
+    if (gb) { gb.style.display = this.game().world.features.inWorld ? '' : 'none'; gb.textContent = `Подсказки Кыша: ${this.guide.enabled ? 'вкл' : 'выкл'}`; }
+  }
   setSpeed(x: number) { this.speedBtn.textContent = `×${x}`; }
   setSound(on: boolean) { this.soundBtn.textContent = on ? '♪' : '♪̸'; this.soundBtn.style.opacity = on ? '1' : '0.5'; }
 
   showEnd(coins: number, best: number, record: boolean) {
     const g = this.game();
     const s = g.state;
+    if (g.world.features.inWorld) { this.showDefeatInWorld(); return; }
     const stars = g.stars();
     const won = stars > 0;
     const st = Array.from({ length: 3 }, (_, i) => `<span class="${i < stars ? 'on' : 'off'}">★</span>`).join('');
@@ -402,6 +429,42 @@ export class Hud {
 
   hideEnd() { this.end.classList.add('hidden'); }
 
+  /** In-world defeat: one stated reason and «С рассвета» (spec §5, §7). */
+  private showDefeatInWorld() {
+    const g = this.game();
+    const s = g.state;
+    this.end.innerHTML = `
+      <div class="box">
+        <h1>Древо угасло</h1>
+        <h2>${g.world.name.toUpperCase()} · НОЧЬ ${s.night + 1}</h2>
+        <div class="tablet inline reason"><span class="who">Причина:</span> ${defeatReason(s.stats.treeDmgBy)}</div>
+        <div class="stat">Древо: <b>${TREE_STAGES[s.tree.stage].name}</b> · Тварей: <b>${s.stats.kills}</b> · Янтарь: <b>${s.stats.amberCollected}</b></div>
+        <div class="row"><button class="btn gold" data-a="dawn">С рассвета</button><button class="btn" data-a="again">Заново</button><button class="btn" data-a="menu">В меню</button></div>
+      </div>`;
+    this.end.querySelector('[data-a=dawn]')!.addEventListener('click', () => this.cb.onFromDawn());
+    this.end.querySelector('[data-a=again]')!.addEventListener('click', () => this.cb.onRestart());
+    this.end.querySelector('[data-a=menu]')!.addEventListener('click', () => this.cb.onQuitToMenu());
+    this.end.classList.remove('hidden');
+  }
+
+  /** Micro victory: «Семя посажено» → «На Поляну» (spec §5). */
+  showWin() {
+    const g = this.game();
+    const s = g.state;
+    this.end.innerHTML = `
+      <div class="box">
+        <h1>Семя посажено</h1>
+        <h2>${g.world.name.toUpperCase()} ПРОЙДЕН · НОЧЕЙ: ${s.night}</h2>
+        <p>Хранитель вынес Семя за край Круга. Там, во тьме, однажды встанет новое Игг-Древо. Кыш довольно мурлычет: «Юрр!»</p>
+        <div class="stat">Древо: <b>${TREE_STAGES[s.tree.stage].name}</b> · Тварей: <b>${s.stats.kills}</b> · Янтарь: <b>${s.stats.amberCollected}</b></div>
+        <div class="tablet inline">Открыта <b>Поляна</b> — средний мир: Разломы Пустоты, Мёртвые Древа, Спящие Существа.</div>
+        <div class="row"><button class="btn gold" data-a="medium">На Поляну</button><button class="btn" data-a="menu">В меню</button></div>
+      </div>`;
+    this.end.querySelector('[data-a=medium]')!.addEventListener('click', () => { this.hideEnd(); this.cb.onStart('medium'); });
+    this.end.querySelector('[data-a=menu]')!.addEventListener('click', () => this.cb.onQuitToMenu());
+    this.end.classList.remove('hidden');
+  }
+
   // ───────────────────────────── events ──────────────────────────────
 
   onEvents(events: GameEvent[]) {
@@ -421,7 +484,19 @@ export class Hud {
           break;
         case 'dawn':
           this.showBanner('Рассвет', g.world.features.inWorld ? `Тьма отступила. Доход Древа: +${e.gift} Янтаря в Казну` : `Тьма отступила. Рассветный дар: +${e.gift} Янтаря`, false, 2.6);
+          if (g.world.features.inWorld && e.night === 0 && this.guide.enabled) {
+            this.guide.carrot();
+            // after the dawn gift's line (the Hammer), not over it
+            setTimeout(() => this.say('Кыш приволок фиолетовую морковку и положил у твоих ног. «Юрр!»'), 4500);
+          }
           break;
+        case 'geodeCracked': this.say(`Жеода раскололась: ${e.amber} Янтаря рассыпалось — подбери.`); break;
+        case 'thicketBurnt': this.say('Круг выжег чащу. За ней что-то поблёскивает.'); break;
+        case 'seedDropped':
+          this.queueBanner('Семя Игг-Древа', 'Древо уронило Семя у ствола. Возьми его [S] и вынеси за край Круга — день подождёт.', 5);
+          break;
+        case 'seedTaken': this.say('Семя в руках. Неси его за край Круга — любой.'); break;
+        case 'seedLost': this.say('Хранитель пал — Семя упало там, где он лежал. Подбери его снова.', true); break;
         case 'treeGrew':
           // in-world: the legacy unlock list (runes for Star Blood, rings…) doesn't apply
           this.showBanner(TREE_STAGES[e.stage].name, g.world.features.inWorld ? this.stageNews(g, e.stage) : TREE_STAGES[e.stage].unlocks.join(' · '), false, 3.5);
@@ -527,6 +602,7 @@ export class Hud {
 
   /** The Observer's voice: an azure Tablet notice. */
   say(text: string, warn = false) {
+    this.noticePurse = warn && text.startsWith('Кошель пуст');
     this.notice.className = `tablet show ${warn ? 'warn' : ''}`;
     this.notice.innerHTML = warn ? text : `<span class="who">Тот-Кто-Наблюдает:</span> ${text}`;
     this.noticeTimer = warn ? 1.6 : 4;
@@ -1353,6 +1429,8 @@ export class Hud {
     const stage = TREE_STAGES[s.tree.stage];
 
     const inWorld = g.world.features.inWorld;
+    // in-world layout tweaks (banner above the focus plate)
+    if (this.root.classList.contains('in-world') !== inWorld) this.root.classList.toggle('in-world', inWorld);
     if (s.amber !== this.lastAmber) {
       if (s.amber > this.lastAmber && this.lastAmber >= 0) this.bump(this.amberNum);
       // in-world: «Казна 120 · Кошель 18/30» (spec §3)
@@ -1387,26 +1465,35 @@ export class Hud {
     const canGrow = need > 0 && s.amber >= g.growNeed();
     this.caption.innerHTML = `${stage.name} · ${pct}%${need ? ` <span class="dim">· рост ${s.tree.growth}/${need}</span>` : ''}${canGrow ? ' <span class="hot">· к росту!</span>' : ''}`;
 
-    if (s.tree.stage !== this.lastStage) {
+    if (s.tree.stage !== this.lastStage || this.track.dataset.world !== g.world.id) {
+      this.track.dataset.world = g.world.id;
       this.lastStage = s.tree.stage;
       let h = '';
-      for (let i = 0; i < TREE_STAGES.length; i++) {
+      // only the stages this world reaches (micro: 3)
+      const n = Math.min(TREE_STAGES.length, g.world.maxStage + 1);
+      for (let i = 0; i < n; i++) {
         if (i > 0) h += `<span class="seg ${i <= s.tree.stage ? 'on' : ''}"></span>`;
         h += `<img src="${icon(i <= s.tree.stage ? 'tree' : 'treeDim')}">`;
       }
       this.track.innerHTML = h;
-      this.stageCount.textContent = `${s.tree.stage + 1}/${TREE_STAGES.length}`;
+      this.stageCount.textContent = `${s.tree.stage + 1}/${n}`;
     }
 
     const total = g.campaignNights;
-    if (s.phase === 'day') {
-      this.nightInfo.innerHTML = `День · до ночи <span class="t">${Math.ceil(s.dayLeft)}с</span> · ночь ${s.night + 1}${s.night < total ? `/${total}` : ' · ∞'}`;
+    // micro: «ночь 2/4», then «ночь 5» (night 4 again until the Tree grows)
+    const seedWorld = g.world.win.kind === 'seed';
+    const of = (n: number) => (n < total ? `/${total}` : seedWorld ? '' : ' · ∞');
+    if (s.seed) {
+      this.nightInfo.innerHTML = `День · <span class="t">${s.seed.carried ? 'неси Семя за край Круга' : 'Семя ждёт у ствола'}</span>`;
+      this.callBtn.classList.add('hidden');
+    } else if (s.phase === 'day') {
+      this.nightInfo.innerHTML = `День · до ночи <span class="t">${Math.ceil(s.dayLeft)}с</span> · ночь ${s.night + 1}${of(s.night)}`;
       this.callBtn.classList.remove('hidden', 'rush', 'wait');
       this.callBtn.title = '';
       this.callBtn.innerHTML = `Призвать ночь <span style="opacity:.75">[Пробел] +${Math.floor(s.dayLeft)}</span>`;
     } else {
       const left = s.enemies.length + s.pending.length;
-      this.nightInfo.innerHTML = s.phase === 'night' ? `${g.night(s.night).title}${s.night < total ? ` · ${s.night + 1}/${total}` : ' · ∞'} · тварей: <span class="t">${left}</span>${s.rushedDawns ? ` · <span style="color:#ffb070">Натиск ×${s.rushedDawns}</span>` : ''}${s.wrath > 1.01 ? ` · <span style="color:#ff8a8a">Гнев ×${s.wrath.toFixed(1)}</span>` : ''}` : '';
+      this.nightInfo.innerHTML = s.phase === 'night' ? `${g.night(s.night).title}${s.night < total ? ` · ${s.night + 1}/${total}` : seedWorld ? ` · ночь ${s.night + 1}` : ' · ∞'} · тварей: <span class="t">${left}</span>${s.rushedDawns ? ` · <span style="color:#ffb070">Натиск ×${s.rushedDawns}</span>` : ''}${s.wrath > 1.01 ? ` · <span style="color:#ff8a8a">Гнев ×${s.wrath.toFixed(1)}</span>` : ''}` : '';
       if (g.canRush()) {
         const r = g.rushReward();
         this.callBtn.classList.remove('hidden', 'wait');
@@ -1499,6 +1586,7 @@ export class Hud {
       this.reviveBox.classList.remove('show');
       this.deathHold = false;
       this.plate.update(g);
+      this.guide.update(g, dt);
     } else {
       this.plate.hide();
       this.renderRevive(g);
@@ -1516,8 +1604,31 @@ export class Hud {
       else this.banner.classList.remove('show');
     }
     this.noticeTimer -= dt;
+    // «Кошель пуст…» goes as soon as the purse has Amber again (it read wrong next to «Кошель 17/30»)
+    if (this.noticePurse && s.keeper.purse > 0) { this.noticeTimer = 0; this.noticePurse = false; }
     if (this.noticeTimer <= 0) this.notice.classList.remove('show');
+    this.updateCard(g, dt);
     this.updateTips(g);
+  }
+
+  /**
+   * First-encounter creature card (spec §7): the first time a kind comes within sight of the
+   * Keeper, a card at the side for 7 s — name, what it does, how to answer. Once per save.
+   */
+  private updateCard(g: Game, dt: number) {
+    this.ccardTimer -= dt;
+    if (this.ccardTimer <= 0) this.ccard.classList.remove('show');
+    if (!g.world.features.inWorld || g.over || this.ccardTimer > 0) return;
+    const k = g.state.keeper;
+    const near = [...g.state.enemies, ...g.state.herd].find((e) => !e.dead && CREATURE_CARDS[e.kind] && !seen(`card:${e.kind}`)
+      && Math.abs(e.x - k.x) < (e.neutral ? 200 : 320));
+    if (!near) return;
+    markSeen(`card:${near.kind}`);
+    const c = CREATURE_CARDS[near.kind]!;
+    this.ccard.innerHTML = `<div class="who">Новая тварь</div><div class="cn">${ENEMIES[near.kind].name}</div>
+      <div class="cd"><b>Что делает:</b> ${c.does}</div><div class="ca"><b>Чем отвечать:</b> ${c.answer}</div>`;
+    this.ccard.classList.add('show');
+    this.ccardTimer = 7;
   }
 
   /** Observer's tasks: one goal at a time with a highlight and a reward. */
@@ -1591,10 +1702,11 @@ export class Hud {
     if (Object.values(s.keeper.props).some((a) => a.length > 0)) mark('shop');
     let text = '';
     if (g.world.features.inWorld) {
-      // in-world: the verbs (the guide firefly of phase 5 will take over)
+      // in-world: Кыш the yurr leads (spec §7); his line, brighter once he whistles
       const f = g.focus();
       if (g.over || this.choiceOpen) text = '';
       else if (!s.keeper.alive) text = `Хранитель пал — поднимется у Древа через ${Math.ceil(Math.max(0, s.keeper.respawn))} с`;
+      else if (this.guide.text) text = `<span class="yurr ${this.guide.alert ? 'alert' : ''}">${this.guide.text}</span>`;
       else if (!f) text = '<kbd>A</kbd>/<kbd>D</kbd> — ходить · подойди к дуплу, гнезду или алтарю';
       else text = '';
       if (this.tip.innerHTML !== text) this.tip.innerHTML = text;

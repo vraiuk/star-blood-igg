@@ -64,7 +64,8 @@ describe('focus', () => {
     expect(f.options.map((o) => o.id)).toEqual(['hive', 'beetle']);
     expect(f.options[f.optionIndex].id).toBe('hive');
     expect(f.price).toBe(g.buildPrice('hive').amber);
-    g.state.tree.stage = 1; // caterpillar opens at stage 1; wells at Circle 112
+    g.state.tree.stage = 1; // caterpillar opens at stage 1
+    g.state.night = 2; // micro wells U0/U1 show from the day before night 3 (phase 5)
     g.state.tree.radius = g.treeRadius();
     expect(g.focus()!.options.map((o) => o.id)).toEqual(['hive', 'beetle', 'caterpillar']);
     at(g, -60);
@@ -184,12 +185,12 @@ describe('pour: pledges and prepaid actions', () => {
     const g = micro();
     at(g, -42);
     const price = g.buildPrice('hive').amber;
-    expect(price).toBeGreaterThan(g.purseCap()); // 40 > 30: two trips
-    g.state.keeper.purse = 30;
+    expect(price).toBeLessThanOrEqual(g.purseCap()); // micro: the first hive fits one purse (phase 5)
+    g.state.keeper.purse = 20; // a partial pledge first
     g.setPour(true);
     steps(g, 3);
     g.setPour(false);
-    expect(g.state.pledges['slot:L0']).toBe(30);
+    expect(g.state.pledges['slot:L0']).toBe(20);
     expect(g.structureAt('L0')).toBeUndefined();
     g.state.keeper.purse = 15;
     g.setPour(true);
@@ -198,7 +199,7 @@ describe('pour: pledges and prepaid actions', () => {
     const st = g.structureAt('L0')!;
     expect(st.family).toBe('hive');
     expect(st.spentAmber).toBe(price);
-    expect(g.purse).toBe(5);
+    expect(g.purse).toBe(35 - price);
     expect(g.state.amber).toBe(40);
     expect(g.state.pledges['slot:L0']).toBeUndefined();
     expect(g.focus()).toMatchObject({ kind: 'nest', id: `nest:${st.id}` });
@@ -295,7 +296,7 @@ describe('pour: pledges and prepaid actions', () => {
     expect(dropsTotal(g) + g.purse - purse0).toBe(Math.floor(st.spentAmber * SELL_REFUND) + pledge);
     expect(dropsTotal(g)).toBeGreaterThan(0);
     expect(g.state.pledges[`nest:${st.id}`]).toBeUndefined();
-    expect(g.state.amber).toBe(0);
+    expect(g.state.amber).toBe(40 - st.spentAmber);
   });
 });
 

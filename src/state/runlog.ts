@@ -15,7 +15,7 @@ export interface RunLog {
   version: string;
   build: string;
   path: string;
-  result: 'lost' | 'quit';
+  result: 'lost' | 'quit' | 'won';
   /** nights survived */
   nights: number;
   minutes: number;

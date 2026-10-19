@@ -9,8 +9,10 @@ import { Particles } from './particles';
 import { type Ctx, PAL, line, makeCanvas, rect } from './pixel';
 import {
   ROOT_SLOT_Y, drawTunnel, drawTunnelMouths, drawFog, drawFogEdge, drawDragonfly, dragonflyHome, drawAffix, drawWeb, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
-  drawCrownNest, drawCrownSlot, drawSoldier, drawStructure, drawWorker, drawAltar, drawHollow, drawTabletStone, drawWellMouth,
+  drawCrownNest, drawCrownSlot, drawSoldier, drawStructure, drawWorker, drawAltar, drawHollow, drawTabletStone, drawWellMouth, drawYurr,
+  type YurrView,
 } from './sprites';
+import { geodeVisible, objectsOf } from '../sim/objects';
 import { INWORLD } from '../data/worlds';
 import { SLOT_MARGIN } from '../data/balance';
 import { TREE_STAGES } from '../data/tree';
@@ -32,6 +34,8 @@ export interface ViewState {
   preview: { x: number; r: number; underground: boolean; y?: number; merge?: { to: number; from: number[] } } | null;
   /** ability currently aimed (shows a preview) */
   aiming: import('../data/balance').AbilityId | null;
+  /** in-world: the guide Кыш (src/ui/guide.ts), or null */
+  yurr?: YurrView | null;
 }
 
 /** Hard outlines around nests (off: readability comes from glow and warm colours instead). */
@@ -126,6 +130,16 @@ export class Renderer {
           break;
         }
         case 'pledgeDone': p.goldBurst(e.x, WORLD.groundY - 10, 40); break;
+        case 'geodeCracked':
+          p.emit(16, e.x, WORLD.groundY - 6, { speed: 70, max: 0.6, colors: ['#c8a0ff', '#8a6cc8', PAL.gold4], gravity: 160, glow: true });
+          p.goldBurst(e.x, WORLD.groundY - 6, 30);
+          this.bump(2);
+          break;
+        case 'thicketBurnt':
+          for (let i = -3; i <= 3; i++) p.emit(6, e.x + i * 8, WORLD.groundY - 8, { speed: 40, max: 1.2, colors: ['#ff9a4a', '#ffd070', '#5a3a1a'], gravity: -40, glow: true });
+          break;
+        case 'seedDropped': p.goldBurst(e.x, WORLD.groundY - 30, 80); p.addFx('ring', e.x, WORLD.groundY - 6, 0.6, 26); break;
+        case 'won': p.goldBurst(game.state.keeper.x, WORLD.groundY - 12, 160); this.flash = Math.max(this.flash, 0.4); break;
         case 'knock': p.emit(e.death ? 14 : 5, e.x, WORLD.groundY - 12, { speed: 60, max: 0.5, colors: [PAL.gold3, PAL.amber], gravity: 160 }); break;
         case 'hit': p.hit(e.x, e.y, e.crit); break;
         case 'enemyDied': {
@@ -371,6 +385,7 @@ export class Renderer {
       }
     }
     if (view.hoverTree && !game.over) this.treeOutline(c, time);
+    if (this.follow) this.drawWorldObjects(c, game, time);
     this.drawNestsOutlined(c, s.structures.filter((x) => !x.underground && !x.crown), time);
     for (const tn of s.tunnels) if (tn.open) drawTunnelMouths(c, tn, time);
     for (const e of s.enemies) if (e.layer !== 'under') drawFog(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
@@ -398,6 +413,8 @@ export class Renderer {
 
     // ── above darkness: eyes, light, drops, projectiles
     for (const e of s.enemies) drawEnemyEyes(c, e, time);
+    for (const e of s.herd) drawEnemyEyes(c, e, time);
+    if (this.follow) this.drawObjectGlints(c, game, time);
     for (const e of s.enemies) drawFogEdge(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
     if (s.phase === 'night' || (s.phase === 'day' && s.dayLeft < 10)) this.drawIncoming(c, game, time);
     this.drawSkyMood(c, game, time);
@@ -467,6 +484,7 @@ export class Renderer {
     }
     if (focus) this.drawFocus(c, game, focus, time);
     for (const d of s.drops) drawDrop(c, d, time);
+    if (view.yurr && s.phase !== 'lost') drawYurr(c, view.yurr, s.phase === 'night');
     const spearTint = s.keeper.runeRank.spear > 0 ? runeColor(s.keeper.runeRank.spear) : undefined;
     const starTint = s.keeper.runeRank.starfall > 0 ? runeColor(s.keeper.runeRank.starfall) : undefined;
     for (const p of s.projectiles) drawProjectile(c, p, p.kind === 'spear' ? spearTint : p.kind === 'meteor' ? starTint : undefined);
@@ -491,6 +509,69 @@ export class Renderer {
     }
     c.restore();
     this.blit(s.phase === 'night');
+  }
+
+  /** In-world world objects (spec §5): thickets, geodes, the lying Seed, the grazing herd. */
+  private drawWorldObjects(c: Ctx, game: Game, time: number) {
+    const s = game.state;
+    const gy = WORLD.groundY;
+    for (const { o, id } of objectsOf(game, 'thicket')) {
+      if (s.wobj.burnt.includes(id)) continue;
+      // tangled dark bushes; the side facing the Circle smoulders
+      const a = Math.round(o.x - o.width / 2), b = Math.round(o.x + o.width / 2);
+      for (let x = a; x <= b; x += 3) {
+        const h = 9 + ((x * 7919) % 7) + Math.round(Math.sin(time * 1.5 + x * 0.3));
+        line(c, x, gy, x + ((x % 5) - 2), gy - h, '#1a2a1a', 2);
+        rect(c, x - 1, gy - h - 1, 3, 2, '#22381e');
+        if (x % 9 === 0) rect(c, x, gy - h + 3, 1, 1, '#3a5a2a');
+      }
+      const inner = Math.abs(a - WORLD.treeX) < Math.abs(b - WORLD.treeX) ? a : b;
+      if (Math.abs(inner - WORLD.treeX) - s.tree.radius < 30 && Math.sin(time * 9 + inner) > 0.3) rect(c, inner, gy - 4, 1, 1, '#ff9a4a');
+    }
+    for (const { o, id } of objectsOf(game, 'geode')) {
+      if (!geodeVisible(game, o, id)) continue;
+      // a crystal-studded stone
+      const x = Math.round(o.x);
+      rect(c, x - 6, gy - 5, 12, 5, '#3a3448');
+      rect(c, x - 5, gy - 7, 10, 2, '#4a4260');
+      rect(c, x - 3, gy - 9, 6, 2, '#5a5078');
+      rect(c, x - 4, gy - 6, 1, 1, '#2a2438');
+    }
+    if (s.seed && !s.seed.carried) this.drawSeed(c, s.seed.x, gy - 3, time);
+    for (const e of s.herd) drawEnemy(c, e, time);
+  }
+
+  /** Above the darkness: crystal glints of geodes, the Seed's glow (lying or carried). */
+  private drawObjectGlints(c: Ctx, game: Game, time: number) {
+    const s = game.state;
+    const gy = WORLD.groundY;
+    for (const { o, id } of objectsOf(game, 'geode')) {
+      if (!geodeVisible(game, o, id)) continue;
+      const x = Math.round(o.x);
+      const tw = (i: number) => Math.sin(time * 3 + i * 2.1 + x) > 0.2;
+      if (tw(0)) rect(c, x - 2, gy - 8, 1, 1, '#c8a0ff');
+      if (tw(1)) rect(c, x + 2, gy - 7, 1, 1, '#e8d0ff');
+      if (tw(2)) rect(c, x, gy - 10, 1, 1, '#a080ff');
+    }
+    if (s.seed) {
+      const x = s.seed.carried ? s.keeper.x + s.keeper.dir * 5 : s.seed.x;
+      const y = s.seed.carried ? gy - 9 : gy - 3; // carried: held in front of the Keeper
+      if (s.seed.carried) this.drawSeed(c, x, y, time);
+      const r = 5 + Math.sin(time * 4) * 1.5;
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 + time;
+        rect(c, x + Math.cos(a) * r, y - 2 + Math.sin(a) * r * 0.7, 1, 1, PAL.gold4);
+      }
+    }
+  }
+
+  /** The Seed: a golden acorn-like seed with a star of Star Blood inside. */
+  private drawSeed(c: Ctx, x: number, y: number, time: number) {
+    const sx = Math.round(x), sy = Math.round(y);
+    disc(c, sx, sy - 3, 3, PAL.gold3);
+    rect(c, sx - 2, sy - 6, 5, 1, PAL.gold2);
+    rect(c, sx, sy - 8, 1, 2, '#5ac85a');
+    if (Math.sin(time * 5) > 0) rect(c, sx, sy - 3, 1, 1, '#ff6a8a');
   }
 
   /**

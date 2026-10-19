@@ -66,6 +66,9 @@ export interface Interactable {
   act?: (opt: FocusOption | undefined) => boolean;
   /** run the sale (X held) */
   sellAct?: () => boolean;
+  /** S held this many seconds runs `holdAct` (no Amber: a geode, the Seed — 0 = on the press) */
+  hold?: number;
+  holdAct?: () => boolean;
 }
 
 /** The focused object as the UI and bots see it. */
@@ -89,6 +92,9 @@ export interface Focus {
   verbs: { pour: PourMode | null; take: boolean; sell: boolean };
   /** seconds X has been held here (0..INWORLD.sellHold) */
   sellT: number;
+  /** S-hold objects: seconds to hold (0 = none) and how long S has been held here */
+  hold: number;
+  holdT: number;
 }
 
 /** Returns every interactable of one kind in the world (not filtered by reach). */
@@ -248,6 +254,8 @@ export function focusOf(g: Game): Focus | null {
     pledged: pledgeOf(g, t), canAct: !why, reason: why,
     verbs: { pour: t.pour ?? null, take: !!t.take, sell: !!t.sell },
     sellT: g.state.interact.focusId === t.id ? g.state.interact.sellT : 0,
+    hold: t.hold ?? 0,
+    holdT: t.hold !== undefined && g.state.interact.focusId === t.id && g.state.interact.pour ? g.state.interact.holdT : 0,
   };
 }
 
@@ -368,6 +376,18 @@ export function updateInteract(g: Game, dt: number) {
     } else if (!it.told) {
       it.told = true;
       g.deny(s.amber <= 0 ? 'Казна пуста' : 'Кошель полон');
+    }
+    return;
+  }
+
+  if (it.pour && t.hold !== undefined && t.holdAct) {
+    // hold S (no Amber): crack a geode, take the Seed
+    if (!t.canAct) { if (!it.told) { it.told = true; if (t.reason) g.deny(t.reason); } return; }
+    it.holdT += dt;
+    if (it.holdT + 1e-9 >= t.hold) {
+      it.pour = false;
+      it.holdT = 0;
+      if (t.holdAct()) g.emit({ type: 'pledgeDone', x: t.x, target: t.id });
     }
     return;
   }

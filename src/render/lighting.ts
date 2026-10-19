@@ -107,7 +107,7 @@ export class Lighting {
     const LW = this.LW;
     const c0 = Math.max(0, Math.floor(x0 / CELL)), c1 = Math.min(LW, Math.ceil(x1 / CELL));
     const s = game.state;
-    const targetNight = s.phase === 'day' ? 0.72 : 1;
+    const targetNight = s.phase === 'day' || s.phase === 'won' ? 0.72 : 1;
     this.night += (targetNight - this.night) * Math.min(1, dt * 1.5);
     const src = this.sources(game, time);
     const d = this.darkImg.data;

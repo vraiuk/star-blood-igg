@@ -5,8 +5,13 @@ import type { KeeperRuneId } from '../data/runes';
 export interface Enemy {
   id: number;
   kind: EnemyKind;
-  /** a neutral creature (in-world grazing herds, phase 5): runes never aim at it */
+  /** a neutral creature (in-world grazing herds, `GameState.herd`): runes and nests never aim at it */
   neutral?: boolean;
+  /** grazer: index of its herd in `world.objects`, the herd's centre, where it wanders to and for how long */
+  herd?: number;
+  home?: number;
+  wanderTo?: number;
+  wanderT?: number;
   x: number;
   /** feet y (surface enemies) or body center y (underground) */
   y: number;
@@ -330,7 +335,11 @@ export interface Worker {
   fromY: number;
 }
 
-export type Phase = 'day' | 'night' | 'lost';
+/** `won`: the world's goal is reached (micro: the Seed carried out of the Circle) — the run is over. */
+export type Phase = 'day' | 'night' | 'lost' | 'won';
+
+/** IGG2 micro: the Seed the grown Tree drops (spec §5) — lying at `x` or carried by the Keeper. */
+export interface SeedState { x: number; carried: boolean }
 
 /** A pending choice that pauses the day timer until resolved. */
 export type Choice =
@@ -400,6 +409,16 @@ export type GameEvent =
   | { type: 'knock'; x: number; amount: number; death: boolean }
   /** in-world: a rune became known — the Observer's fixed gift or a Tree stage (spec §4) */
   | { type: 'runeLearned'; ability: AbilityId; by: 'gift' | 'stage'; line?: string }
+  /** in-world: a geode cracked open (S held, or the Hammer) and spilled its Amber */
+  | { type: 'geodeCracked'; x: number; amber: number }
+  /** in-world: the Circle reached a thicket and burnt it away */
+  | { type: 'thicketBurnt'; x: number }
+  /** micro: the grown Tree dropped the Seed at its trunk / the Keeper took it / dropped it */
+  | { type: 'seedDropped'; x: number }
+  | { type: 'seedTaken'; x: number }
+  | { type: 'seedLost'; x: number }
+  /** the world's goal is reached (phase `won`) */
+  | { type: 'won' }
   | { type: 'denied'; reason: string };
 
 /** In-world input and verb timers (spec §3). Held flags are set by `Game.setPour/setTake/setSell`. */
@@ -422,6 +441,7 @@ export interface InteractState {
   /** a refusal was already told for this press */
   told: boolean;
 }
+
 
 export interface PendingSpawn {
   at: number;
@@ -486,4 +506,10 @@ export interface GameState {
   /** in-world: families opened by waking their Sleeping Creature (phase 6) */
   unlockedFamilies: Family[];
   interact: InteractState;
+  /** in-world: neutral grazers of the herds (kept apart from `enemies`: they never hold up a night) */
+  herd: Enemy[];
+  /** in-world object state by object id (`geode:2`, `thicket:1` — index into `world.objects`) */
+  wobj: { cracked: string[]; burnt: string[] };
+  /** micro: the Seed, once the grown Tree has dropped it (null before) */
+  seed: SeedState | null;
 }

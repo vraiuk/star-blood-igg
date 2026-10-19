@@ -38,6 +38,8 @@ export class FocusPlate {
     if (f.kind === 'treasury') return 'amber';
     if (f.kind === 'altar') return 'tree';
     if (f.kind === 'stone') return 'rune';
+    if (f.kind === 'geode') return 'amber';
+    if (f.kind === 'seed') return 'tree';
     if (f.kind === 'well' && !f.options.length) return 'roots';
     if (f.kind === 'nest') {
       const st = g.state.structures.find((x) => `nest:${x.id}` === f.id);
@@ -72,9 +74,12 @@ export class FocusPlate {
     if (f.verbs.pour === 'deposit') parts.push(k('S', 'сдать'));
     if (f.verbs.pour === 'pledge') parts.push(k('S', 'держи — влить'));
     if (f.verbs.sell) parts.push(k('X', 'держи — продать'));
+    if (f.kind === 'geode') parts.push(k('S', 'держи — расколоть'));
+    if (f.kind === 'seed') parts.push(k('S', 'взять'));
+    const hold = f.hold > 0 && f.holdT > 0 ? `<div class="fp-sell fp-hold"><i style="width:${Math.min(100, (f.holdT / f.hold) * 100).toFixed(0)}%"></i></div>` : '';
     const sell = f.sellT > 0 ? `<div class="fp-sell"><i style="width:${Math.min(100, (f.sellT / INWORLD.sellHold) * 100).toFixed(0)}%"></i></div>` : '';
     void g;
-    return `<div class="fp-hint">${parts.join(' ')}</div>${sell}`;
+    return `<div class="fp-hint">${parts.join(' ')}</div>${sell}${hold}`;
   }
 
   update(g: Game) {
