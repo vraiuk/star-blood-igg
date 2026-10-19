@@ -1,6 +1,7 @@
 import { WORLD } from '../data/balance';
 import { TREE } from '../data/tree';
 import type { Game } from '../sim/game';
+import { litHusks } from '../sim/medium';
 import { BAYER4, makeCanvas } from './pixel';
 
 /** Darkness/glow buffers are computed at half resolution, then upscaled pixel-perfect. */
@@ -82,6 +83,13 @@ export class Lighting {
         out.push({ x: st.x, y: GY - tall, rx: 22, ry: 20, k: 0.55, glow: st.family === 'hive' ? 0.5 : 0.32, layer: -1 });
       }
     }
+    // medium: a burning Dead Tree's small Circle
+    for (const h of litHusks(game)) {
+      const fl = 1 + Math.sin(time * 2.3 + h.x) * 0.02;
+      out.push({ x: h.x, y: GY, rx: h.radius * fl, ry: h.radius * 0.95, k: 1, glow: 1, layer: -1 });
+      const hr = h.radius * TREE.rootLightFactor;
+      out.push({ x: h.x, y: GY, rx: hr, ry: Math.max(30, hr * 0.9), k: 0.8, glow: 0.4, layer: 1 });
+    }
     for (const t of s.tempLights) {
       const f = Math.min(1, t.life / 0.6) * Math.min(1, (t.maxLife - t.life) / 0.15 + 0.2);
       out.push({ x: t.x, y: GY - 12, rx: t.radius * f, ry: t.radius * 0.8 * f, k: 1, glow: 1.2, layer: -1 });
@@ -107,7 +115,8 @@ export class Lighting {
     const LW = this.LW;
     const c0 = Math.max(0, Math.floor(x0 / CELL)), c1 = Math.min(LW, Math.ceil(x1 / CELL));
     const s = game.state;
-    const targetNight = s.phase === 'day' || s.phase === 'won' ? 0.72 : 1;
+    // medium: the Eclipse after a Rift is sealed darkens the day
+    const targetNight = s.phase === 'day' || s.phase === 'won' ? (s.mw?.eclipse > 0 ? 0.95 : 0.72) : 1;
     this.night += (targetNight - this.night) * Math.min(1, dt * 1.5);
     const src = this.sources(game, time);
     const d = this.darkImg.data;

@@ -90,8 +90,43 @@ const MICRO: GuideStep[] = [
   },
 ];
 
-/** Guide steps per world (medium arrives in phase 7). */
-export const GUIDE_STEPS: Record<WorldId, GuideStep[]> = { legacy: [], micro: MICRO, medium: [] };
+/** x of the world objects of one kind (medium). */
+const objXs = (g: Game, kind: 'sleeper' | 'deadTree', keep: (id: string) => boolean) =>
+  g.world.objects.flatMap((o, i) => (o.kind === kind && keep(`${o.kind}:${i}`) ? [o.x] : []));
+
+/**
+ * Minimal medium steps (spec §7; the full medium guide is phase 7): wake a Sleeper → light a
+ * Dead Tree → Star Blood to the stone → seal a Rift.
+ */
+const MEDIUM: GuideStep[] = [
+  {
+    id: 'wake', text: 'Кыш убежал к краю Поляны: там спит Существо-отшельник. Влей 30 Янтаря <kbd>S</kbd> — разбуди его, и его гнездо откроется.',
+    need: (g) => g.state.phase === 'day' && g.state.night >= 1,
+    done: (g) => g.state.unlockedFamilies.length > 0,
+    target: (g) => nearestX(g, objXs(g, 'sleeper', (id) => !g.state.mw.woken.includes(id))),
+  },
+  {
+    id: 'husk', text: 'Кыш обнюхивает Мёртвое Древо. Влей 60 Янтаря <kbd>S</kbd> — оно загорится: малый Круг и два места для гнёзд.',
+    need: (g) => g.state.phase === 'day' && g.state.night >= 2,
+    done: (g) => Object.keys(g.state.mw.husks).length > 0,
+    target: (g) => nearestX(g, objXs(g, 'deadTree', (id) => g.state.mw.husks[id] === undefined)),
+  },
+  {
+    id: 'stone', text: 'У тебя Звёздная Кровь — Кыш сидит у камня Скрижали. Встань у камня и держи <kbd>S</kbd>: повысь руну.',
+    need: (g) => g.state.phase === 'day' && g.state.tree.stage >= (g.world.tabletStage ?? 0) && g.state.star >= g.runeRankPrice('spear'),
+    done: (g) => (['spear', 'hammer', 'starfall'] as const).some((r) => g.state.keeper.runeRank[r] > 0),
+    target: () => WORLD.treeX + INWORLD.stone,
+  },
+  {
+    id: 'rift', text: 'Древо окрепло. Кыш бежит к Разлому: днём влей Янтарь и 3 Звёздной Крови — запечатай. Будет Затмение и ответная волна.',
+    need: (g) => g.state.phase === 'day' && g.state.tree.stage >= 3 && !g.state.mw.wave,
+    done: (g) => g.state.mw.sealed.length > 0,
+    target: (g) => nearestX(g, g.world.objects.flatMap((o) => (o.kind === 'rift' && !g.state.mw.sealed.includes(o.side) ? [o.x] : []))),
+  },
+];
+
+/** Guide steps per world. */
+export const GUIDE_STEPS: Record<WorldId, GuideStep[]> = { legacy: [], micro: MICRO, medium: MEDIUM };
 
 /** The step to show now: the first not done (now or in an earlier run) whose need holds. */
 export function currentStep(g: Game, doneBefore: (id: string) => boolean): GuideStep | null {

@@ -16,11 +16,12 @@ import {
   type FormId, type KeeperRuneId, type PropertyDef,
 } from '../data/runes';
 import { PATH_CAPSTONE, TREE, TREE_BRANCHES, TREE_PATHS, TREE_STAGES, branchById, pathCounts, type TreePath } from '../data/tree';
-import { INWORLD, INWORLD_RUNE_KEYS, STAGE_INSTR, WORLDS, isWorldId, type RuneUnlock, type WorldDef, type WorldId } from '../data/worlds';
+import { INWORLD, INWORLD_RUNE_KEYS, MEDIUM, STAGE_INSTR, WORLDS, isWorldId, type RuneUnlock, type WorldDef, type WorldId } from '../data/worlds';
 import { focusOf, setVerb, spillAmber, updateInteract, cycleFocusOption, type Focus } from './interact';
 import { crackGeode, geodeVisible, hurtGrazer, maybeDropSeed, objectsOf, regrowHerds, updateWorldObjects } from './objects';
+import { blessing, damageHusk, huskLit, litHusks, riftsDawn, shapeNight, spawnX, updateMedium } from './medium';
 import { mulberry32 } from './rng';
-import type { Choice, Drop, DropKind, Enemy, GameEvent, GameState, PendingSpawn, Projectile, Soldier, Structure, Tunnel } from './types';
+import { emptyMedium, type Choice, type Drop, type DropKind, type Enemy, type GameEvent, type GameState, type PendingSpawn, type Projectile, type Soldier, type Structure, type Tunnel } from './types';
 
 /** Big underground Imago that toughen faster in endless nights. */
 const HEAVY = new Set<EnemyKind>(['worm', 'guard', 'tyrant']);
@@ -79,6 +80,8 @@ export type Target =
   | { kind: 'structure'; s: Structure; x: number }
   | { kind: 'soldier'; u: Soldier; x: number }
   | { kind: 'keeper'; x: number }
+  /** medium: a burning Dead Tree (world object id) */
+  | { kind: 'husk'; id: string; x: number }
   | { kind: 'tree'; x: number };
 
 /**
@@ -139,7 +142,7 @@ export class Game {
       nextId: 1, time: 0,
       pledges: {}, unlockedFamilies: [],
       interact: { pour: false, take: false, sell: false, holdT: 0, acc: 0, sellT: 0, focusId: null, opt: {}, pledgeX: {}, told: false },
-      herd: [], wobj: { cracked: [], burnt: [] }, seed: null,
+      herd: [], wobj: { cracked: [], burnt: [] }, seed: null, mw: emptyMedium(),
     };
     this.recalc();
     this.state.tree.hp = this.treeMaxHp();
@@ -261,7 +264,7 @@ export class Game {
     const boost = (1 + MERGE.power * merge) * (1 + ASCEND.power * asc) * (1 + ASPECT.dmg.per * a.dmg);
     const dmg = (1 + m.famDamage[st.family]) * this.treePower() * boost;
     const rng = (1 + m.famRange[st.family]) * (1 + MERGE.range * merge) * (1 + ASPECT.rng.per * a.rng) * (REACH_FAMILIES.has(st.family) ? this.stageDef.reach : 1);
-    const hpBoost = (1 + MERGE.hp * merge) * (1 + ASCEND.power * asc);
+    const hpBoost = (1 + MERGE.hp * merge) * (1 + ASCEND.power * asc) * (1 + blessing(this, 'nestHp'));
     return {
       ...base,
       hp: Math.round(base.hp * (1 + m.famHp[st.family]) * hpBoost),
@@ -346,6 +349,22 @@ export class Game {
 
   canPay(p: Price) { return (this.prepaid ?? this.state.amber) >= p.amber && this.state.star >= p.star; }
 
+  /** Pay a price if it can be paid (prepaid pledge / Treasury for Amber, `state.star` for Star Blood). */
+  spend(p: Price): boolean {
+    if (!this.canPay(p)) return this.deny(this.state.star < p.star ? `Нужна Звёздная Кровь: ${p.star}` : 'Не хватает Янтаря');
+    this.pay(p);
+    return true;
+  }
+
+  /** Is this creature kind a boss (bosses keep their count in a retaliation wave)? */
+  isBoss(kind: EnemyKind) { return !!ENEMIES[kind].boss; }
+
+  /** «Зима»: does the dawn after night `n` (0-based) bring halved income in this world (spec §6)? */
+  isWinter(n: number): boolean {
+    const w = this.world.winter;
+    return !!w && (n + 1) % w.every === 0;
+  }
+
   /**
    * In-world prepaid source: while set, `canPay`/`pay` draw Amber from this pledge instead of
    * the Treasury (Star Blood still comes from `state.star`). See `withPrepaid`.
@@ -412,12 +431,15 @@ export class Game {
   lightRegenFactor(x = this.state.keeper.x): number {
     const d = Math.abs(x - WORLD.treeX) / Math.max(1, this.state.tree.radius);
     const near = KEEPER.regenNear * (1 + this.mods.nearRegen * Math.max(0, 1 - d * 2));
-    return Math.max(KEEPER.regenFar, near - (near - KEEPER.regenFar) * Math.min(1, d));
+    // medium: the Stela of Light's blessing
+    return Math.max(KEEPER.regenFar, near - (near - KEEPER.regenFar) * Math.min(1, d)) * (1 + blessing(this, 'lightRegen'));
   }
 
   /** Is a point lit? Surface uses the tree radius, dragonflies and temporary lights. */
   isLit(x: number, underground: boolean): boolean {
     const s = this.state;
+    // medium: a burning Dead Tree's small Circle (worms under it burn too)
+    for (const h of litHusks(this)) if (Math.abs(x - h.x) <= h.radius * (underground ? TREE.rootLightFactor : 1)) return true;
     if (underground) {
       if (Math.abs(x - WORLD.treeX) <= s.tree.radius * TREE.rootLightFactor) return true;
       for (const st of s.structures) {
@@ -441,6 +463,8 @@ export class Game {
     if (slot.crown) {
       return this.state.tree.stage + 1 >= (slot.unlockStage ?? 1) && this.state.tree.rings >= ringsForCrownSlot(Number(slot.id.slice(1)));
     }
+    // medium: a Dead Tree's slots are open while it burns
+    if (slot.husk) return huskLit(this, slot.husk);
     // micro: only the first wells, shown from a night on (whatever the Circle)
     const wells = this.world.wells;
     if (slot.well && wells) return Number(slot.id.slice(1)) < wells.count && this.state.night >= wells.fromNight;
@@ -664,6 +688,7 @@ export class Game {
     const list = this.world.nights;
     if (list === 'campaign') return nightDef(n);
     if (n < list.length) return list[n];
+    if (this.world.generator) return this.world.generator(n);
     if (this.world.endless) return nightDef(n);
     // the list ran out: its last night again, a little tougher each time (micro: spec §5)
     const last = list[list.length - 1];
@@ -713,6 +738,7 @@ export class Game {
       this.state.herd ??= [];
       this.state.wobj ??= { cracked: [], burnt: [] };
       this.state.seed ??= null;
+      this.state.mw ??= emptyMedium();
       this.recalc();
       this.refreshNestHp();
       return true;
@@ -1221,7 +1247,7 @@ export class Game {
     this.adaptWrath(s.night);
     s.night++;
     s.rushedDawns++;
-    if (s.night === this.campaignNights) {
+    if (s.night === this.campaignNights && !this.world.features.inWorld) {
       this.milestoneStars = this.computeStars();
       this.emit({ type: 'milestone', stars: this.milestoneStars });
     }
@@ -1789,6 +1815,7 @@ export class Game {
     if (this.world.features.inWorld) {
       updateInteract(this, dt);
       updateWorldObjects(this, this.rand, dt);
+      updateMedium(this, dt);
       if (this.won) return;
     }
     this.updateEnemies(dt);
@@ -1820,8 +1847,12 @@ export class Game {
       s.enemies = [];
       this.emit({ type: 'denied', reason: 'Рассвет выжег тварей во тьме' });
     }
-    if (s.phase === 'night' && s.pending.length === 0 && s.enemies.length === 0) this.endNight();
+    // a truce (medium) lasts its quiet seconds even with nobody coming
+    if (s.phase === 'night' && s.pending.length === 0 && s.enemies.length === 0 && s.phaseTime >= this.nightQuiet) this.endNight();
   }
+
+  /** seconds the current night lasts at least (a truce), set when it is queued */
+  private nightQuiet = 0;
 
   // ───────────────────────────── phases ──────────────────────────────
 
@@ -1856,7 +1887,10 @@ export class Game {
     const def = this.night(s.night);
     const handMade = s.night < this.campaignNights;
     const pending: PendingSpawn[] = [];
-    for (const g of def.groups) {
+    // medium: silent sides send no one, a retaliation wave is fatter, a truce is quiet (spec §6)
+    const shaped = this.world.features.inWorld ? shapeNight(this, def, s.night) : { groups: def.groups, quiet: 0 };
+    this.nightQuiet = shaped.quiet;
+    for (const g of shaped.groups) {
       const sides: Array<'L' | 'R'> = g.side === 'B' ? ['L', 'R'] : [g.side];
       for (const side of sides) {
         const boss = ENEMIES[g.kind].boss;
@@ -1883,13 +1917,16 @@ export class Game {
     this.snapNight(false);
     const finished = s.night;
     s.night++;
-    if (s.night === this.campaignNights) {
+    // the legacy ten-night milestone (in-world worlds have their own goals)
+    if (s.night === this.campaignNights && !this.world.features.inWorld) {
       this.milestoneStars = this.computeStars();
       this.emit({ type: 'milestone', stars: this.milestoneStars });
     }
     const inc = this.world.features.inWorld ? this.world.dawnIncome : undefined;
+    // «Зима» (medium): every 8th night the Tree's dawn income is halved
+    const winter = !!inc && this.isWinter(finished);
     // in-world: the Tree's own income into the Treasury instead of the Observer's gift
-    let gift = inc ? Math.round((inc.base + inc.perStage * s.tree.stage) * (1 + this.mods.dawnGift))
+    let gift = inc ? Math.round((inc.base + inc.perStage * s.tree.stage) * (1 + this.mods.dawnGift) * (winter ? this.world.winter!.mul : 1))
       : Math.round((ECONOMY.dawnBase + ECONOMY.dawnPerNight * (finished + 1)) * (1 + this.mods.dawnGift));
     // dawns skipped by «Натиск» arrive now: their gifts (the half not paid up front) and roulettes
     for (let i = 1; i <= s.rushedDawns; i++) {
@@ -1918,8 +1955,10 @@ export class Game {
     s.keeper.sacrificed = false;
     if (!s.keeper.alive && !this.world.features.inWorld) s.keeper.respawn = 0.5;
     this.adaptWrath(finished);
-    this.emit({ type: 'dawn', night: finished, gift });
+    this.emit(winter ? { type: 'dawn', night: finished, gift, winter } : { type: 'dawn', night: finished, gift });
     if (this.world.features.inWorld) {
+      // a survived retaliation wave silences its Rift; all silent = the medium world is won
+      if (riftsDawn(this, finished)) { this.milestoneStars = this.computeStars(); return; }
       // the herds regrow; the grown Tree may drop the Seed (micro)
       regrowHerds(this, this.rand);
       maybeDropSeed(this);
@@ -1997,7 +2036,8 @@ export class Game {
     const s = this.state;
     while (s.pending.length && s.pending[0].at <= s.phaseTime) {
       const p = s.pending.shift()!;
-      const x = p.side === 'L' ? -WORLD.spawnMargin : WORLD.width + WORLD.spawnMargin;
+      // medium: out of the side's Rift (never farther than `spawnReach` from the trunk)
+      const x = this.world.features.inWorld ? spawnX(this, p.side) : p.side === 'L' ? -WORLD.spawnMargin : WORLD.width + WORLD.spawnMargin;
       this.spawnEnemy(p.kind, x, p.side === 'L' ? 1 : -1);
     }
   }
@@ -2025,7 +2065,8 @@ export class Game {
       layer: def.underground ? 'under' : def.air ? 'air' : 'ground', tunnel: 0, usedTunnel: false, fogged: false, plates: 0, maxPlates: 0,
     };
     if (def.plates) e.plates = e.maxPlates = Math.round(def.plates * hp / def.hp);
-    if (DIGGERS.has(kind)) {
+    // medium: no «Лазы» before `world.tunnelsFrom` (night 9)
+    if (DIGGERS.has(kind) && s.night >= (this.world.tunnelsFrom ?? 0)) {
       // every digger drives a tunnel toward the trunk
       const tn: Tunnel = { id: s.nextId++, dir, entryX: NaN, headX: x, open: false, seal: 0, left: TUNNELS.capacity(s.night) };
       s.tunnels.push(tn);
@@ -2412,6 +2453,7 @@ export class Game {
           else if (target.kind === 'structure') this.damageStructure(target.s, dmg * def.structureMult, e);
           else if (target.kind === 'soldier') { if (!def.cleave) this.damageSoldier(target.u, dmg, e); }
           else if (target.kind === 'keeper') this.damageKeeper(dmg);
+          else if (target.kind === 'husk') damageHusk(this, target.id, dmg * def.structureMult);
           else this.damageTree(dmg, e.kind, e);
         }
         continue;
@@ -2684,6 +2726,10 @@ export class Game {
       if (!ahead(st.x)) continue;
       if (Math.abs(st.x - e.x) <= contact + 4) return { kind: 'structure', s: st, x: st.x };
     }
+    // medium: a burning Dead Tree in the way is gnawed
+    for (const h of litHusks(this)) {
+      if (ahead(h.x) && Math.abs(h.x - e.x) <= contact + MEDIUM.huskReach) return { kind: 'husk', id: h.id, x: h.x };
+    }
     const k = s.keeper;
     if (k.alive && e.kind !== 'mother' && Math.abs(k.x - e.x) <= contact) return { kind: 'keeper', x: k.x };
     if (Math.abs(WORLD.treeX - e.x) <= WORLD.treeReach + def.radius) return { kind: 'tree', x: WORLD.treeX };
@@ -2728,7 +2774,8 @@ export class Game {
     }
   }
 
-  private refreshNestHp() {
+  /** Re-derive every nest's max HP (after a blessing or a mod change), keeping the damage taken. */
+  refreshNestHp() {
     for (const st of this.state.structures) {
       const hp = this.nestStats(st).hp;
       if (hp !== st.maxHp) { st.hp += hp - st.maxHp; st.maxHp = hp; }

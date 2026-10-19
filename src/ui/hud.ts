@@ -15,9 +15,11 @@ import { QUESTS } from './quests';
 import { FocusPlate } from './focusPlate';
 import { Guide } from './guide';
 import { defeatReason } from './defeat';
-import { CREATURE_CARDS } from '../data/cards';
+import { CREATURE_CARDS, OBJECT_CARDS, type ObjectCardKind } from '../data/cards';
+import { stelaName } from '../sim/medium';
 import { ENEMIES } from '../data/balance';
 import { markSeen, seen } from '../state/seen';
+import { stageNews } from './stageNews';
 
 /** Roman numerals for facet levels */
 const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI'];
@@ -447,10 +449,26 @@ export class Hud {
     this.end.classList.remove('hidden');
   }
 
-  /** Micro victory: «Семя посажено» → «На Поляну» (spec §5). */
-  showWin() {
+  /** Victory: micro «Семя посажено» → «На Поляну» (spec §5); medium «Поляна свободна» (spec §6). */
+  showWin(coins = 0) {
     const g = this.game();
     const s = g.state;
+    if (g.world.win.kind === 'rifts') {
+      const min = Math.round(s.stats.time / 60);
+      this.end.innerHTML = `
+      <div class="box">
+        <h1>Поляна свободна</h1>
+        <h2>ОБА РАЗЛОМА ЗАПЕЧАТАНЫ · НОЧЕЙ: ${s.night} · ${'★'.repeat(g.stars())}${'☆'.repeat(Math.max(0, 3 - g.stars()))}</h2>
+        <p>Последняя ответная волна разбилась о Круг. Разломы Пустоты затянулись, и Тьма ушла с Поляны. Мёртвые Древа помнят свет. Кыш свистит на всю округу: «Юрр!»</p>
+        <div class="stat">Древо: <b>${TREE_STAGES[s.tree.stage].name}</b> · Тварей: <b>${s.stats.kills}</b> · Янтарь: <b>${s.stats.amberCollected}</b> · Время: <b>${min} мин</b></div>
+        <div class="tablet inline">Монеты Наблюдателя: <b>+${coins}</b></div>
+        <div class="row"><button class="btn gold" data-a="again">Ещё раз</button><button class="btn" data-a="menu">В меню</button></div>
+      </div>`;
+      this.end.querySelector('[data-a=again]')!.addEventListener('click', () => { this.hideEnd(); this.cb.onStart('medium'); });
+      this.end.querySelector('[data-a=menu]')!.addEventListener('click', () => this.cb.onQuitToMenu());
+      this.end.classList.remove('hidden');
+      return;
+    }
     this.end.innerHTML = `
       <div class="box">
         <h1>Семя посажено</h1>
@@ -473,7 +491,11 @@ export class Hud {
       switch (e.type) {
         case 'nightStart': {
           const def = g.night(e.night);
-          this.showBanner(def.title, def.hint, true, 4.5);
+          const mw = g.state.mw;
+          if (mw.wave && mw.waveNight === e.night) {
+            // medium: the sealed Rift's last answer (spec §6)
+            this.showBanner(`Ответная волна · ${mw.wave === 'L' ? 'слева' : 'справа'}`, 'Запечатанный Разлом выплёвывает всё, что в нём осталось. Переживи эту ночь — и с той стороны тьма замолчит навсегда.', true, 5);
+          } else this.showBanner(def.title, def.hint, true, 4.5);
           break;
         }
         case 'rush':
@@ -483,7 +505,7 @@ export class Hud {
           this.showBanner('Тот-Кто-Посадил-новое-Древо!', `Десять ночей позади. ${'★'.repeat(e.stars)} Дальше — Бесконечная ночь: держись за рекорд.`, false, 6);
           break;
         case 'dawn':
-          this.showBanner('Рассвет', g.world.features.inWorld ? `Тьма отступила. Доход Древа: +${e.gift} Янтаря в Казну` : `Тьма отступила. Рассветный дар: +${e.gift} Янтаря`, false, 2.6);
+          this.showBanner(e.winter ? 'Зимний рассвет' : 'Рассвет', g.world.features.inWorld ? `Тьма отступила. Доход Древа: +${e.gift} Янтаря в Казну${e.winter ? ' — зима, вполовину' : ''}` : `Тьма отступила. Рассветный дар: +${e.gift} Янтаря`, false, 2.6);
           if (g.world.features.inWorld && e.night === 0 && this.guide.enabled) {
             this.guide.carrot();
             // after the dawn gift's line (the Hammer), not over it
@@ -496,11 +518,28 @@ export class Hud {
           this.queueBanner('Семя Игг-Древа', 'Древо уронило Семя у ствола. Возьми его [S] и вынеси за край Круга — день подождёт.', 5);
           break;
         case 'seedTaken': this.say('Семя в руках. Неси его за край Круга — любой.'); break;
-        case 'seedLost': this.say('Хранитель пал — Семя упало там, где он лежал. Подбери его снова.', true); break;
-        case 'treeGrew':
-          // in-world: the legacy unlock list (runes for Star Blood, rings…) doesn't apply
-          this.showBanner(TREE_STAGES[e.stage].name, g.world.features.inWorld ? this.stageNews(g, e.stage) : TREE_STAGES[e.stage].unlocks.join(' · '), false, 3.5);
+        // «Поляна» (spec §6)
+        case 'sleeperWoken': this.queueBanner(`Проснулось: ${NESTS[e.family].name}`, `Отшельник ушёл к Древу. Гнездо «${NESTS[e.family].name}» теперь строится на любом месте у Круга.`, 4); break;
+        case 'stelaBlessed': this.say(`${stelaName(e.blessing)} благословила забег: ${e.blessing === 'nestHp' ? 'гнёзда крепче на 20%' : 'Свет восстанавливается на 30% быстрее'}.`); break;
+        case 'huskLit': this.say('Мёртвое Древо загорелось: малый Круг света и два места для гнёзд. Твари будут грызть его — защити.'); break;
+        case 'huskOut': this.say('Мёртвое Древо погасло — его можно зажечь снова за Янтарь.', true); break;
+        case 'riftSealed':
+          this.showBanner('Затмение!', e.sealed === 1
+            ? 'Разлом запечатан, но Тьма отвечает: ночь придёт скоро, и с ней — ответная волна. Готовь гнёзда у той стороны.'
+            : 'Второй Разлом запечатан. Последняя ответная волна — переживи её, и Поляна свободна.', true, 5);
           break;
+        case 'riftSilent':
+          this.queueBanner('Разлом затих', `${e.side === 'L' ? 'Слева' : 'Справа'} больше не придёт ни одна тварь.${g.state.mw.silent.length < 2 ? ' Остался ещё один Разлом.' : ''}`, 4.5);
+          break;
+        case 'seedLost': this.say('Хранитель пал — Семя упало там, где он лежал. Подбери его снова.', true); break;
+        case 'treeGrew': {
+          // in-world: the legacy unlock list (runes for Star Blood, rings…) doesn't apply; each opening
+          // is a banner and one Observer line (spec §6)
+          const news = g.world.features.inWorld ? stageNews(g.world, e.stage) : null;
+          this.showBanner(TREE_STAGES[e.stage].name, news ? news.items.join(' · ') : TREE_STAGES[e.stage].unlocks.join(' · '), false, 3.5);
+          if (news?.line) setTimeout(() => this.say(news.line!), 1200);
+          break;
+        }
         case 'runeLearned': {
           // the world's fixed rune gift: a banner without a choice + one Observer line (spec §4)
           const def = ABILITIES[e.ability];
@@ -588,17 +627,6 @@ export class Hud {
   /** A short banner now (e.g. «Скрижаль — у камня рядом с Древом»). */
   notify(title: string, hint: string, secs = 2.2) { this.showBanner(title, hint, false, secs); }
 
-  /** In-world: what a new Tree stage opens in this world (Circle, rune, specializations, Ascension). */
-  private stageNews(g: Game, stage: number): string {
-    const w = g.world;
-    const out = [`Круг ${TREE_STAGES[stage].radius}`, 'новые места для гнёзд'];
-    for (const u of w.runeUnlocks ?? []) if (u.when.kind === 'stage' && u.when.stage === stage) out.push(`руна ${ABILITIES[u.rune].name} [${ABILITIES[u.rune].key}]`);
-    if (w.specStage === stage) out.push('развилки гнёзд');
-    if (w.ascendStage === stage) out.push('Возвышение гнёзд');
-    if (w.features.tablet && (w.tabletStage ?? 0) === stage && stage > 0) out.push('камень Скрижали');
-    if (stage === w.maxStage) out.push('предел этого мира');
-    return out.join(' · ');
-  }
 
   /** The Observer's voice: an azure Tablet notice. */
   say(text: string, warn = false) {
@@ -1487,7 +1515,11 @@ export class Hud {
       this.nightInfo.innerHTML = `День · <span class="t">${s.seed.carried ? 'неси Семя за край Круга' : 'Семя ждёт у ствола'}</span>`;
       this.callBtn.classList.add('hidden');
     } else if (s.phase === 'day') {
-      this.nightInfo.innerHTML = `День · до ночи <span class="t">${Math.ceil(s.dayLeft)}с</span> · ночь ${s.night + 1}${of(s.night)}`;
+      // medium: the Rifts left, and what tonight is (a truce, «winter», the retaliation wave)
+      const rifts = g.world.win.kind === 'rifts' ? ` · Разломы ${s.mw.silent.length}/${g.world.win.count}` : '';
+      const mark = s.mw.wave ? ' · <span style="color:#ff8a8a">ответная волна</span>' : g.night(s.night).truce ? ' · <span style="color:#8fd0ff">перемирие</span>'
+        : g.isWinter(s.night) ? ' · <span style="color:#8fd0ff">зима</span>' : '';
+      this.nightInfo.innerHTML = `День · до ночи <span class="t">${Math.ceil(s.dayLeft)}с</span> · ночь ${s.night + 1}${of(s.night)}${mark}${rifts}`;
       this.callBtn.classList.remove('hidden', 'rush', 'wait');
       this.callBtn.title = '';
       this.callBtn.innerHTML = `Призвать ночь <span style="opacity:.75">[Пробел] +${Math.floor(s.dayLeft)}</span>`;
@@ -1620,6 +1652,17 @@ export class Hud {
     if (this.ccardTimer <= 0) this.ccard.classList.remove('show');
     if (!g.world.features.inWorld || g.over || this.ccardTimer > 0) return;
     const k = g.state.keeper;
+    // medium: the first time the Keeper comes near a new kind of world object
+    const o = g.world.objects.find((x) => x.kind in OBJECT_CARDS && !seen(`ocard:${x.kind}`) && Math.abs(x.x - k.x) < 120);
+    if (o) {
+      markSeen(`ocard:${o.kind}`);
+      const c = OBJECT_CARDS[o.kind as ObjectCardKind];
+      this.ccard.innerHTML = `<div class="who">Новое место</div><div class="cn">${c.name}</div>
+        <div class="cd"><b>Что это:</b> ${c.does}</div><div class="ca"><b>Что делать:</b> ${c.answer}</div>`;
+      this.ccard.classList.add('show');
+      this.ccardTimer = 7;
+      return;
+    }
     const near = [...g.state.enemies, ...g.state.herd].find((e) => !e.dead && CREATURE_CARDS[e.kind] && !seen(`card:${e.kind}`)
       && Math.abs(e.x - k.x) < (e.neutral ? 200 : 320));
     if (!near) return;

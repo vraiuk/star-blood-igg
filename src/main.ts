@@ -532,11 +532,19 @@ function frame(now: number) {
     hud.closeMenu();
     if (!logged) { logged = true; saveRunLog(buildRunLog(game, 'won')); }
     if (game.world.id === 'micro') save.microDone = true;
+    // medium (spec §6): nights and stars → the Observer's coins, kept in the igg2 save
+    let coins = 0;
+    if (game.world.win.kind === 'rifts') {
+      coins = coinsForRun(game.state.night, game.stars(), game.path + 1);
+      save.coins += coins;
+      save.earned += coins;
+      save.mediumWins++;
+    }
     save.runs++;
     writeSave(save);
     dropRun();
     titleInfo();
-    setTimeout(() => hud.showWin(), 1400);
+    setTimeout(() => hud.showWin(coins), 1400);
   }
   if (game.over && !game.won && !endShown && started) {
     endShown = true;

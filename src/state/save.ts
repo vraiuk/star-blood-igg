@@ -24,10 +24,12 @@ export interface MetaSave {
   rings: Record<string, number>;
   /** IGG2: the micro world «Росток» has been won — opens «Поляна» on the title */
   microDone: boolean;
+  /** IGG2: times «Поляна» was won (both Rifts sealed) */
+  mediumWins: number;
 }
 
 export function emptySave(): MetaSave {
-  return { coins: 0, earned: 0, nodes: [], bestStars: [0, 0, 0], pathUnlocked: 0, path: 0, runs: 0, bestNight: [0, 0, 0], rings: {}, microDone: false };
+  return { coins: 0, earned: 0, nodes: [], bestStars: [0, 0, 0], pathUnlocked: 0, path: 0, runs: 0, bestNight: [0, 0, 0], rings: {}, microDone: false, mediumWins: 0 };
 }
 
 export function loadSave(): MetaSave {

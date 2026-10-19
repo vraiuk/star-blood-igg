@@ -10,10 +10,12 @@ import { type Ctx, PAL, line, makeCanvas, rect } from './pixel';
 import {
   ROOT_SLOT_Y, drawTunnel, drawTunnelMouths, drawFog, drawFogEdge, drawDragonfly, dragonflyHome, drawAffix, drawWeb, drawDrop, drawEnemy, drawEnemyEyes, drawEnemyHp, drawKeeper, drawKeeperHp, drawProjectile, drawSlotMarker,
   drawCrownNest, drawCrownSlot, drawSoldier, drawStructure, drawWorker, drawAltar, drawHollow, drawTabletStone, drawWellMouth, drawYurr,
+  drawRift, drawRiftGlow, drawDeadTree, drawDeadTreeMark, drawSleeper, drawStela,
   type YurrView,
 } from './sprites';
 import { geodeVisible, objectsOf } from '../sim/objects';
-import { INWORLD } from '../data/worlds';
+import { litHusks } from '../sim/medium';
+import { INWORLD, MEDIUM } from '../data/worlds';
 import { SLOT_MARGIN } from '../data/balance';
 import { TREE_STAGES } from '../data/tree';
 import type { Focus } from '../sim/interact';
@@ -139,6 +141,18 @@ export class Renderer {
           for (let i = -3; i <= 3; i++) p.emit(6, e.x + i * 8, WORLD.groundY - 8, { speed: 40, max: 1.2, colors: ['#ff9a4a', '#ffd070', '#5a3a1a'], gravity: -40, glow: true });
           break;
         case 'seedDropped': p.goldBurst(e.x, WORLD.groundY - 30, 80); p.addFx('ring', e.x, WORLD.groundY - 6, 0.6, 26); break;
+        // «Поляна» (spec §6)
+        case 'riftSealed':
+          p.emit(50, e.x, WORLD.groundY - 28, { speed: 110, max: 1.4, colors: ['#d8a8ff', '#8a4ad0', PAL.gold4], glow: true, drag: 1.6, gravity: 0 });
+          p.goldBurst(e.x, WORLD.groundY - 28, 60);
+          p.addFx('ring', e.x, WORLD.groundY - 6, 0.8, 40);
+          this.bump(8);
+          break;
+        case 'huskLit': p.goldBurst(e.x, WORLD.groundY - 20, 60); p.addFx('ring', e.x, WORLD.groundY - 4, 0.6, 30); break;
+        case 'huskHit': if (Math.random() < 0.4) p.emit(2, e.x, WORLD.groundY - 14, { speed: 30, max: 0.5, colors: [PAL.amber, '#5a3a1a'], gravity: 80 }); break;
+        case 'huskOut': p.emit(24, e.x, WORLD.groundY - 20, { speed: 30, max: 1.6, colors: ['#5a5068', '#3a3448', '#ff7a3a'], gravity: -25 }); break;
+        case 'sleeperWoken': p.emit(26, e.x, WORLD.groundY - 12, { speed: 60, max: 1, colors: ['#c8e86a', '#8fd0ff', PAL.gold4], glow: true, gravity: -30 }); break;
+        case 'stelaBlessed': p.emit(30, e.x, WORLD.groundY - 18, { speed: 50, max: 1.2, colors: ['#8fd0ff', '#c8f4ff', PAL.gold4], glow: true, gravity: -50 }); break;
         case 'won': p.goldBurst(game.state.keeper.x, WORLD.groundY - 12, 160); this.flash = Math.max(this.flash, 0.4); break;
         case 'knock': p.emit(e.death ? 14 : 5, e.x, WORLD.groundY - 12, { speed: 60, max: 0.5, colors: [PAL.gold3, PAL.amber], gravity: 160 }); break;
         case 'hit': p.hit(e.x, e.y, e.crit); break;
@@ -329,7 +343,11 @@ export class Renderer {
       }
     }
 
-    this.drawNestsOutlined(c, s.structures.filter((x) => x.underground), time);
+    // in-world: things by the trunk and nests show only once the visible Circle has reached them,
+    // like the slot markers (a Dead Tree's nests show by its own light, or as dark husks after)
+    const shown = (x: number) => !this.follow || Math.abs(x - WORLD.treeX) <= s.tree.radius || litHusks(game).some((h) => Math.abs(x - h.x) <= h.radius);
+    const nestShown = (st: { x: number; slotId: string }) => !this.follow || shown(st.x) || st.slotId.startsWith('D');
+    this.drawNestsOutlined(c, s.structures.filter((x) => x.underground && nestShown(x)), time);
     for (const tn of s.tunnels) drawTunnel(c, tn, time);
     for (const e of s.enemies) if (e.layer === 'under') drawFog(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
     this.drawEnemiesOutlined(c, s.enemies.filter((e) => e.layer === 'under'), time);
@@ -373,9 +391,9 @@ export class Renderer {
     c.restore();
     if (this.follow && this.fallT < 0) {
       // the trunk objects: hollow (Treasury), growth altar, Tablet stone
-      drawHollow(c, WORLD.treeX + INWORLD.treasury, time, s.amber, focus?.kind === 'treasury');
-      drawAltar(c, WORLD.treeX + INWORLD.altar, time, focus?.kind === 'altar', s.tree.stage >= game.world.maxStage);
-      if (game.world.features.tablet) drawTabletStone(c, WORLD.treeX + INWORLD.stone, time, focus?.kind === 'stone');
+      if (shown(WORLD.treeX + INWORLD.treasury)) drawHollow(c, WORLD.treeX + INWORLD.treasury, time, s.amber, focus?.kind === 'treasury');
+      if (shown(WORLD.treeX + INWORLD.altar)) drawAltar(c, WORLD.treeX + INWORLD.altar, time, focus?.kind === 'altar', s.tree.stage >= game.world.maxStage);
+      if (game.world.features.tablet && shown(WORLD.treeX + INWORLD.stone)) drawTabletStone(c, WORLD.treeX + INWORLD.stone, time, focus?.kind === 'stone');
     }
     if (s.tree.stage + 1 >= TREE.polariaStage) this.drawPolaria(c, game, time);
     if (this.fallT < 0) for (const st of s.structures) if (st.crown) drawCrownNest(c, st, time);
@@ -386,7 +404,7 @@ export class Renderer {
     }
     if (view.hoverTree && !game.over) this.treeOutline(c, time);
     if (this.follow) this.drawWorldObjects(c, game, time);
-    this.drawNestsOutlined(c, s.structures.filter((x) => !x.underground && !x.crown), time);
+    this.drawNestsOutlined(c, s.structures.filter((x) => !x.underground && !x.crown && nestShown(x)), time);
     for (const tn of s.tunnels) if (tn.open) drawTunnelMouths(c, tn, time);
     for (const e of s.enemies) if (e.layer !== 'under') drawFog(c, e, time, s.night, e.fogged ? game.fogLevel(e) : 1);
     this.drawEnemiesOutlined(c, s.enemies.filter((e) => e.layer !== 'under'), time);
@@ -473,7 +491,7 @@ export class Renderer {
     // build runes and root nodes sit above the darkness so they stay readable at night
     if (!game.over) {
       for (const sl of SLOTS) {
-        if (!game.slotUnlocked(sl) || game.structureAt(sl.id)) continue;
+        if (!game.slotUnlocked(sl) || game.structureAt(sl.id) || (!sl.husk && !shown(sl.x))) continue;
         if (sl.crown) {
           const p = crownPos(s.tree.stage, Number(sl.id.slice(1)), s.tree.rings);
           drawCrownSlot(c, p.x, p.y, time, view.hoverSlot === sl.id || view.selectedSlot === sl.id);
@@ -539,12 +557,31 @@ export class Renderer {
     }
     if (s.seed && !s.seed.carried) this.drawSeed(c, s.seed.x, gy - 3, time);
     for (const e of s.herd) drawEnemy(c, e, time);
+    // «Поляна» (spec §6): Rifts, Dead Trees, Sleeping Creatures, stelae
+    const f = game.focus();
+    const mw = s.mw;
+    for (const { o, id } of objectsOf(game, 'deadTree')) {
+      const hp = mw.husks[id];
+      drawDeadTree(c, o.x, time, hp !== undefined, (hp ?? o.hp) / o.hp, f?.id === id);
+    }
+    for (const { o, id } of objectsOf(game, 'sleeper')) if (!mw.woken.includes(id)) drawSleeper(c, o.x, time, o.family, f?.id === id);
+    for (const { o, id } of objectsOf(game, 'stela')) drawStela(c, o.x, time, o.blessing, mw.blessed.includes(id), f?.id === id);
   }
 
   /** Above the darkness: crystal glints of geodes, the Seed's glow (lying or carried). */
   private drawObjectGlints(c: Ctx, game: Game, time: number) {
     const s = game.state;
     const gy = WORLD.groundY;
+    // a Rift is a tear in the dark itself: drawn above the darkness so it reads from afar
+    const f = game.over ? null : game.focus();
+    for (const { o, id } of objectsOf(game, 'rift')) {
+      drawRift(c, o.x, time, s.mw.sealed.includes(o.side), s.mw.silent.includes(o.side), f?.id === id);
+      drawRiftGlow(c, o.x, time, s.mw.sealed.includes(o.side), s.mw.silent.includes(o.side));
+    }
+    for (const { o, id } of objectsOf(game, 'deadTree')) {
+      const hp = s.mw.husks[id];
+      drawDeadTreeMark(c, o.x, time, hp !== undefined, (hp ?? o.hp) / o.hp);
+    }
     for (const { o, id } of objectsOf(game, 'geode')) {
       if (!geodeVisible(game, o, id)) continue;
       const x = Math.round(o.x);
@@ -679,6 +716,20 @@ export class Renderer {
         c.fillStyle = `rgba(255, 140, 90, ${(0.16 * this.dawnGlow * k * k).toFixed(3)})`;
         c.fillRect(cam.x, y, cam.w, 4);
       }
+    }
+    // medium: the Eclipse after a Rift is sealed — a black sun with a violet corona over the view
+    const ecl = s.mw?.eclipse ?? 0;
+    if (ecl > 0 && s.phase === 'day') {
+      const a = Math.min(1, ecl / 2, (MEDIUM.eclipseT - ecl) / 1.5 + 0.15);
+      c.fillStyle = `rgba(40, 10, 60, ${(0.28 * a).toFixed(3)})`;
+      c.fillRect(cam.x, cam.y, cam.w, cam.h);
+      const sx = Math.round(cam.x + cam.w * 0.72), sy = Math.round(cam.y + cam.h * 0.18);
+      for (let i = 0; i < 40; i++) {
+        const ang = (i / 40) * Math.PI * 2 + time * 0.4;
+        const r = 15 + (i % 3) + Math.sin(time * 3 + i) * 1.5;
+        rect(c, sx + Math.cos(ang) * r, sy + Math.sin(ang) * r, 1, 1, `rgba(200,140,255,${(0.8 * a).toFixed(2)})`);
+      }
+      disc(c, sx, sy, 13, `rgba(4,2,8,${a.toFixed(2)})`);
     }
     // the Tree in danger: a red heartbeat around the view
     if (s.phase === 'night' && s.tree.hp < game.treeMaxHp() * 0.3) {

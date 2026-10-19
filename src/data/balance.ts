@@ -230,6 +230,8 @@ export interface SlotDef {
   crown?: boolean;
   /** in-world root well: a surface mark with a weaver under it, unlocks by Circle radius */
   well?: boolean;
+  /** medium: a slot at a Dead Tree (the world object id, `deadTree:<i>`) — open while that Tree burns */
+  husk?: string;
 }
 
 /** Crown slots: the Tree as a tower. Index i opens at stage 2 + i. Positions are drawn by the renderer. */
@@ -299,7 +301,10 @@ export const WELL_OFFSETS = [60, 96, 138, 178] as const;
 /** y of a well's weaver on the root lane, below the surface mark */
 export const WELL_DEPTH = 30;
 
-function buildSlots(inWorld: boolean): SlotDef[] {
+/** a lit Dead Tree's nest slots sit this far either side of its trunk (medium, spec §6) */
+export const HUSK_SLOT_GAP = 24;
+
+function buildSlots(inWorld: boolean, objects: WorldDef['objects'] = []): SlotDef[] {
   const tx = WORLD.treeX, gy = WORLD.groundY;
   const surface: SlotDef[] = SURFACE_OFFSETS.flatMap((o, i) => [
     { id: `L${i}`, x: tx - o, y: gy, underground: false, offset: o },
@@ -311,7 +316,16 @@ function buildSlots(inWorld: boolean): SlotDef[] {
       { id: `U${2 * i}`, x: tx - o, y: gy + WELL_DEPTH, underground: true, offset: o, well: true },
       { id: `U${2 * i + 1}`, x: tx + o, y: gy + WELL_DEPTH, underground: true, offset: o, well: true },
     ]);
-    return [...surface, ...wells];
+    // a Dead Tree's slots: D0, D1 at the first one, D2, D3 at the next… (open while it burns)
+    const husks: SlotDef[] = [];
+    objects.forEach((o, i) => {
+      if (o.kind !== 'deadTree') return;
+      for (let j = 0; j < o.slots; j++) {
+        const x = o.x + (j % 2 ? 1 : -1) * HUSK_SLOT_GAP * (1 + Math.floor(j / 2));
+        husks.push({ id: `D${husks.length}`, x, y: gy, underground: false, offset: Math.abs(x - tx), husk: `deadTree:${i}` });
+      }
+    });
+    return [...surface, ...wells, ...husks];
   }
   return [
     ...surface,
@@ -336,11 +350,11 @@ export const SLOTS: SlotDef[] = buildSlots(false);
  * Switch the module-level world geometry to `def`: WORLD.width / treeX, the SLOTS layout
  * (in place) and the crown-anchor cache. Called by every `Game` constructor and `restore`.
  */
-export function applyWorld(def: Pick<WorldDef, 'width' | 'treeX' | 'features'>) {
+export function applyWorld(def: Pick<WorldDef, 'width' | 'treeX' | 'features'> & Partial<Pick<WorldDef, 'objects'>>) {
   WORLD.width = def.width;
   WORLD.treeX = def.treeX;
   crownCache.clear();
-  const next = buildSlots(def.features.inWorld);
+  const next = buildSlots(def.features.inWorld, def.objects);
   SLOTS.length = 0;
   SLOTS.push(...next);
 }

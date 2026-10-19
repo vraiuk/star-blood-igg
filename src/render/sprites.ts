@@ -1468,3 +1468,163 @@ export function drawWellMouth(c: Ctx, x: number, time: number, focus: boolean, o
   rect(c, x - 2, ry + 1, 1, 1, col);
   rect(c, x + 2, ry + 1, 1, 1, col);
 }
+
+// ───────────────────────────── «Поляна» objects (IGG2 §6) ─────────────────────────────
+
+/**
+ * A Void Rift: a tall tear in the world at its edge — a black slit with a writhing violet rim.
+ * Sealed: golden runes stitch it shut (pulsing while its wave is still to come); silent: a cold
+ * scar with a dim golden seal.
+ */
+export function drawRift(c: Ctx, x: number, time: number, sealed: boolean, silent: boolean, focus: boolean) {
+  const y = GY;
+  const H = 74;
+  for (let i = 0; i < H; i++) {
+    const t = i / H;
+    // the slit is widest in the middle, waving
+    const w = Math.round((silent ? 2 : sealed ? 4 : 7) * Math.sin(t * Math.PI) + (silent ? 0 : Math.sin(time * 3 + i * 0.4) * 1.5));
+    const cx = Math.round(x + Math.sin(i * 0.23 + time * (silent ? 0 : 0.8)) * 2);
+    if (w <= 0) { rect(c, cx, y - i, 1, 1, silent ? '#2a2438' : '#1a0f2a'); continue; }
+    rect(c, cx - w, y - i, w * 2 + 1, 1, '#030106');
+    const rim = silent ? '#4a4060' : sealed ? '#8a6aaa' : Math.sin(time * 6 + i * 0.7) > 0 ? '#c88aff' : '#8a4ae0';
+    rect(c, cx - w - 1, y - i, 1, 1, rim);
+    rect(c, cx + w + 1, y - i, 1, 1, rim);
+    if (!silent && i % 3 === 0) { rect(c, cx - w - 2, y - i, 1, 1, 'rgba(160,90,255,0.45)'); rect(c, cx + w + 2, y - i, 1, 1, 'rgba(160,90,255,0.45)'); }
+  }
+  // torn ground at its foot
+  rect(c, x - 9, y - 1, 19, 2, PAL.dirt3);
+  rect(c, x - 5, y - 2, 11, 1, '#140a20');
+  if (sealed) {
+    // golden stitches across the tear
+    const pulse = silent ? 0.35 : 0.6 + 0.4 * Math.sin(time * 4);
+    for (let j = 0; j < 7; j++) {
+      const sy = y - 9 - j * 9;
+      const col = `rgba(255,${silent ? 200 : 220},120,${pulse})`;
+      line(c, x - 5, sy - 2, x + 5, sy + 2, col);
+      line(c, x - 5, sy + 2, x + 5, sy - 2, col);
+    }
+  }
+  if (focus) {
+    rect(c, x - 10, y - H - 3, 21, 1, PAL.gold4);
+    rect(c, x - 10, y + 2, 21, 1, PAL.gold4);
+  }
+}
+
+/** Above the darkness: the Rift's violet breath, so it reads in the dark from afar. */
+export function drawRiftGlow(c: Ctx, x: number, time: number, sealed: boolean, silent: boolean) {
+  if (silent) return;
+  const y = GY;
+  for (let i = 0; i < 9; i++) {
+    const t = (time * 0.35 + i / 9) % 1;
+    const px = x + Math.sin(i * 2.3 + time) * (3 + t * 6);
+    const py = y - 6 - t * 76;
+    const a = sealed ? 0.25 * (1 - t) : 0.7 * (1 - t);
+    rect(c, Math.round(px), Math.round(py), 1, 1, sealed ? `rgba(255,220,130,${a})` : `rgba(190,120,255,${a})`);
+  }
+  if (!sealed) for (let i = 4; i < 68; i += 7) if (Math.sin(time * 5 + i) > 0.4) rect(c, x, GY - i, 1, 2, '#d8a8ff');
+}
+
+/**
+ * A Dead Igg-Tree: a grey husk with bare forked branches. Lit, its heart glows, golden leaves
+ * bud on the branch tips and embers rise; `hp` (0..1) cracks it as it is gnawed.
+ */
+export function drawDeadTree(c: Ctx, x: number, time: number, lit: boolean, hp: number, focus: boolean) {
+  const y = GY;
+  const bark = lit ? '#3a2a24' : '#2a2630';
+  const hi = lit ? '#5a4030' : '#3a3644';
+  // roots and trunk
+  rect(c, x - 9, y - 1, 19, 2, bark);
+  rect(c, x - 4, y - 30, 9, 30, bark);
+  rect(c, x - 4, y - 30, 2, 30, hi);
+  rect(c, x - 6, y - 4, 13, 4, bark);
+  // bare branches
+  const br: Array<[number, number, number, number]> = [
+    [0, -30, -12, -42], [0, -30, 10, -44], [-12, -42, -18, -46], [-12, -42, -9, -50], [10, -44, 17, -49], [10, -44, 6, -52], [1, -22, 12, -30], [0, -18, -9, -26],
+  ];
+  for (const [ax, ay, bx, by] of br) line(c, x + ax, y + ay, x + bx, y + by, bark, 2);
+  // a hollow heart
+  ellipse(c, x, y - 16, 2, 3, lit ? PAL.gold2 : '#0a080e');
+  if (lit) {
+    const g = 0.5 + 0.5 * Math.sin(time * 2.4);
+    rect(c, x - 1, y - 17, 2, 2, g > 0.5 ? PAL.gold4 : PAL.gold3);
+    // buds at the tips
+    for (const [, , bx, by] of br) if (Math.sin(time * 1.5 + bx) > -0.6) rect(c, x + bx, y + by - 1, 2, 2, (bx + by) % 2 ? PAL.gold3 : '#c8e86a');
+  }
+  // cracks from gnawing
+  if (lit && hp < 0.66) line(c, x - 3, y - 6, x + 2, y - 14, '#120a0c');
+  if (lit && hp < 0.33) line(c, x + 3, y - 4, x - 1, y - 24, '#120a0c');
+  if (focus) for (let i = -10; i <= 10; i += 4) rect(c, x + i, y + 2, 2, 1, PAL.gold4);
+}
+
+/** Above the darkness: an unlit Dead Tree's last ember (so it is found in the dark); a lit one's HP. */
+export function drawDeadTreeMark(c: Ctx, x: number, time: number, lit: boolean, hp: number) {
+  const y = GY;
+  if (!lit) {
+    if (Math.sin(time * 1.3 + x) > -0.3) rect(c, x, y - 16, 1, 1, '#ff7a3a');
+    return;
+  }
+  if (hp >= 0.999) return;
+  rect(c, x - 10, y - 58, 21, 3, '#0a0610');
+  rect(c, x - 9, y - 57, Math.max(1, Math.round(19 * hp)), 1, hp > 0.5 ? PAL.gold3 : hp > 0.25 ? PAL.amber : '#ff4a3a');
+}
+
+/**
+ * A Sleeping Creature: the caterpillar hermit in a silk cocoon on a stone, or the dragonfly
+ * curled up on a reed, with sleepy «z» rising.
+ */
+export function drawSleeper(c: Ctx, x: number, time: number, family: string, focus: boolean) {
+  const y = GY;
+  const breathe = Math.round(Math.sin(time * 1.6));
+  if (family === 'dragonfly') {
+    // two reeds, the dragonfly clinging to the tall one with its wings folded along its body
+    line(c, x, y, x + 3, y - 34, '#3a5a2a', 2);
+    line(c, x - 4, y, x - 7, y - 18, '#2e4a22');
+    rect(c, x + 3, y - 30 + breathe, 3, 15, '#3aa0c8');
+    rect(c, x + 3, y - 32 + breathe, 3, 3, '#7ad8ff');
+    rect(c, x + 3, y - 31 + breathe, 1, 1, '#0a1a2a');
+    for (let i = 0; i < 6; i++) rect(c, x + 6, y - 28 + i * 2 + breathe, 6 - (i >> 1), 1, 'rgba(190,230,255,0.6)');
+  } else {
+    // a white-green silk cocoon on a mossy stone
+    rect(c, x - 8, y - 4, 17, 4, PAL.rock);
+    rect(c, x - 7, y - 5, 15, 1, '#2a4a2a');
+    ellipse(c, x, y - 14 + breathe * 0.5, 6, 9, '#d8e8c8');
+    for (let i = -7; i <= 6; i += 3) rect(c, x - 5, y - 14 + i, 11, 1, '#a8c898');
+    rect(c, x - 1, y - 24, 3, 3, '#6ac85a');
+  }
+  // z z z
+  const t = (time * 0.6) % 1;
+  for (let k = 0; k < 2; k++) {
+    const tt = (t + k * 0.5) % 1;
+    const zx = Math.round(x + 7 + tt * 6), zy = Math.round(y - 30 - tt * 14);
+    const col = `rgba(200,220,255,${0.9 * (1 - tt)})`;
+    rect(c, zx, zy, 3, 1, col); rect(c, zx + 1, zy + 1, 1, 1, col); rect(c, zx, zy + 2, 3, 1, col);
+  }
+  if (focus) for (let i = -8; i <= 8; i += 4) rect(c, x + i, y + 2, 2, 1, PAL.gold4);
+}
+
+/** An Observer stela: a tall carved stone; its sign (shield / sun) glows azure, gold once blessed. */
+export function drawStela(c: Ctx, x: number, time: number, blessing: 'nestHp' | 'lightRegen', done: boolean, focus: boolean) {
+  const y = GY;
+  rect(c, x - 4, y - 24, 9, 24, PAL.rock);
+  rect(c, x - 3, y - 26, 7, 2, PAL.rock);
+  rect(c, x - 2, y - 27, 5, 1, PAL.rockHi);
+  rect(c, x - 4, y - 24, 1, 24, PAL.rockHi);
+  rect(c, x - 6, y - 1, 13, 1, PAL.dirt3);
+  const on = done || focus || Math.sin(time * 1.4 + x) > 0;
+  const col = done ? PAL.gold4 : on ? '#8fd0ff' : '#4a6a9a';
+  if (blessing === 'nestHp') {
+    // a shield
+    rect(c, x - 2, y - 20, 5, 4, col);
+    rect(c, x - 1, y - 16, 3, 2, col);
+    rect(c, x, y - 14, 1, 1, col);
+    rect(c, x, y - 19, 1, 3, PAL.rock);
+  } else {
+    // a sun
+    rect(c, x - 1, y - 19, 3, 3, col);
+    for (const [dx, dy] of [[0, -3], [0, 3], [-3, 0], [3, 0], [-2, -2], [2, -2], [-2, 2], [2, 2]]) rect(c, x + dx, y - 18 + dy, 1, 1, col);
+  }
+  // the Observer's eye at the foot
+  rect(c, x - 1, y - 8, 3, 1, col);
+  rect(c, x, y - 9, 1, 3, col);
+  if (focus) for (let i = -8; i <= 8; i += 4) rect(c, x + i, y + 2, 2, 1, PAL.gold4);
+}

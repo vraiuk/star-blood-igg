@@ -89,7 +89,8 @@ describe('Game and worlds', () => {
     expect(g.growNeed()).toBe(0);
   });
 
-  it('a medium Game runs 60 s of night and spawns creatures at its own edges', () => {
+  // phase 6 (spec §6): medium creatures come out of the Rifts at max(rift, treeX ∓ 900) = 700 / 2500
+  it('a medium Game runs 60 s of night and spawns creatures at its Rift reach', () => {
     const g = new Game({ seed: 5, world: 'medium' });
     while (g.choice) g.choose(0);
     g.callNight();
@@ -100,9 +101,11 @@ describe('Game and worlds', () => {
       g.drainEvents();
     }
     expect(xs.length).toBeGreaterThan(0);
-    // creatures appear at the edges of the 3200-wide world and walk in towards x = 1600
-    expect(Math.max(...xs)).toBeGreaterThan(3000);
-    expect(Math.min(...xs)).toBeLessThan(200);
+    // creatures appear 900 px either side of the trunk (x = 1600) and walk in towards it
+    expect(Math.max(...xs)).toBeGreaterThan(2400);
+    expect(Math.max(...xs)).toBeLessThanOrEqual(2500);
+    expect(Math.min(...xs)).toBeLessThan(800);
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(700);
   });
 
   it('snapshot / restore keeps the world', () => {

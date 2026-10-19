@@ -40,6 +40,14 @@ export class FocusPlate {
     if (f.kind === 'stone') return 'rune';
     if (f.kind === 'geode') return 'amber';
     if (f.kind === 'seed') return 'tree';
+    // «Поляна» (spec §6)
+    if (f.kind === 'rift') return 'lock';
+    if (f.kind === 'deadTree') return f.canAct ? 'treeDim' : 'tree';
+    if (f.kind === 'stela') return 'star';
+    if (f.kind === 'sleeper') {
+      const o = g.world.objects[Number(f.id.split(':')[1])];
+      return o && o.kind === 'sleeper' ? o.family : 'rune';
+    }
     if (f.kind === 'well' && !f.options.length) return 'roots';
     if (f.kind === 'nest') {
       const st = g.state.structures.find((x) => `nest:${x.id}` === f.id);
@@ -50,8 +58,10 @@ export class FocusPlate {
 
   /** Price as drops: ≤ 20 drops one by one, more as a bar with «37/90». */
   private priceHtml(g: Game, f: Focus): string {
-    if (f.verbs.pour !== 'pledge' || f.price <= 0) return '';
+    if (f.verbs.pour !== 'pledge') return '';
     const s = g.state;
+    // a Star-Blood-only price (a stela): just the Star Blood
+    if (f.price <= 0) return f.star ? `<div class="fp-price"><span class="fp-star ${s.star >= f.star ? '' : 'no'}"><img src="${icon('star')}">${f.star}</span></div>` : '';
     const have = s.keeper.purse + f.pledged + (f.kind === 'altar' ? s.amber : 0);
     const left = Math.max(0, f.price - f.pledged);
     const short = have < f.price;
@@ -72,7 +82,7 @@ export class FocusPlate {
     const parts: string[] = [];
     if (f.verbs.take) parts.push(k('W', 'взять'));
     if (f.verbs.pour === 'deposit') parts.push(k('S', 'сдать'));
-    if (f.verbs.pour === 'pledge') parts.push(k('S', 'держи — влить'));
+    if (f.verbs.pour === 'pledge') parts.push(k('S', f.price > 0 ? 'держи — влить' : 'принять'));
     if (f.verbs.sell) parts.push(k('X', 'держи — продать'));
     if (f.kind === 'geode') parts.push(k('S', 'держи — расколоть'));
     if (f.kind === 'seed') parts.push(k('S', 'взять'));

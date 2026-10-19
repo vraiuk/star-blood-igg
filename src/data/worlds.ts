@@ -1,7 +1,7 @@
 import type { AbilityId } from './balance';
-import { ECONOMY } from './balance';
+import { ECONOMY, ENEMIES } from './balance';
 import type { Family } from './nests';
-import type { NightDef } from './nights';
+import { NIGHTS, generateNight, type NightDef } from './nights';
 import { TREE_STAGES } from './tree';
 
 /**
@@ -156,6 +156,16 @@ export interface WorldDef {
   wells?: { fromNight: number; count: number };
   /** a scripted night list that has run out repeats its last night, creatures ×`repeatMul` hp per repeat (micro: 1.1) */
   repeatMul?: number;
+  /** a scripted list that has run out goes on with this generator (0-based night index; medium: ENDLESS + truces) */
+  generator?: (n: number) => NightDef;
+  /** diggers drive tunnels («Лазы») only from this 0-based night index on (medium: 8 = night 9); undefined = always */
+  tunnelsFrom?: number;
+  /** «Зима»: every `every`-th night the dawn income is ×`mul` (medium: 8, 0.5) */
+  winter?: { every: number; mul: number };
+  /** creatures come out this far from the trunk at most (or at their side's Rift, if it is nearer) — medium 900 */
+  spawnReach?: number;
+  /** in-world: the Observer's one line for what a Tree stage (0-based) opens in this world (spec §6) */
+  stageLines?: Record<number, string>;
   features: WorldFeatures;
 }
 
@@ -174,8 +184,8 @@ const IGG2_FEATURES: WorldFeatures = {
 
 /** The Observer's lines for the in-world rune unlocks. */
 const RUNE_LINES = {
-  hammer: 'Новая руна: Прыжок Молота [2] — прыжок вперёд, удар оглушает и отбрасывает тварей.',
-  starfall: 'Новая руна: Звездопад [3] — заряжается убийствами; звёзды падают на самую густую стаю впереди.',
+  hammer: 'Игг-Молот [2]: прыжок вперёд и удар — оглушает и отбрасывает тварей.',
+  starfall: 'Звездопад [3]: заряжается убийствами; звёзды падают на самую густую стаю впереди.',
 } as const;
 
 /** Spawn group helper for the scripted world nights (same shape as src/data/nights.ts). */
@@ -193,7 +203,7 @@ const MICRO_NIGHTS: NightDef[] = [
   },
   {
     title: 'Вторая ночь', hpMul: 1.1,
-    hint: 'Найтволки с обеих сторон. Прыжок Молота [2] отбрасывает стаю от гнёзд.',
+    hint: 'Найтволки с обеих сторон. Игг-Молот [2] прыгает вперёд и отбрасывает стаю от гнёзд.',
     groups: [grp(2, 'hound', 'B', 3, 1.6), grp(16, 'hound', 'B', 2, 1.2)],
   },
   {
@@ -203,10 +213,121 @@ const MICRO_NIGHTS: NightDef[] = [
   },
   {
     title: 'Ночь Гигантопитека', hpMul: 1.3,
-    hint: 'Гигантопитек ломает гнёзда. Молот [2] оглушает его, ульи жалят издалека.',
+    hint: 'Гигантопитек ломает гнёзда. Игг-Молот [2] оглушает его, ульи жалят издалека.',
     groups: [grp(2, 'hound', 'L', 3, 1.2), grp(8, 'ape', 'R', 1), grp(18, 'hound', 'B', 3, 1)],
   },
 ];
+
+// ───────────────────────────── «Поляна» (spec §6) ─────────────────────────────
+
+/** seconds a truce night lasts */
+const MEDIUM_TRUCE_T = 30;
+/** 0-based night index from which diggers drive «Лазы» in the medium world (night 9) */
+const MEDIUM_TUNNELS_FROM = 8;
+
+/** A truce night (medium): nobody comes; it lasts `MEDIUM.truceT` seconds. */
+const truce = (n: number): NightDef => ({
+  title: `Ночь ${n + 1}: Перемирие`, hpMul: 1, groups: [], quiet: MEDIUM_TRUCE_T, truce: true,
+  hint: 'Тьма переводит дух — ни одна тварь не придёт. Строй, копи, зажигай Мёртвые Древа.',
+});
+
+/**
+ * «Поляна» nights 1–7 (spec §6): one new thing a night, both Rifts send their share. Night 6 is the
+ * Mother, night 7 a truce. Counts are exact (scripted world: no growth by night index, no elites).
+ */
+const MEDIUM_OWN: NightDef[] = [
+  {
+    title: 'Первая ночь', hpMul: 1,
+    hint: 'Найтволки выходят из обоих Разломов. Ульи у края Круга, Копьё [1] навстречу стае.',
+    groups: [grp(2, 'hound', 'B', 3, 1.6), grp(16, 'hound', 'B', 3, 1.3)],
+  },
+  {
+    title: 'Вторая ночь', hpMul: 1.1,
+    hint: 'Имаго-Фуражиры идут роем — в свете Древа они горят. Шире Круг — больше сгорит.',
+    groups: [grp(2, 'hound', 'B', 3, 1.4), grp(10, 'forager', 'B', 5, 1), grp(24, 'hound', 'B', 2, 1.2)],
+  },
+  {
+    title: 'Третья ночь', hpMul: 1.25,
+    hint: 'Под землёй ползут Черви — Паук в колодце встретит их. С Червей падает Звёздная Кровь.',
+    groups: [grp(2, 'hound', 'B', 4, 1.3), grp(10, 'worm', 'L', 1), grp(18, 'forager', 'B', 4, 1), grp(24, 'worm', 'R', 1)],
+  },
+  {
+    title: 'Четвёртая ночь', hpMul: 1.4,
+    hint: 'Ледозубы ломают гнёзда. Светожук держит строй, Игг-Молот [2] оглушает.',
+    groups: [grp(2, 'hound', 'B', 4, 1.2), grp(8, 'stalker', 'L', 1), grp(14, 'forager', 'B', 5, 0.9), grp(20, 'stalker', 'R', 1), grp(26, 'worm', 'B', 1)],
+  },
+  {
+    title: 'Пятая ночь', hpMul: 1.55,
+    hint: 'Найтораксы плюются кислотой издалека. Копьё [1] бьёт и во тьме, стрекозы высвечивают их.',
+    groups: [grp(2, 'hound', 'B', 5, 1.1), grp(8, 'spitter', 'B', 2, 3), grp(16, 'stalker', 'B', 1), grp(22, 'forager', 'B', 5, 0.9), grp(28, 'worm', 'B', 1)],
+  },
+  {
+    title: 'Ночь Матери', hpMul: 1.7,
+    hint: 'Имаго-Матерь — родильная гора Червей. Игг-свет жжёт её и её личинок; бей Молотом и Звездопадом.',
+    groups: [grp(2, 'hound', 'B', 5, 1), grp(8, 'mother', 'R', 1), grp(14, 'forager', 'B', 6, 0.8), grp(22, 'spitter', 'B', 2, 3), grp(30, 'worm', 'B', 1)],
+  },
+  truce(6),
+];
+
+/** Medium nights 8–12 = the legacy nights 6–10, renamed; no Землерой before night 9 (spec §6). */
+const SHIFT_TITLES = ['Восьмая ночь', 'Девятая ночь', 'Десятая ночь', 'Одиннадцатая ночь', 'Ночь Палача'];
+const SHIFT_HINTS: Record<number, string> = {
+  0: 'Имаго-Стражи в броне ползут под землёй, Жнецы косят гнёзда. Светожуки, держите строй!',
+};
+const MEDIUM_SHIFT = NIGHTS.slice(5, 10).map((d, i): NightDef => ({
+  ...d, title: SHIFT_TITLES[i], hint: SHIFT_HINTS[i] ?? d.hint,
+  // the medium night index is 7 + i: tunnellers only from night 9 (index 8)
+  groups: d.groups.filter((x) => x.kind !== 'tunneler' || 7 + i >= MEDIUM_TUNNELS_FROM),
+}));
+
+/** The scripted «Поляна» list: nights 1–12. */
+export const MEDIUM_NIGHTS: NightDef[] = [...MEDIUM_OWN, ...MEDIUM_SHIFT];
+
+/** Does a night bring a boss (Mother, Executioner, Devourer)? */
+export const isBossNight = (d: NightDef) => d.groups.some((x) => ENEMIES[x.kind].boss);
+
+/** legacy generator index the medium endless starts from (its night 13 = legacy generated night 11) */
+const MEDIUM_GEN_FROM = 10;
+const mediumEndlessCache: NightDef[] = [];
+/**
+ * «Поляна» after night 12: the ENDLESS generator with its 5-night rhythm, and a truce after every
+ * boss night (spec §6). Deterministic; `n` is the 0-based medium night index (≥ the list length).
+ */
+export function mediumEndless(n: number): NightDef {
+  const L = MEDIUM_NIGHTS.length;
+  let gi = MEDIUM_GEN_FROM + mediumEndlessCache.filter((d) => !d.truce).length;
+  while (mediumEndlessCache.length <= n - L) {
+    const idx = L + mediumEndlessCache.length;
+    const prev = mediumEndlessCache.length ? mediumEndlessCache[mediumEndlessCache.length - 1] : MEDIUM_NIGHTS[L - 1];
+    if (isBossNight(prev)) { mediumEndlessCache.push(truce(idx)); continue; }
+    const d = generateNight(gi++);
+    mediumEndlessCache.push({ ...d, title: d.title.replace(/^Ночь \d+/, `Ночь ${idx + 1}`) });
+  }
+  return mediumEndlessCache[n - L];
+}
+
+/** «Поляна» rules (spec §6). Distances in world px, times in seconds. */
+export const MEDIUM = {
+  /** a sealed Rift answers: the day ends this soon (the Eclipse), and the sky stays dark this long */
+  eclipseDay: 12, eclipseT: 12,
+  /** the retaliation wave: the night's groups ×(base + step × Rifts sealed before this one) */
+  waveBase: 1.4, waveStep: 0.3,
+  /** a truce night lasts this long */
+  truceT: MEDIUM_TRUCE_T,
+  /** a lit Dead Tree's two nest slots sit this far either side of its trunk */
+  huskSlotGap: 24,
+  /** creatures this close to a lit Dead Tree stop and gnaw it */
+  huskReach: 10,
+} as const;
+
+/** Observer lines for what each «Поляна» Tree stage opens (spec §6: every opening = a banner + one line). */
+const MEDIUM_STAGE_LINES: Record<number, string> = {
+  1: 'Звёздная Кровь пробудилась: её роняют Черви, Хранитель берёт её сразу в общий счёт. Камень Скрижали у Древа принимает её за ранги рун.',
+  2: 'Гнёзда третьего уровня теперь выбирают путь: Q/E у гнезда — развилка A или B, за Янтарь и Звёздную Кровь.',
+  3: 'Древо достаточно сильно, чтобы запечатать Разлом: 120 Янтаря и 3 Звёздной Крови у его края. И руна Звездопад [3] проснулась.',
+  4: 'Гнёзда на пределе могут Возвыситься — ещё сильнее и крепче, за Янтарь.',
+  5: 'Великое Древо — предел Поляны. Запечатай оба Разлома, и Тьма уйдёт с Поляны.',
+};
 
 const ALL_FAMILIES: Family[] = ['hive', 'beetle', 'dragonfly', 'spider', 'caterpillar', 'termite', 'honeycomb', 'mender'];
 const start = (family: Family): FamilyRule => ({ family, unlock: { kind: 'start' } });
@@ -254,8 +375,11 @@ export const WORLDS: Record<WorldId, WorldDef> = {
   },
   medium: {
     id: 'medium', name: 'Поляна', width: 3200, treeX: 1600,
-    // placeholder until phase 6 (nights 1–7, shifted campaign, generator with truces and «winter»)
-    nights: 'campaign', endless: true, maxStage: 5,
+    // nights 1–7, then the legacy nights 6–10 shifted, then the generator with truces (spec §6)
+    nights: MEDIUM_NIGHTS, endless: true, generator: mediumEndless, maxStage: 5,
+    tunnelsFrom: MEDIUM_TUNNELS_FROM,
+    winter: { every: 8, mul: 0.5 },
+    spawnReach: 900,
     families: [
       start('hive'), start('beetle'), start('spider'),
       { family: 'caterpillar', unlock: { kind: 'sleeper' } }, { family: 'dragonfly', unlock: { kind: 'sleeper' } },
@@ -268,7 +392,26 @@ export const WORLDS: Record<WorldId, WorldDef> = {
     ],
     specStage: 2,
     tabletStage: 1,
-    objects: [],
+    // treeX 1600: Rifts at the edges, Dead Trees ∓700, Sleepers ∓1000, stelae ∓450 (spec ∓420 sits on slots L9/R9 — moved clear of them), 6 geodes, 2 herds
+    objects: [
+      { kind: 'rift', x: 140, side: 'L', amber: 120, star: 3, minStage: 3 },
+      { kind: 'rift', x: 3060, side: 'R', amber: 120, star: 3, minStage: 3 },
+      { kind: 'deadTree', x: 900, cost: 60, radius: 110, hp: 400, slots: 2 },
+      { kind: 'deadTree', x: 2300, cost: 60, radius: 110, hp: 400, slots: 2 },
+      { kind: 'sleeper', x: 600, family: 'caterpillar', cost: 30 },
+      { kind: 'sleeper', x: 2600, family: 'dragonfly', cost: 30 },
+      { kind: 'stela', x: 1150, star: 4, blessing: 'nestHp', power: 0.2 },
+      { kind: 'stela', x: 2050, star: 4, blessing: 'lightRegen', power: 0.3 },
+      { kind: 'geode', x: 1340, amber: 20 },
+      { kind: 'geode', x: 1860, amber: 20 },
+      { kind: 'geode', x: 1050, amber: 30 },
+      { kind: 'geode', x: 2150, amber: 30 },
+      { kind: 'geode', x: 760, amber: 45 },
+      { kind: 'geode', x: 2440, amber: 45 },
+      { kind: 'herd', x: 420, count: 4, range: 120, drop: [3, 5] },
+      { kind: 'herd', x: 2780, count: 4, range: 120, drop: [3, 5] },
+    ],
+    stageLines: MEDIUM_STAGE_LINES,
     startTreasury: 60,
     purseCap: (stage) => 40 + 20 * stage,
     prices: { nest: 1, grow: 1, rune: 1 },
@@ -321,7 +464,7 @@ export const WORLD_OBJ = {
 /** In-world rune descriptions (no mouse: everything goes along the Keeper's facing). */
 export const INWORLD_RUNE_DESC: Partial<Record<AbilityId, string>> = {
   spear: 'Копьё летит туда, куда смотрит Хранитель: пробивает тварей, бьёт и во тьме.',
-  hammer: 'Прыжок Молота: Хранитель прыгает вперёд (до ближайшей твари) и бьёт — оглушает, отбрасывает, ломает броню, рушит Лазы.',
+  hammer: 'Игг-Молот: Хранитель прыгает вперёд (до ближайшей твари) и бьёт — оглушает, отбрасывает, ломает броню, рушит Лазы.',
   starfall: 'Заряжается убийствами. Звёзды падают на самую густую стаю впереди; нет стаи — прямо перед Хранителем.',
 };
 

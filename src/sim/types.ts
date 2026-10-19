@@ -395,7 +395,8 @@ export type GameEvent =
   | { type: 'spikeStrike'; x: number; y: number; tx: number; ty: number; web: boolean }
   | { type: 'nightStart'; night: number }
   | { type: 'rush'; night: number; amber: number; star: number }
-  | { type: 'dawn'; night: number; gift: number }
+  /** `winter`: «Зима» halved the in-world dawn income (medium, spec §6) */
+  | { type: 'dawn'; night: number; gift: number; winter?: boolean }
   | { type: 'brood'; x: number }
   | { type: 'milestone'; stars: number }
   | { type: 'lost' }
@@ -417,6 +418,18 @@ export type GameEvent =
   | { type: 'seedDropped'; x: number }
   | { type: 'seedTaken'; x: number }
   | { type: 'seedLost'; x: number }
+  /** medium (spec §6): a Sleeping Creature woke — its family can be built */
+  | { type: 'sleeperWoken'; x: number; family: Family }
+  /** medium: a stela's run blessing was bought */
+  | { type: 'stelaBlessed'; x: number; blessing: 'nestHp' | 'lightRegen' }
+  /** medium: a Dead Tree was lit / a creature gnaws it / it went out */
+  | { type: 'huskLit'; x: number }
+  | { type: 'huskHit'; x: number; id: string }
+  | { type: 'huskOut'; x: number }
+  /** medium: a Void Rift was sealed (the Eclipse falls; the next night is its retaliation wave) */
+  | { type: 'riftSealed'; x: number; side: 'L' | 'R'; sealed: number }
+  /** medium: the retaliation wave was survived — that side is silent for good */
+  | { type: 'riftSilent'; side: 'L' | 'R' }
   /** the world's goal is reached (phase `won`) */
   | { type: 'won' }
   | { type: 'denied'; reason: string };
@@ -512,4 +525,29 @@ export interface GameState {
   wobj: { cracked: string[]; burnt: string[] };
   /** micro: the Seed, once the grown Tree has dropped it (null before) */
   seed: SeedState | null;
+  /** medium: Sleepers, stelae, Dead Trees and Rifts (spec §6) */
+  mw: MediumState;
 }
+
+/** «Поляна» object state (spec §6). Ids are world object ids (`deadTree:2`, `rift:0`). */
+export interface MediumState {
+  /** woken Sleeping Creatures */
+  woken: string[];
+  /** stelae whose blessing was bought */
+  blessed: string[];
+  /** burning Dead Trees: id → husk HP (absent = dead / gone out) */
+  husks: Record<string, number>;
+  /** Rifts sealed, by side, in order */
+  sealed: Array<'L' | 'R'>;
+  /** sides whose retaliation wave was survived: no creature comes from them any more */
+  silent: Array<'L' | 'R'>;
+  /** a sealed side whose retaliation wave is still to come / under way */
+  wave: 'L' | 'R' | null;
+  /** the 0-based night index of that wave (set when it starts) */
+  waveNight: number | null;
+  /** seconds of the Eclipse sky left (visual; the day was cut short) */
+  eclipse: number;
+}
+
+/** A fresh medium state (also for old saves). */
+export const emptyMedium = (): MediumState => ({ woken: [], blessed: [], husks: {}, sealed: [], silent: [], wave: null, waveNight: null, eclipse: 0 });

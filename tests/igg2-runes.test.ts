@@ -104,7 +104,7 @@ describe('rune learning by the world script', () => {
     g.drainEvents();
     endNight(g);
     const ev = g.drainEvents();
-    expect(of(ev, 'runeLearned')).toEqual([{ type: 'runeLearned', ability: 'hammer', by: 'gift', line: expect.stringContaining('Прыжок Молота [2]') }]);
+    expect(of(ev, 'runeLearned')).toEqual([{ type: 'runeLearned', ability: 'hammer', by: 'gift', line: expect.stringContaining('Игг-Молот [2]') }]);
     expect(g.state.keeper.learned.hammer).toBe(true);
     expect(g.state.choices).toEqual([]);
     expect(g.castKey('2')).toBe(true);

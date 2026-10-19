@@ -20,6 +20,10 @@ export interface NightDef {
   /** shown on the night banner — what this night teaches */
   hint: string;
   groups: SpawnGroup[];
+  /** a truce («перемирие», IGG2 medium): a silent night that lasts this many seconds, nobody comes */
+  quiet?: number;
+  /** marks a truce night (the HUD paints its number blue) */
+  truce?: boolean;
 }
 
 const g = (at: number, kind: EnemyKind, side: Side, count: number, every = 1.6): SpawnGroup => ({
